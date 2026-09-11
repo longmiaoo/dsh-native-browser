@@ -1,7 +1,9 @@
 # Codex Chrome 浏览器操作：实现拆解与 DSH 对标方案
 
-> 调研日期：2026-09-11  
-> 研究对象：ChatGPT/Codex Desktop 本机 Chrome 集成、Chrome 官方扩展机制、DSH 插件体系及相邻开源方案  
+> 调研日期：2026-09-11
+>
+> 研究对象：ChatGPT/Codex Desktop 本机 Chrome 集成、Chrome 官方扩展机制、DSH 插件体系及相邻开源方案
+>
 > 结论用途：指导 `dsh-native-browser` 的 Chrome-first 架构与验收标准
 
 ## 执行摘要

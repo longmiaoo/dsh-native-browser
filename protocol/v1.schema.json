@@ -95,6 +95,8 @@
             "RECOVERY_REQUIRED",
             "BROKER_BUSY",
             "BROKER_STATE_UNSAFE",
+            "INSTALLATION_BUSY",
+            "INSTALLATION_FAILED",
             "INTERNAL_ERROR"
           ]
         }

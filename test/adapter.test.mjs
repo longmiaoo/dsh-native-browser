@@ -6,6 +6,7 @@ import path from 'node:path';
 import { apply } from '../index.js';
 import { startBroker } from '../dist/packages/broker/src/server.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
+import { createHash } from 'node:crypto';
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
@@ -90,4 +91,73 @@ test('dispose invalidates an execution still waiting for approval', async t => {
   const f = await fixture(t), pending = f.prepare('browser_claim', claimArgs);
   f.dispose(); await assert.rejects(pending.run(), e => e.code === 'CONNECTION_LOST');
   assert.equal(f.provider.grants.size, 0);
+});
+
+test('handoff during Host image storage prevents late screenshot publication', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();
+  const data=Buffer.from('canonical fixture'),attachment={attachmentId:`sha256:${createHash('sha256').update(data).digest('hex')}`,width:100,height:100};
+  f.provider.capture=async()=>({data:'/9j/',mimeType:'image/jpeg',tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),
+    viewport:{width:100,height:100,pageX:0,pageY:0}});
+  let entered,finish;const storing=new Promise(resolve=>{entered=resolve;});
+  f.services.set('attachments',{saveImage:()=>new Promise(resolve=>{finish=resolve;entered();}),readImage:async()=>({data})});
+  const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
+  await storing;await f.prepare('browser_handoff',{leaseId:lease.id}).run();
+  finish(attachment);
+  await assert.rejects(pending,{code:'LEASE_REVOKED'});
+});
+
+function captureStore(f,stage='save') {
+  const data=Buffer.from('canonical fixture'),attachment={attachmentId:`sha256:${createHash('sha256').update(data).digest('hex')}`,width:100,height:100};
+  f.provider.capture=async()=>({data:'/9j/',mimeType:'image/jpeg',tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),viewport:{width:100,height:100,pageX:0,pageY:0}});
+  let enter,finish,readSignal;const entered=new Promise(resolve=>{enter=resolve;});
+  f.services.set('attachments',{
+    saveImage:async()=>{if(stage==='save')await new Promise(resolve=>{finish=resolve;enter();});return attachment;},
+    readImage:async(_attachment,signal)=>{readSignal=signal;if(stage==='read')await new Promise(resolve=>{finish=resolve;enter();});return {data};},
+  });
+  return {entered,finish:()=>finish(),readSignal:()=>readSignal};
+}
+
+test('provider Stop during Host canonical read aborts the pending image via the real Broker event', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),store=captureStore(f,'read');
+  const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
+  await store.entered;await f.broker.runtime.providerRevoked('fake-1',lease.id);
+  await until(()=>store.readSignal().aborted);store.finish();
+  await assert.rejects(pending,{code:'LEASE_REVOKED'});
+});
+
+test('Broker disconnect during storage prevents publication and never reconnects the old image', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),store=captureStore(f);
+  const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
+  await store.entered;await f.broker.close();store.finish();
+  await assert.rejects(pending,{code:'CONNECTION_LOST'});
+});
+
+test('final image publication checks current origin even without a revocation notification', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),store=captureStore(f);
+  const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
+  await store.entered;f.provider.tab.url='https://unapproved.test/';store.finish();
+  await assert.rejects(pending,{code:'POLICY_DENIED'});
+});
+
+test('another Session cannot cancel the owning Session screenshot through handoff', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),store=captureStore(f);
+  const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
+  await store.entered;
+  await assert.rejects(f.prepare('browser_handoff',{leaseId:lease.id},'different-session').run(),{code:'LEASE_REVOKED'});
+  store.finish();assert.equal((await pending).screenshot.leaseId,lease.id);
+});
+
+test('at most eight Host screenshot publications remain pending, including cancelled storage', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();captureStore(f);
+  const finishes=[];f.services.get('attachments').saveImage=()=>new Promise(resolve=>{finishes.push(resolve);});
+  const pending=Array.from({length:8},()=>f.prepare('browser_screenshot',{leaseId:lease.id}).run());
+  await until(()=>finishes.length===8);
+  await assert.rejects(f.prepare('browser_screenshot',{leaseId:lease.id}).run(),{code:'QUEUE_FULL'});
+  await f.prepare('browser_handoff',{leaseId:lease.id}).run();
+  await assert.rejects(f.prepare('browser_screenshot',{leaseId:lease.id}).run(),{code:'QUEUE_FULL'});
+  const rejected=pending.map(p=>assert.rejects(p,{code:'LEASE_REVOKED'}));
+  for(const finish of finishes)finish({});await Promise.all(rejected);
+  const next=await f.prepare('browser_claim',claimArgs).run();
+  const store=captureStore(f);const restored=f.prepare('browser_screenshot',{leaseId:next.id}).run();
+  await store.entered;store.finish();assert.equal((await restored).screenshot.leaseId,next.id);
 });

@@ -5,9 +5,10 @@ import { BrowserError, checkAbort, originOf, type ActionRequest, type BrowserIns
 import { scrollDelta, string, semanticQuery } from '../../contracts/src/validation.js';
 import { actionDeadline, ChangeClock, waitUntil } from './wait.js';
 import { keyEvent } from './keyboard.js';
+import { wheelEvent } from './mouse.js';
 import { scrollMoved, scrollMovedAsRequested } from '../../contracts/src/scrolling.js';
 import { checkedScrollPosition, sameScrollPosition, scrollByFunction, scrollStateFunction } from './scroll.js';
-import { checkedFunction, checkedValue } from './checked.js';
+import { checkedFunction, checkedValue, checkedLabelFunction, checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction } from './checked.js';
 import { geometryFunction, sameGeometry } from './actionability.js';
 
 export interface CommandChannel {
@@ -230,27 +231,46 @@ export class ChromiumProvider implements BrowserProvider {
     return node;
   }
 
-  private async readChecked(lease: Lease, target: Target, objectId: string, signal: AbortSignal) {
+  private async checkRadioBinding(lease: Lease, objectId: string, binding: string | undefined, signal: AbortSignal) {
+    if (!binding) return;
+    const result = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId,
+      functionDeclaration: radioBindingCheckFunction, arguments: [{ objectId: binding }], returnByValue: true }, signal);
+    if (result.exceptionDetails || result.result?.value !== true) {
+      throw new BrowserError('STALE_TARGET', 'Radio type, tree, form, name or value changed during selection');
+    }
+  }
+
+  private async readChecked(lease: Lease, target: Target, objectId: string, signal: AbortSignal, radioBinding?: string) {
     await this.checkIdentity(lease, target, signal);
+    await this.checkRadioBinding(lease, objectId, radioBinding, signal);
     const result = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId, functionDeclaration: checkedFunction, returnByValue: true }, signal);
     const state = result.result?.value;
     if (result.exceptionDetails || state?.connected !== true) throw new BrowserError('STALE_TARGET', 'Checked target disappeared');
     const checked = checkedValue(state.checked);
-    if (checked === undefined) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Target has no supported checkbox state');
+    if (checked === undefined || state.nativeRadio === true && !radioBinding) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Target has no supported checked state');
     const node = await this.checkIdentity(lease, target, signal);
+    await this.checkRadioBinding(lease, objectId, radioBinding, signal);
     const ax = checkedValue(node.properties?.find(p => p.name === 'checked')?.value.value);
     // AX can lag a renderer update; wait for agreement, never infer a toggle from disagreement.
     return ax === checked ? { checked } : undefined;
   }
 
   private async checkedResult(lease: Lease, target: Target, objectId: string,
-    action: Extract<Action, { kind: 'check' }>, signal: AbortSignal, clock: ChangeClock): Promise<ProviderResult> {
-    await waitUntil(async () => (await this.readChecked(lease, target, objectId, signal))?.checked === action.checked ? true : undefined, { signal, clock });
+    action: Extract<Action, { kind: 'check' }>, signal: AbortSignal, clock: ChangeClock, radioBinding?: string): Promise<ProviderResult> {
+    await waitUntil(async () => (await this.readChecked(lease, target, objectId, signal, radioBinding))?.checked === action.checked ? true : undefined, { signal, clock });
     const result = await this.result(lease, action.expected, objectId, signal, clock);
-    if ((await this.readChecked(lease, target, objectId, signal))?.checked !== action.checked) {
+    if ((await this.readChecked(lease, target, objectId, signal, radioBinding))?.checked !== action.checked) {
       throw new BrowserError('STALE_TARGET', 'Checked state changed during result observation');
     }
     return { ...result, postcondition: 'passed' };
+  }
+
+  private async checkLabelBinding(lease: Lease, labelObject: string, inputObject: string, signal: AbortSignal): Promise<void> {
+    const result = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId: labelObject,
+      functionDeclaration: checkedLabelBindingFunction, arguments: [{ objectId: inputObject }], returnByValue: true }, signal);
+    if (result.exceptionDetails || result.result?.value !== true) {
+      throw new BrowserError('STALE_TARGET', 'Checked control label association or enabled state changed');
+    }
   }
 
   private async checkFocus(lease: Lease, objectId: string, signal: AbortSignal, editable = false): Promise<void> {
@@ -348,9 +368,13 @@ export class ChromiumProvider implements BrowserProvider {
       const value = raw as Dict;
       if (value.tab === lease.tab && value.leaseId === lease.id) clock.pulse();
     });
-    let objectId: string | undefined;
+    let objectId: string | undefined, labelObject: string | undefined, radioBinding: string | undefined;
     try {
       if (action.kind === 'scroll') return await this.scroll(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock);
+      if (action.kind === 'wheel') {
+        scrollDelta(action);
+        if (action.expected?.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Wheel cannot verify an input value');
+      }
       const down = action.kind === 'press' ? keyEvent(action.key, action.shift ?? false, 'keyDown') : undefined;
       if (action.kind === 'navigate') {
         if (originOf(action.url) !== lease.origin) throw new BrowserError('POLICY_DENIED', 'Navigation requires a lease for its exact origin');
@@ -364,28 +388,49 @@ export class ChromiumProvider implements BrowserProvider {
       }
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
-      if (!controlRoles.has(original.role)) throw new BrowserError('NOT_ACTIONABLE', 'Observation regions are not input targets');
+      if (!controlRoles.has(original.role) && !(action.kind === 'wheel' && regionRoles.has(original.role))) {
+        throw new BrowserError('NOT_ACTIONABLE', 'This observation region is not a target for the requested input');
+      }
       await this.checkIdentity(lease, original, signal);
       const current = this.pages.get(lease.tab)!.byRef.get(action.ref);
       if (!current || current.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Target identity changed');
-      if (action.kind === 'check' && (!['checkbox', 'switch'].includes(current.role) || typeof action.checked !== 'boolean' || action.expected?.kind === 'value')) {
-        throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Check requires a checkbox/switch and boolean desired state');
+      if (action.kind === 'check' && (!['checkbox', 'switch', 'radio'].includes(current.role) || typeof action.checked !== 'boolean'
+        || current.role === 'radio' && !action.checked || action.expected?.kind === 'value')) {
+        throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Check requires a checkbox/switch boolean state or native radio checked:true');
       }
       const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: current.backendId }, signal);
       objectId = resolved.object?.objectId;
       if (!objectId) throw new BrowserError('STALE_TARGET', 'Target was removed');
       const targetObject = objectId;
+      let pointerObject = targetObject;
       if (action.kind === 'check') {
-        const state = await waitUntil(() => this.readChecked(lease, current, targetObject, signal), { signal, clock });
-        if (state.checked === action.checked) return await this.checkedResult(lease, current, targetObject, action, signal, clock);
+        if (current.role === 'radio') {
+          const binding = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId: targetObject,
+            functionDeclaration: radioBindingFunction, returnByValue: false }, signal);
+          radioBinding = binding.result?.objectId;
+          if (binding.exceptionDetails || !radioBinding) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Only native input[type=radio] selection is supported');
+        }
+        const state = await waitUntil(() => this.readChecked(lease, current, targetObject, signal, radioBinding), { signal, clock });
+        if (state.checked === action.checked) return await this.checkedResult(lease, current, targetObject, action, signal, clock, radioBinding);
+        if (!(await this.geometry(lease, targetObject, signal)).ok) {
+          const label = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId: targetObject,
+            functionDeclaration: checkedLabelFunction, returnByValue: false }, signal);
+          labelObject = label.result?.objectId;
+          if (label.exceptionDetails) throw new BrowserError('STALE_TARGET', 'Checked control label resolution failed');
+          // A hidden/disabled label must not displace a usable offscreen input.
+          if (labelObject && (await this.geometry(lease, labelObject, signal)).eligible === true) pointerObject = labelObject;
+        }
       }
+      const delegatedLabel = pointerObject !== targetObject ? pointerObject : undefined;
       let previous: Dict | undefined, previousAt = 0, scrolled = false;
       const geometry = await waitUntil(async () => {
         await this.checkIdentity(lease, current, signal);
-        const next = await this.geometry(lease, targetObject, signal);
+        await this.checkRadioBinding(lease, targetObject, radioBinding, signal);
+        if (delegatedLabel) await this.checkLabelBinding(lease, delegatedLabel, targetObject, signal);
+        const next = await this.geometry(lease, pointerObject, signal);
         if (next.inViewport === false && !scrolled) {
           scrolled = true; execution.onDispatch();
-          await this.cdp(lease, 'DOM.scrollIntoViewIfNeeded', { backendNodeId: current.backendId }, signal);
+          await this.cdp(lease, 'DOM.scrollIntoViewIfNeeded', delegatedLabel ? { objectId: delegatedLabel } : { backendNodeId: current.backendId }, signal);
           previous = undefined; return undefined;
         }
         if (!next.ok) { previous = undefined; return undefined; }
@@ -397,7 +442,15 @@ export class ChromiumProvider implements BrowserProvider {
       }, { signal, clock, fallbackMs: 40 });
       // A final target check happens after waiting; similarly named replacements never inherit the ref.
       await this.checkIdentity(lease, current, signal);
-      if (action.kind === 'fill') {
+      if (action.kind === 'wheel') {
+        const finalPoint = await this.geometry(lease, pointerObject, signal, { x: geometry.x, y: geometry.y });
+        if (!finalPoint.ok || !sameGeometry(geometry, finalPoint)) {
+          throw new BrowserError('NOT_ACTIONABLE', 'Selected wheel point changed before input');
+        }
+        const event = wheelEvent({ x: geometry.x, y: geometry.y }, action);
+        execution.onDispatch();
+        await this.cdp(lease, 'Input.dispatchMouseEvent', event, signal);
+      } else if (action.kind === 'fill') {
         if (current.role !== 'textbox' || !['INPUT', 'TEXTAREA'].includes(geometry.tag) || geometry.readOnly || geometry.type === 'password') {
           throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This input type is not supported by the initial fill implementation');
         }
@@ -425,23 +478,27 @@ export class ChromiumProvider implements BrowserProvider {
         await this.cdp(lease, 'Input.dispatchKeyEvent', keyEvent(action.key, action.shift ?? false, 'keyUp'), signal);
       } else {
         const needsClick = action.kind !== 'check' ||
-          (await waitUntil(() => this.readChecked(lease, current, targetObject, signal), { signal, clock })).checked !== action.checked;
+          (await waitUntil(() => this.readChecked(lease, current, targetObject, signal, radioBinding), { signal, clock })).checked !== action.checked;
         if (needsClick) {
-          const finalPoint = await this.geometry(lease, objectId, signal, { x: geometry.x, y: geometry.y });
+          const finalPoint = await this.geometry(lease, pointerObject, signal, { x: geometry.x, y: geometry.y });
           if (!finalPoint.ok || !sameGeometry(geometry, finalPoint)) {
             throw new BrowserError('NOT_ACTIONABLE', 'Selected click point changed before input');
           }
+          if (delegatedLabel) await this.checkLabelBinding(lease, delegatedLabel, targetObject, signal);
+          await this.checkRadioBinding(lease, targetObject, radioBinding, signal);
           execution.onDispatch();
           await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
           execution.onDispatch();
           await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
         }
       }
-      if (action.kind === 'check') return await this.checkedResult(lease, current, targetObject, action, signal, clock);
+      if (action.kind === 'check') return await this.checkedResult(lease, current, targetObject, action, signal, clock, radioBinding);
       return await this.result(lease, action.expected ?? (action.kind === 'fill' ? { kind: 'value', value: action.text } : undefined), objectId, signal, clock);
     } finally {
       unsubscribe?.(); deadline.dispose();
       // Release is cleanup only; it must not hide the authoritative action outcome.
+      if (labelObject) await this.cdp(lease, 'Runtime.releaseObject', { objectId: labelObject }, AbortSignal.timeout(1000)).catch(() => {});
+      if (radioBinding) await this.cdp(lease, 'Runtime.releaseObject', { objectId: radioBinding }, AbortSignal.timeout(1000)).catch(() => {});
       if (objectId) await this.cdp(lease, 'Runtime.releaseObject', { objectId }, AbortSignal.timeout(1000)).catch(() => {});
     }
   }

@@ -120,6 +120,33 @@ test('real Unix socket handshake and cross-client lease ownership', async t => {
   await assert.rejects(client.call('cdp', { sessionId: 'same-id', method: 'Runtime.evaluate' }), e => e.code === 'INVALID_REQUEST');
 });
 
+test('Broker sends lease revocation only to its owning connection with the exact Session metadata', async t => {
+  const {directory,broker,client}=await environment(t);const provider=new FakeProvider();broker.runtime.register(provider);
+  const second=await connectBroker(directory);t.after(()=>second.close());
+  const own=[],foreign=[];client.onEvent((event,value)=>own.push({event,value}));second.onEvent((event,value)=>foreign.push({event,value}));
+  const lease=await client.call('browser.claim',{sessionId:'own-session',instanceId:'fake-1',tab:'tab-1'});
+  second.event('lease.revoked',{leaseId:lease.id});
+  second.event('browser.lease-revoked',{sessionId:'own-session',leaseId:lease.id});
+  await second.call('browser.instances',{});
+  assert.deepEqual(await client.call('browser.validateLease',{sessionId:'own-session',leaseId:lease.id}),{valid:true});
+  for(const [peer,sessionId] of [[client,'other-session'],[second,'own-session']])
+    await assert.rejects(peer.call('browser.validateLease',{sessionId,leaseId:lease.id}),{code:'LEASE_REVOKED'});
+  await broker.runtime.providerRevoked('foreign-provider',lease.id);assert.equal(own.length,0);
+  await broker.runtime.providerRevoked('fake-1',lease.id);await until(()=>own.length===1);
+  assert.deepEqual(own,[{event:'browser.lease-revoked',value:{sessionId:'own-session',leaseId:lease.id}}]);
+  // Ordered response on the foreign connection proves its preceding output was consumed.
+  await second.call('browser.instances',{});assert.deepEqual(foreign,[]);
+  await assert.rejects(client.call('browser.validateLease',{sessionId:'own-session',leaseId:lease.id}),{code:'LEASE_REVOKED'});
+});
+
+test('closed Broker client connections release their lease notification subscriptions', async t => {
+  const {directory,broker}=await environment(t);
+  for(let i=0;i<140;i++) {const peer=await connectBroker(directory);peer.close();}
+  await until(()=>broker.resourceUsage().connections===1);
+  const last=await connectBroker(directory);t.after(()=>last.close());
+  assert.deepEqual(await last.call('browser.instances',{}),[]);
+});
+
 test('broker denies unapproved origins before listing or claiming', async t => {
   const { broker, client } = await environment(t, []);
   broker.runtime.register(new FakeProvider());

@@ -80,7 +80,7 @@ export class FileActionJournal implements ActionJournal {
   private validate(v: any): void {
     const fields = ['v', 'key', 'hash', 'kind', 'at', 'expires', 'state', 'dispatch', ...(v?.state === 'settled' ? ['priorOutcome'] : [])];
     if (!v || typeof v !== 'object' || Object.keys(v).length !== fields.length || Object.keys(v).some(k => !fields.includes(k))
-      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !['click', 'fill', 'press', 'scroll', 'navigate', 'check'].includes(v.kind)
+      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !['click', 'fill', 'press', 'scroll', 'navigate', 'check', 'wheel'].includes(v.kind)
       || !Number.isSafeInteger(v.at) || v.at < 0 || !Number.isSafeInteger(v.expires) || v.expires <= v.at
       || !['reserved', 'settled'].includes(v.state) || !['notDispatched', 'dispatched'].includes(v.dispatch)
       || v.state === 'reserved' && v.dispatch !== 'dispatched'

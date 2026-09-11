@@ -9,6 +9,9 @@ import { findAXNodes } from '../dist/packages/provider-chromium/src/ax-query.js'
 import { verifyLargeObservation } from './verify-large-observation.mjs';
 import { verifySemanticQuery } from './verify-semantic-query.mjs';
 import { verifyChecked } from './verify-checked.mjs';
+import { verifyCheckLabels } from './verify-check-labels.mjs';
+import { verifyWheel } from './verify-wheel.mjs';
+import { verifyRadio } from './verify-radio.mjs';
 
 /** Run against our local fixture only. This checks live CDP semantics, NOT chrome.debugger/native setup. */
 export async function verifyLiveProvider(page) {
@@ -107,6 +110,12 @@ export async function verifyLiveProvider(page) {
       act: (id, action) => run(id, delayed.observation, action) });
     const checkedChecks = await verifyChecked({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
       act: (id, action, options) => run(id, delayed.observation, action, options) });
+    const labelChecks = await verifyCheckLabels({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
+    const radioChecks = await verifyRadio({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
+    const wheelChecks = await verifyWheel({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
     const scrollChecks = await verifyScroll({ page,
       observe: () => runtime.observe('live-fixture', lease.id, signal),
       act: (id, action) => run(id, delayed.observation, action) });
@@ -146,7 +155,7 @@ export async function verifyLiveProvider(page) {
     return { passed: ['Chinese AX discovery', 'Scoped AX source query, boundaries and measured response bytes', 'Input.insertText', 'Verified fill', 'Verified click', 'Visible reading text',
       'Empty fill with Backspace', 'Temporary overlay wait', 'Delayed text postcondition without click replay',
       'Cancel covered target before input', 'Offscreen target auto-scroll', 'Cross-origin navigation denied',
-      'Same-origin document navigation', 'Old-document reference rejected', 'JPEG viewport capture', 'Lease release', ...keyboardChecks, ...checkedChecks, ...scrollChecks, ...hitChecks, ...large.passed, ...queryChecks],
+      'Same-origin document navigation', 'Old-document reference rejected', 'JPEG viewport capture', 'Lease release', ...keyboardChecks, ...checkedChecks, ...labelChecks, ...radioChecks, ...wheelChecks, ...scrollChecks, ...hitChecks, ...large.passed, ...queryChecks],
       observationNodes: o.nodes.length, axMetrics, largePage: large.metrics, screenshotBytes: Buffer.from(image.data, 'base64').length, viewport: image.viewport };
   } finally { await runtime.dispose(); await session.detach(); }
 }

@@ -65,11 +65,12 @@ export function actionRequest(value: unknown): ActionRequest {
     }
     action = { kind: 'press', ref: string(a.ref), key: a.key as BrowserKey, shift: a.shift === true };
   }
-  else if (a.kind === 'scroll') {
+  else if (a.kind === 'scroll' || a.kind === 'wheel') {
     if (Object.keys(a).some(key => !['kind', 'ref', 'deltaX', 'deltaY', 'expected'].includes(key))) {
       throw new BrowserError('INVALID_REQUEST', 'Unsupported scroll parameter');
     }
-    action = { kind: 'scroll', ...scrollDelta(a), ...(a.ref === undefined ? {} : { ref: string(a.ref) }) };
+    action = a.kind === 'wheel' ? { kind: 'wheel', ref: string(a.ref), ...scrollDelta(a) }
+      : { kind: 'scroll', ...scrollDelta(a), ...(a.ref === undefined ? {} : { ref: string(a.ref) }) };
   }
   else if (a.kind === 'navigate') action = { kind: 'navigate', url: string(a.url, 8192) };
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
@@ -79,7 +80,7 @@ export function actionRequest(value: unknown): ActionRequest {
     else if (e.kind === 'url') action.expected = { kind: 'url', url: string(e.url, 8192) };
     else if (e.kind === 'text') action.expected = { kind: 'text', text: string(e.text, 2000) };
     else throw new BrowserError('INVALID_REQUEST', 'Unsupported postcondition');
-    if (action.kind === 'scroll' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll cannot verify an input value');
+    if ((action.kind === 'scroll' || action.kind === 'wheel') && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll/wheel cannot verify an input value');
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),

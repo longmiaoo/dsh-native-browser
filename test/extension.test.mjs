@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { keyEvent } from '../dist/packages/provider-chromium/src/keyboard.js';
+import { wheelEvent } from '../dist/packages/provider-chromium/src/mouse.js';
 import { brokerCapabilities } from '../dist/packages/contracts/src/wire.js';
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
@@ -204,6 +205,18 @@ test('keyboard gate permits canonical page keys and blocks shortcuts, extra comm
   await f.ui('stop');
   assert.equal((await send(keyEvent('Enter', false, 'keyDown'))).code, 'LEASE_REVOKED');
   assert.equal(f.commands.filter(c => c.method === 'Input.dispatchKeyEvent').length, 2);
+});
+
+test('mouse gate accepts one canonical wheel sample but rejects modifiers and blocks delivery after Stop', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  const send=params=>f.call('cdp',{lease:f.lease,method:'Input.dispatchMouseEvent',params});
+  const event=wheelEvent({x:20,y:30},{deltaX:-50,deltaY:120});
+  for(const patch of [{modifiers:2},{deltaY:10001},{buttons:1},{type:'mouseMoved'},{deltaX:0,deltaY:0}]) {
+    assert.equal((await send({...event,...patch})).code,'POLICY_DENIED');
+  }
+  assert.equal((await send(event)).ok,true);
+  await f.ui('stop'); assert.equal((await send(event)).code,'LEASE_REVOKED');
+  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);
 });
 
 test('scroll document discovery only permits a shallow non-piercing root handle', async () => {

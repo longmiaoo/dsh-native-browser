@@ -1,9 +1,9 @@
 import { BrowserError, errorCodes, type ErrorCode } from './index.js';
 
 export const wireVersion = 1;
-export const providerCapabilities = ['lease.fencing.v1', 'ax.read.v1', 'ax.find.v1', 'input.named-keys.v1', 'scroll.dom.v1', 'ax.checked-state.v1'] as const;
-export const brokerCapabilities = ['runtime.v1', 'observe.query.v1', 'journal.recovery.v1', 'provider.ax-read.v1', 'provider.ax-find.v1', 'runtime.check.v1'] as const;
-export const clientRequirements = ['runtime.v1', 'observe.query.v1', 'journal.recovery.v1', 'runtime.check.v1'] as const;
+export const providerCapabilities = ['lease.fencing.v1', 'ax.read.v1', 'ax.find.v1', 'input.named-keys.v1', 'scroll.dom.v1', 'ax.checked-state.v1', 'input.wheel.v1', 'input.radio.v1'] as const;
+export const brokerCapabilities = ['runtime.v1', 'observe.query.v1', 'journal.recovery.v1', 'provider.ax-read.v1', 'provider.ax-find.v1', 'runtime.check.v1', 'runtime.wheel.v1', 'runtime.radio.v1', 'runtime.capture-publication.v1'] as const;
+export const clientRequirements = ['runtime.v1', 'observe.query.v1', 'journal.recovery.v1', 'runtime.check.v1', 'runtime.wheel.v1', 'runtime.radio.v1', 'runtime.capture-publication.v1'] as const;
 export const providerRequirements = ['runtime.v1', 'provider.ax-read.v1', 'provider.ax-find.v1'] as const;
 export type WireMessage =
   | { type: 'request'; id: string; method: string; params: Record<string, unknown> }

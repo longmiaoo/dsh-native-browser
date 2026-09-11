@@ -18,6 +18,7 @@ type Entry = {
 };
 type JournalEntry = { hash: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
 type Claim = { owner: string; scope: string; instanceId: string; controller: AbortController };
+type LeaseRevocation = Readonly<{ owner: string; scope: string; leaseId: string }>;
 const defaultLimits = { leaseMs: 120_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
   providers: 16, leases: 64, claims: 32, resultEntries: 128, resultBytes: 8 * 1024 * 1024, resultMs: 120_000 };
 type RuntimeLimits = typeof defaultLimits;
@@ -41,6 +42,7 @@ export class BrowserRuntime {
   private readonly results: ActionResultCache;
   private readonly inFlight = new Set<Promise<ActionResult>>();
   private readonly claims = new Set<Claim>();
+  private readonly revocationListeners = new Set<(event: LeaseRevocation) => void>();
   private readonly limits: Readonly<RuntimeLimits>;
   private closed = false;
 
@@ -55,6 +57,14 @@ export class BrowserRuntime {
 
   resourceUsage() { return { providers: this.providers.size, leases: this.leases.size, claims: this.claims.size }; }
   journalUsage() { return { identities: this.journal.size, pending: this.inFlight.size, results: this.results.usage() }; }
+
+  /** Metadata-only notification after authority is removed, before provider cleanup can wait. */
+  onLeaseRevoked(listener: (event: LeaseRevocation) => void): () => void {
+    if (this.closed) throw new BrowserError('CONNECTION_LOST', 'Runtime closed');
+    if (this.revocationListeners.size >= 128) throw new BrowserError('QUEUE_FULL', 'Lease listener limit reached');
+    this.revocationListeners.add(listener);
+    return () => { this.revocationListeners.delete(listener); };
+  }
 
   register(provider: BrowserProvider): void {
     if (this.closed || this.providers.has(provider.instance.id)) {
@@ -201,6 +211,16 @@ export class BrowserRuntime {
     });
   }
 
+  /** Recheck current read authority after an out-of-process image storage step.
+   * No screenshot, page content, queue reservation or renewed lease is returned.
+   */
+  async validateLease(owner: string, leaseId: string, signal: AbortSignal): Promise<{ valid: true }> {
+    const entry = this.entry(owner, leaseId);
+    const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
+    await this.authorized(entry, 'observe', linked);
+    return { valid: true };
+  }
+
   act(owner: string, request: ActionRequest, signal: AbortSignal, recoveryScope = owner): Promise<ActionResult> {
     checkAbort(signal);
     if (this.closed) throw new BrowserError('CONNECTION_LOST', 'Runtime is closed');
@@ -333,6 +353,10 @@ export class BrowserRuntime {
     this.tabs.delete(JSON.stringify([entry.lease.instanceId, entry.lease.tab]));
     clearTimeout(entry.timer);
     entry.controller.abort(new BrowserError('LEASE_REVOKED', 'Control was released'));
+    const event = Object.freeze({ owner: entry.lease.owner, scope: entry.scope, leaseId });
+    for (const listener of this.revocationListeners) {
+      try { listener(event); } catch { /* A delivery failure cannot retain browser authority. */ }
+    }
     await entry.provider.revoke(entry.lease);
     await entry.tail;
   }
@@ -377,5 +401,6 @@ export class BrowserRuntime {
     this.results.clear(); this.journal.clear();
     this.providers.clear();
     this.observations.clear();
+    this.revocationListeners.clear();
   }
 }

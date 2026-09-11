@@ -3,6 +3,7 @@ import test from 'node:test';
 import { ChromiumProvider } from '../dist/packages/provider-chromium/src/provider.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
+import { radioBindingFunction, radioBindingCheckFunction } from '../dist/packages/provider-chromium/src/checked.js';
 const instance = { id: 'chromium-test', family: 'chromium', brand: 'chrome', version: 'test', profileLabel: 'test', capabilities: { ax: true } };
 const lease = { id: 'lease', owner: 'owner', tab: 'tab', instanceId: instance.id, token: 'token', origin: 'https://example.test', expiresAt: Date.now() + 100000 };
 function fixture() {
@@ -30,6 +31,11 @@ function fixture() {
         ...(state.checked === undefined ? [] : [{ name: 'checked', value: { value: state.axChecked ?? state.checked } }])] },
       ...state.text.map(text => ({ role: { value: 'StaticText' }, name: { value: text } }))] };
     if (cdp === 'DOM.resolveNode') return { object: { objectId: 'object-17' } };
+    if (cdp === 'Runtime.callFunctionOn' && p.functionDeclaration === radioBindingFunction) return {result:state.customRadio?{value:null}:{objectId:'radio-binding-17'}};
+    if (cdp === 'Runtime.callFunctionOn' && p.functionDeclaration === radioBindingCheckFunction) {
+      assert.deepEqual(p.arguments,[{objectId:'radio-binding-17'}]);
+      return {result:{value:!state.radioChanged}};
+    }
     if (cdp === 'Runtime.callFunctionOn' && p.functionDeclaration.includes('aria-checked')) {
       return { result: { value: { connected: state.connected, checked: state.checked } } };
     }
@@ -51,6 +57,103 @@ function fixture() {
 }
 
 const request = (o, action, timeoutMs = 1000) => ({ requestId: 'request', leaseId: lease.id, documentEpoch: o.documentEpoch, action, timeoutMs });
+
+test('native radio selection clicks once, no-ops when selected and releases action binding', async () => {
+  const f=fixture(); f.state.role='radio'; f.state.checked=false; const released=[];
+  f.state.onCommand=(method,p)=>{if(method==='Runtime.releaseObject') released.push(p.objectId);};
+  const o=await f.provider.observe(lease,f.execution.signal), action={kind:'check',ref:o.nodes[0].id,checked:true};
+  assert.equal((await f.provider.act(lease,request(o,action),f.execution)).postcondition,'passed');
+  assert.equal(f.state.checked,true); assert.equal(f.state.dispatches,2);
+  assert.equal((await f.provider.act(lease,request(o,action),f.execution)).postcondition,'passed');
+  assert.equal(f.state.dispatches,2);
+  assert.deepEqual(released,['radio-binding-17','object-17','radio-binding-17','object-17']);
+});
+
+test('radio deselection and custom radio are refused before input including already-desired cases', async () => {
+  for(const checked of [true,false]) for(const customRadio of [true,false]) {
+    const f=fixture(); Object.assign(f.state,{role:'radio',checked,customRadio});
+    const o=await f.provider.observe(lease,f.execution.signal);
+    const action={kind:'check',ref:o.nodes[0].id,checked:customRadio?true:false};
+    await assert.rejects(f.provider.act(lease,request(o,action),f.execution),{code:'UNSUPPORTED_CAPABILITY'});
+    assert.equal(f.state.dispatches,0);
+  }
+});
+
+test('radio group changes during final hit testing fail before input and release binding', async () => {
+  const f=fixture(); f.state.role='radio'; f.state.checked=false; const released=[];
+  f.state.onCommand=(method,p)=>{
+    if(method==='Runtime.releaseObject') released.push(p.objectId);
+    if(method==='Runtime.callFunctionOn'&&p.functionDeclaration.includes('getClientRects')&&p.arguments) f.state.radioChanged=true;
+  };
+  const o=await f.provider.observe(lease,f.execution.signal);
+  await assert.rejects(f.provider.act(lease,request(o,{kind:'check',ref:o.nodes[0].id,checked:true}),f.execution),{code:'STALE_TARGET'});
+  assert.equal(f.state.dispatches,0); assert.deepEqual(released,['radio-binding-17','object-17']);
+});
+
+test('radio post-click binding change cannot be reported as verified selection', async () => {
+  const f=fixture(); f.state.role='radio'; f.state.checked=false;
+  f.state.onCommand=(method,p)=>{if(method==='Input.dispatchMouseEvent'&&p.type==='mouseReleased') f.state.radioChanged=true;};
+  const o=await f.provider.observe(lease,f.execution.signal);
+  await assert.rejects(f.provider.act(lease,request(o,{kind:'check',ref:o.nodes[0].id,checked:true}),f.execution),{code:'STALE_TARGET'});
+  assert.equal(f.state.checked,true); assert.equal(f.state.dispatches,2);
+});
+
+test('check uses and releases an exact label surface while observing the original input', async () => {
+  const f = fixture(); f.state.role='checkbox'; f.state.checked=false;
+  const released=[], geometryObjects=[], scrolls=[]; let inViewport=false;
+  f.state.onCommand = (method,p) => {
+    if (method==='Runtime.releaseObject') released.push(p.objectId);
+    if (method==='DOM.scrollIntoViewIfNeeded') {scrolls.push(p); inViewport=true; return {};}
+    if (method!=='Runtime.callFunctionOn') return;
+    if (p.returnByValue===false) return {result:{objectId:'label-17'}};
+    if (p.functionDeclaration.includes('this.control===input')) {
+      assert.equal(p.objectId,'label-17'); assert.deepEqual(p.arguments,[{objectId:'object-17'}]);
+      return {result:{value:true}};
+    }
+    if (p.functionDeclaration.includes('getClientRects')) {
+      geometryObjects.push(p.objectId);
+      return {result:{value:{ok:p.objectId==='label-17'&&inViewport,eligible:true,connected:true,inViewport,
+        x:50,y:50,left:0,top:30,width:100,height:40,tag:p.objectId==='label-17'?'LABEL':'INPUT'}}};
+    }
+  };
+  const o=await f.provider.observe(lease,f.execution.signal);
+  const result=await f.provider.act(lease,request(o,{kind:'check',ref:o.nodes[0].id,checked:true}),f.execution);
+  assert.equal(result.postcondition,'passed'); assert.equal(result.observation.nodes[0].checked,true);
+  assert.deepEqual(scrolls,[{objectId:'label-17'}]);
+  assert.equal(geometryObjects[0],'object-17'); assert.ok(geometryObjects.slice(1).every(id=>id==='label-17'));
+  assert.deepEqual(released,['label-17','object-17']);
+});
+
+test('label reassociation in the final point check fails before input and releases both objects', async () => {
+  const f=fixture(); f.state.role='checkbox'; f.state.checked=false;
+  const released=[]; let valid=true;
+  f.state.onCommand=(method,p)=>{
+    if(method==='Runtime.releaseObject') released.push(p.objectId);
+    if(method!=='Runtime.callFunctionOn') return;
+    if(p.returnByValue===false) return {result:{objectId:'label-17'}};
+    if(p.functionDeclaration.includes('this.control===input')) return {result:{value:valid}};
+    if(p.functionDeclaration.includes('getClientRects')) {
+      if(p.arguments) valid=false;
+      return {result:{value:{ok:p.objectId==='label-17',eligible:true,connected:true,inViewport:true,x:50,y:50,left:0,top:30,width:100,height:40}}};
+    }
+  };
+  const o=await f.provider.observe(lease,f.execution.signal);
+  await assert.rejects(f.provider.act(lease,request(o,{kind:'check',ref:o.nodes[0].id,checked:true}),f.execution),{code:'STALE_TARGET'});
+  assert.equal(f.state.dispatches,0); assert.deepEqual(released,['label-17','object-17']);
+});
+
+test('no-op check and ordinary click never resolve alternate label surfaces', async () => {
+  for(const kind of ['check','click']) {
+    const f=fixture(); f.state.role='checkbox'; f.state.checked=true; f.state.covered=true;
+    f.state.onCommand=(method,p)=>{if(method==='Runtime.callFunctionOn') assert.notEqual(p.returnByValue,false);};
+    const o=await f.provider.observe(lease,f.execution.signal);
+    const action=kind==='check'?{kind,ref:o.nodes[0].id,checked:true}:{kind,ref:o.nodes[0].id};
+    const run=f.provider.act(lease,request(o,action,60),f.execution);
+    if(kind==='check') assert.equal((await run).postcondition,'passed');
+    else await assert.rejects(run,{code:'DEADLINE_EXCEEDED'});
+    assert.equal(f.state.dispatches,0);
+  }
+});
 
 test('check observes state, clicks only for a change and verifies the requested boolean', async () => {
   const f = fixture(); f.state.role = 'checkbox'; f.state.checked = false;

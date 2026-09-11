@@ -24,6 +24,47 @@ test('core accepts a non-Chromium provider and completes a verified action', asy
   assert.equal(provider.nodes[0].value, 'Alice');
 });
 
+test('lease validation rechecks current owner/origin/policy without reading pixels or renewing authority', async t => {
+  let allowed=true;const {runtime,provider,lease}=await fixture(t,async()=>allowed);
+  let reads=0;provider.observe=provider.capture=async()=>{reads++;throw new Error('Authority validation must not read content');};
+  assert.deepEqual(await runtime.validateLease('session-a',lease.id,signal()),{valid:true});
+  assert.equal(reads,0);
+  await assert.rejects(runtime.validateLease('other',lease.id,signal()),{code:'LEASE_REVOKED'});
+  allowed=false;await assert.rejects(runtime.validateLease('session-a',lease.id,signal()),{code:'POLICY_DENIED'});
+  allowed=true;provider.tab.url='https://elsewhere.test/';
+  await assert.rejects(runtime.validateLease('session-a',lease.id,signal()),{code:'POLICY_DENIED'});
+  await runtime.release('session-a',lease.id);
+  await assert.rejects(runtime.validateLease('session-a',lease.id,signal()),{code:'LEASE_REVOKED'});
+});
+
+test('revocation during an asynchronous authority check cannot return valid', async t => {
+  let pending,entered,hold=false;const started=new Promise(resolve=>{entered=resolve;});
+  const {runtime,lease}=await fixture(t,async()=>{if(hold){entered();await new Promise(resolve=>{pending=resolve;});}return true;});
+  hold=true;const checking=runtime.validateLease('session-a',lease.id,signal());
+  await started;await runtime.release('session-a',lease.id);pending();
+  await assert.rejects(checking,{code:'LEASE_REVOKED'});
+});
+
+test('lease events are immutable, metadata-only and emitted once before blocked provider cleanup', async t => {
+  const {runtime,provider,lease}=await fixture(t);const events=[];
+  runtime.onLeaseRevoked(()=>{throw new Error('Broken delivery');});
+  const unsubscribe=runtime.onLeaseRevoked(event=>{assert.ok(Object.isFrozen(event));events.push(event);});
+  let finish;provider.revoke=()=>new Promise(resolve=>{finish=resolve;});
+  const releasing=runtime.release('session-a',lease.id);
+  assert.deepEqual(events,[{owner:'session-a',scope:'session-a',leaseId:lease.id}]);
+  await assert.rejects(runtime.validateLease('session-a',lease.id,signal()),{code:'LEASE_REVOKED'});
+  await runtime.release('session-a',lease.id);assert.equal(events.length,1);
+  finish();await releasing;unsubscribe();
+});
+
+test('lease listeners have bounded admission and disposal releases their slots', async t => {
+  const {runtime}=await fixture(t);const removers=Array.from({length:128},()=>runtime.onLeaseRevoked(()=>{}));
+  assert.throws(()=>runtime.onLeaseRevoked(()=>{}),{code:'QUEUE_FULL'});
+  removers[0]();const remove=runtime.onLeaseRevoked(()=>{});remove();
+  for(const dispose of removers)dispose();await runtime.dispose();
+  assert.throws(()=>runtime.onLeaseRevoked(()=>{}),{code:'CONNECTION_LOST'});
+});
+
 test('simultaneous claims reserve the tab before the asynchronous grant', async t => {
   const runtime = new BrowserRuntime(async () => true);
   const provider = new FakeProvider();

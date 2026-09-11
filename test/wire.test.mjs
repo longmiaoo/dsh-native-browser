@@ -86,6 +86,10 @@ test('capability negotiation rejects unsupported requirements, tolerates optiona
     assert.throws(() => negotiateHello(value), { code: 'PROTOCOL_MISMATCH' });
   }
   assert.equal(acceptWelcome(welcome, clientRequirements), welcome);
+  for (const missing of clientRequirements) {
+    assert.throws(() => acceptWelcome({ ...welcome, capabilities: brokerCapabilities.filter(c => c !== missing) }, clientRequirements),
+      { code: 'PROTOCOL_MISMATCH' }, `Missing required Broker capability ${missing}`);
+  }
   for (const value of [{ ...welcome, version: 2 }, { ...welcome, capabilities: [] }, { version: 1 }]) {
     assert.throws(() => acceptWelcome(value, clientRequirements), { code: 'PROTOCOL_MISMATCH' });
   }

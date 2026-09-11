@@ -3,7 +3,7 @@ export const errorCodes = ['INVALID_REQUEST', 'POLICY_DENIED', 'LEASE_BUSY', 'LE
   'USER_STOPPED', 'CANCELLED', 'DEADLINE_EXCEEDED', 'QUEUE_FULL', 'CONNECTION_LOST', 'PROTOCOL_MISMATCH',
   'STALE_TARGET', 'AMBIGUOUS_TARGET', 'NOT_ACTIONABLE', 'UNSUPPORTED_CAPABILITY', 'NAVIGATION_FAILED',
   'VISION_UNAVAILABLE', 'REQUEST_ID_CONFLICT', 'JOURNAL_FULL', 'JOURNAL_UNAVAILABLE', 'RECOVERY_REQUIRED',
-  'BROKER_BUSY', 'BROKER_STATE_UNSAFE', 'INTERNAL_ERROR'] as const;
+  'BROKER_BUSY', 'BROKER_STATE_UNSAFE', 'INSTALLATION_BUSY', 'INSTALLATION_FAILED', 'INTERNAL_ERROR'] as const;
 export type ErrorCode = typeof errorCodes[number];
 
 export class BrowserError extends Error {
@@ -111,6 +111,7 @@ export type Action =
   | { kind: 'fill'; ref: string; text: string; expected?: Expected }
   | { kind: 'press'; ref: string; key: BrowserKey; shift?: boolean; expected?: Expected }
   | { kind: 'scroll'; ref?: string; deltaX: number; deltaY: number; expected?: Expected }
+  | { kind: 'wheel'; ref: string; deltaX: number; deltaY: number; expected?: Expected }
   | { kind: 'navigate'; url: string; expected?: Expected };
 export interface ActionRequest {
   requestId: string;

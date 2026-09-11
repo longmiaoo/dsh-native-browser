@@ -41,7 +41,7 @@ Client hello payload (placeholder token):
 {
   "bootstrap":1,"versions":[1],"role":"client","token":"<private IPC token>",
   "journalKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1"]
+  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1"]
 }
 ```
 
@@ -50,7 +50,7 @@ Provider hello payload before token injection:
 ```json
 {
   "bootstrap":1,"versions":[1],"role":"provider",
-  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1"],
+  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1"],
   "requiredCapabilities":["runtime.v1","provider.ax-read.v1","provider.ax-find.v1"],
   "instance":{"id":"opaque-instance","family":"chromium","brand":"chrome","version":"browser user agent","profileLabel":"User-authorized profile"}
 }
@@ -61,13 +61,13 @@ Welcome payload:
 ```json
 {
   "version":1,"connectionEpoch":"opaque-new-connection",
-  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1"]
+  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1"]
 }
 ```
 
 The Broker authenticates first, then validates and negotiates before registering a provider or accepting runtime commands. Only wire version 1 is implemented: an offer must include it. Bootstrap is separately fixed at 1. Version lists can advertise other majors without implying their implementation. Lists permit at most eight unique positive version integers and 64 unique capability names.
 
-Both roles may declare `requiredCapabilities`; the Broker must support every requested capability. This Broker additionally requires all six provider capabilities above. Old providers lacking bounded AX reads/search or fencing fail before registration. Unknown optional advertisements are tolerated; unknown requirements fail with `PROTOCOL_MISMATCH`. Current clients and extensions validate the welcome before use. Missing requirements are not silently downgraded to a less safe action path.
+Both roles may declare `requiredCapabilities`; the Broker must support every requested capability. This Broker additionally requires all provider capabilities above. Old providers lacking bounded AX reads/search or fencing fail before registration. Unknown optional advertisements are tolerated; unknown requirements fail with `PROTOCOL_MISMATCH`. Current clients and extensions validate the welcome before use. Missing requirements are not silently downgraded to a less safe action path.
 
 A legacy client may omit requirements and `journalKey`; it then has only connection-local recovery isolation. Current clients send both. Schema-valid hello rejection returns a code; the Broker permits another hello only within its original three-second handshake window, with no runtime access after a failed hello. The extension closes on rejection, malformed welcome or its three-second welcome timeout, and accepts no operation before welcome. Reconnection requires explicit popup intent.
 
@@ -78,11 +78,15 @@ A legacy client may omit requirements and `journalKey`; it then has only connect
 | Client → Broker | `browser.instances` | Authenticated client |
 | Client → Broker | `browser.tabs`, `browser.claim` | Connection-bound session, instance/tab identity, origin policy and popup approval |
 | Client → Broker | `browser.observe`, `browser.capture`, `browser.act` | Owning session and live lease; actions additionally carry request ID and document epoch |
+| Client → Broker | `browser.validateLease` | Owning session/live lease, current tab/origin and read policy; returns only `{valid:true}`, never renews a lease or reads page content |
 | Client → Broker | `browser.release`, `browser.releaseSession` | Calling connection's owner scope |
+| Broker → Client event | `browser.lease-revoked` | Exact `{sessionId,leaseId}` on the owning connection only; no token, tab, origin or page data; advisory early cancellation, not an authority grant |
 | Broker → extension | `tabs.list`, `lease.grant`, `lease.revoke` | Current instance, approved tab/origin and fencing token |
 | Broker → extension | `ax.read`, `ax.find`, `cdp` | Live lease/Stop gate; fixed AX requests or allowlisted CDP methods/parameter checks |
 
 Providers cannot invoke client runtime methods. The Native Host relays messages; it is not a second runtime. Internal `cdp` is not a public DSH tool or arbitrary model-selected CDP interface. Public tools are documented in [development.md](development.md).
+
+`runtime.capture-publication.v1` is required by current clients. A pending screenshot binds to its original Broker connection, owning turn and lease. Handoff cancels it locally; Broker events cancel it after remote Stop/release, and connection loss cannot silently reconnect the pending image. After Host canonicalization, the client calls `browser.validateLease` on that same connection before returning the result. Events may be delayed, so they are not the sole publication check. This rechecks authority, not document/geometry freshness or the Host's later result-publication pipeline. Existing historical Host images are not retracted.
 
 ## Identity, cancellation and replay
 

@@ -10,6 +10,8 @@ import { chromium } from 'playwright-core';
 import * as plugin from '../index.js';
 import { startIsolatedBroker } from './isolated-broker.mjs';
 import { installHost } from '../dist/packages/installer/src/install.js';
+import { uninstallHost } from '../dist/packages/installer/src/uninstall.js';
+import { providerCapabilities, providerRequirements } from '../dist/packages/contracts/src/wire.js';
 import { diagnose } from '../dist/packages/installer/src/doctor.js';
 import { applyObservationUpdate } from 'dsh-native-browser/observations';
 import { verifyKeyboard } from './verify-keyboard.mjs';
@@ -18,6 +20,10 @@ import { verifyActionability } from './verify-actionability.mjs';
 import { verifyLargeObservation } from './verify-large-observation.mjs';
 import { verifySemanticQuery } from './verify-semantic-query.mjs';
 import { verifyChecked } from './verify-checked.mjs';
+import { verifyCheckLabels } from './verify-check-labels.mjs';
+import { verifyWheel } from './verify-wheel.mjs';
+import { verifyRadio } from './verify-radio.mjs';
+import { verifyScreenshotPublication } from './verify-screenshot-publication.mjs';
 
 // Full local transport: DSH tools -> Unix socket -> Broker -> Native Host stdio
 // -> Chrome nativeMessaging -> production MV3 debugger -> loopback fixture.
@@ -60,10 +66,19 @@ try {
       `--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`] });
   const worker = browserContext.serviceWorkers()[0] ?? await browserContext.waitForEvent('serviceworker', { timeout: 10000 });
   const extensionId = new URL(worker.url()).hostname;
-  const installed = await installHost({ directory, extensionId, brand: 'chrome',
+  const installOptions = { directory, extensionId, brand: 'chrome',
     cliPath: path.resolve(import.meta.dirname, '../bin/dsh-native-browser.mjs'),
-    manifestDir: path.join(profile, 'NativeMessagingHosts') });
+    manifestDir: path.join(profile, 'NativeMessagingHosts') };
+  const installed = await installHost(installOptions);
   assert.ok(installed.manifest.startsWith(profile + path.sep));
+  const installFiles = [installed.manifest, installed.launcher, path.join(directory, 'native-host.json'), path.join(directory, 'auth-token')];
+  const beforeInstall = await Promise.all(installFiles.map(async file => ({ bytes: await readFile(file), stat: await lstat(file, { bigint: true }) })));
+  assert.deepEqual(await installHost(installOptions), installed);
+  for (let i=0;i<installFiles.length;i++) {
+    assert.ok((await readFile(installFiles[i])).equals(beforeInstall[i].bytes));
+    assert.equal((await lstat(installFiles[i], { bigint: true })).ino, beforeInstall[i].stat.ino);
+  }
+  passed.push('Repeated production host installation preserves registration files and runtime identity while Broker is live');
   const page = browserContext.pages()[0]; await page.goto(`${origin}/`);
   const browserCDP = await browserContext.browser().newBrowserCDPSession();
   const { targetInfos } = await browserCDP.send('Target.getTargets', { filter: [{ type: 'tab' }] });
@@ -166,6 +181,9 @@ try {
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
   passed.push(...await verifyKeyboard({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyChecked({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyCheckLabels({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyRadio({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyWheel({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyScroll({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyActionability({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   const large = await verifyLargeObservation({ page,
@@ -235,6 +253,9 @@ try {
   assert.equal(afterStop.resyncReason, 'cursor-unavailable');
   assert.notEqual(afterStop.nodes.find(n => n.name === '搜索词').id, field.id);
   passed.push('Stop and reclaim invalidate old cursors and element references across the real native stack');
+  const publication=await verifyScreenshotPublication({attachments:ctx.attachments,call,value,popupCommand,eventually,
+    lease,instanceId:instance.id,tabId:tab.id});
+  lease=publication.lease;passed.push(...publication.passed);
   ctx.emit('session/event', session, { type: 'turn/end' });
   await eventually(async () => (await call('browser_observe', { leaseId: lease.id })).isError, 'turn-end lease release');
   passed.push('Canonical DSH turn/end event releases native tab control');
@@ -303,6 +324,27 @@ try {
   assert.deepEqual(pageContent(afterNavigation), pageContent(navigation.observation));
   await value('browser_handoff', { leaseId: lease.id });
   passed.push('Real document navigation returns a full resync instead of a cross-document delta');
+
+  // A control-free native hello probe: Chrome performs fresh host discovery and
+  // launches the real stdio bridge. No page reads, lease grant or input is requested.
+  const probeNativeRegistration = () => worker.evaluate(({ capabilities, requiredCapabilities }) => new Promise(resolve => {
+    const timer=setTimeout(()=>resolve({error:'Native registration probe timed out'}),5000);
+    chrome.runtime.sendNativeMessage('com.longmiaoo.dsh_native_browser', {
+      type:'request',id:'registration-probe',method:'hello',params:{bootstrap:1,versions:[1],role:'provider',capabilities,requiredCapabilities,
+        instance:{id:crypto.randomUUID(),family:'chromium',brand:'chrome',version:'registration-probe',profileLabel:'isolated probe'}},
+    }, response=>{clearTimeout(timer); const error=chrome.runtime.lastError?.message; resolve(error?{error}:{response});});
+  }), {capabilities:[...providerCapabilities],requiredCapabilities:[...providerRequirements]});
+  assert.equal((await probeNativeRegistration()).response?.ok,true);
+  const oldManifest=await readFile(installed.manifest);
+  const removed=await uninstallHost(installOptions);
+  assert.equal(removed.manifestRemoved,true);assert.equal(removed.runningConnectionsStopped,false);
+  assert.ok((await readFile(removed.backup)).equals(oldManifest));
+  assert.match((await probeNativeRegistration()).error,/Specified native messaging host not found/);
+  assert.ok((await value('browser_list',{})).some(i=>i.id===reconnected.id));
+  passed.push('Unregistering the isolated host blocks fresh Chrome native messaging, preserves backup and does not claim to stop existing connections');
+  await installHost(installOptions);
+  assert.equal((await probeNativeRegistration()).response?.ok,true);
+  passed.push('Explicit reinstall restores fresh Chrome-started host handshake after unregistration');
 
   const host = JSON.parse(await readFile(path.join(hostRoot, 'package.json'), 'utf8'));
   const imageExtension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[screenshot.value.attachment.mediaType];

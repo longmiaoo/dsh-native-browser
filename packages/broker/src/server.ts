@@ -21,7 +21,7 @@ function instanceOf(raw: unknown): BrowserInstance {
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
   return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
     profileLabel: string(v.profileLabel), capabilities: { ax: true, axSubtree: true, dom: true, screenshot: true,
-      keyboard: true, keyboardShortcuts: false, domScroll: true, setChecked: true, oopif: false } };
+      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, oopif: false } };
 }
 
 type BrokerOptions = { directory: string; allowedOrigins: string[]; maxConnections?: number };
@@ -56,8 +56,10 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
     let role: 'client' | 'provider' | undefined;
     let instanceId: string | undefined;
     let negotiating = false;
+    let unsubscribeRevocations: (() => void) | undefined;
     const helloTimer = setTimeout(() => peer.close(), 3000); helloTimer.unref();
     peer.onCloseEvent(() => {
+      unsubscribeRevocations?.();
       clearTimeout(helloTimer); peers.delete(peer);
       if (instanceId) void runtime?.disconnect(instanceId);
       void runtime?.releaseScope(connection);
@@ -81,6 +83,14 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
               if (typeof p.journalKey !== 'string' || !/^[a-f0-9]{64}$/.test(p.journalKey)) throw new BrowserError('INVALID_REQUEST', 'Invalid journal recovery capability');
               journalKey = p.journalKey;
             }
+            unsubscribeRevocations = runtime.onLeaseRevoked(event => {
+              if (event.scope !== connection) return;
+              // Owner is minted here as [connection, wire Session ID]. Neither
+              // another connection nor another Session receives this metadata.
+              const [ownerConnection, sessionId] = JSON.parse(event.owner) as [string, string];
+              if (ownerConnection !== connection) return;
+              peer.event('browser.lease-revoked', { sessionId, leaseId: event.leaseId });
+            });
             role = 'client';
           }
           else throw new BrowserError('INVALID_REQUEST', 'Invalid peer role');
@@ -98,6 +108,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       }
       if (method === 'browser.observe') return runtime.observe(owner, string(p.leaseId), signal, observeOptions(p));
       if (method === 'browser.capture') return runtime.capture(owner, string(p.leaseId), signal);
+      if (method === 'browser.validateLease') return runtime.validateLease(owner, string(p.leaseId), signal);
       if (method === 'browser.act') return runtime.act(owner, actionRequest(p.request), signal, JSON.stringify([journalKey, string(p.sessionId)]));
       if (method === 'browser.release') {
         const id = string(p.leaseId);

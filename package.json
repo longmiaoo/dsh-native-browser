@@ -30,6 +30,7 @@
     "test:chrome": "pnpm build && node scripts/smoke-chrome.mjs",
     "test:extension": "pnpm build && node scripts/smoke-extension.mjs",
     "test:native": "pnpm build && node scripts/smoke-native.mjs",
+    "test:vision-router": "pnpm build && node scripts/smoke-vision-router.mjs",
     "check": "node scripts/check-metadata.mjs && node scripts/check-boundaries.mjs",
     "test": "pnpm build && node --test test/*.test.mjs",
     "prepack": "pnpm check && pnpm test"

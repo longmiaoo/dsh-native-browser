@@ -2,7 +2,7 @@
 export const geometryFunction = `function(preferred) {
   if (!this.isConnected) return {ok:false,connected:false};
   const r=this.getBoundingClientRect(), style=getComputedStyle(this);
-  const base={ok:false,connected:true,inViewport:false,x:r.left+r.width/2,y:r.top+r.height/2,
+  const base={ok:false,eligible:false,connected:true,inViewport:false,x:r.left+r.width/2,y:r.top+r.height/2,
     left:r.left,top:r.top,width:r.width,height:r.height,tag:this.tagName,readOnly:!!this.readOnly,type:this.type};
   const parent=node=>node.assignedSlot || node.parentElement || node.getRootNode().host;
   let clip={left:0,top:0,right:innerWidth,bottom:innerHeight}, ancestor=this;
@@ -17,6 +17,7 @@ export const geometryFunction = `function(preferred) {
     }
   }
   if(ancestor) return base;
+  base.eligible=allowed;
   const independent=node=>node.matches('button,input,select,textarea,a[href],summary,[contenteditable]:not([contenteditable="false"])')
     || node.tabIndex>=0 || /^(button|link|textbox|combobox|checkbox|radio|tab|menuitem|menuitemcheckbox|menuitemradio|switch|slider|spinbutton|treeitem|option)$/.test(node.getAttribute('role')||'');
   const ownsPoint=(x,y)=>{

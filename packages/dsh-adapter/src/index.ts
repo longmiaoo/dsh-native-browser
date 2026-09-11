@@ -19,6 +19,7 @@ interface Context {
 }
 type Config = { runtimeDirectory?: string };
 type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortController };
+type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
 const schemaString = { type: 'string' };
 const tools = new Set(['browser_list', 'browser_claim', 'browser_observe', 'browser_act', 'browser_handoff', 'browser_screenshot']);
 
@@ -31,6 +32,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   const sessions = new Map<string, TurnScope>();
   const executions = new WeakMap<Execution, TurnScope>();
   const screenshots = new ScreenshotRegistry();
+  const captures = new Set<PendingCapture>();
+  const revokeCaptureLease = (owner: string, leaseId: string) => {
+    screenshots.revokeLease(owner, leaseId);
+    for (const capture of captures) if (capture.scope.wireSessionId === owner && capture.leaseId === leaseId) {
+      capture.controller.abort(new BrowserError('LEASE_REVOKED', 'Screenshot control was released before publication'));
+    }
+  };
   // Capture ownership BEFORE approval. The execution object is the public DSH
   // object shared by pre-execute and the registered body, even across async asks.
   const bind = (exec: Execution): TurnScope => {
@@ -61,7 +69,19 @@ export function apply(ctx: Context, config: Config = {}): void {
       const attempt = connectBroker(config.runtimeDirectory ?? defaultDirectory(), journalKey);
       connection = attempt;
       void attempt.then(value => {
-        value.onCloseEvent(() => { if (connection === attempt) connection = undefined; });
+        value.onEvent((event, raw) => {
+          if (connection !== attempt || event !== 'browser.lease-revoked') return;
+          const data = record(raw);
+          if (Object.keys(data).length !== 2) throw new BrowserError('INVALID_REQUEST', 'Invalid lease revocation');
+          revokeCaptureLease(string(data.sessionId), string(data.leaseId));
+        });
+        value.onCloseEvent(() => {
+          for (const capture of captures) if (capture.peer === value) {
+            capture.controller.abort(new BrowserError('CONNECTION_LOST', 'Screenshot Broker connection ended'));
+          }
+          // A successor connection cannot be cleared by an obsolete peer.
+          if (connection === attempt) { connection = undefined; screenshots.clear(); }
+        });
         if (disposed) value.close();
       }, () => { if (connection === attempt) connection = undefined; });
     }
@@ -110,45 +130,62 @@ export function apply(ctx: Context, config: Config = {}): void {
     { type: 'object', properties: { kind: { type: 'string', const: 'scroll' }, ref: schemaString,
       deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
       expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'deltaX', 'deltaY'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'wheel' }, ref: schemaString,
+      deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
+      expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'ref', 'deltaX', 'deltaY'], additionalProperties: false },
   ] };
-  register('browser_act', 'Perform one approved click/fill/press/scroll/check or same-origin navigation. Check sets a checkbox/switch to the boolean checked state, does nothing if already correct, and verifies after at most one click; it is not an input value. Press uses a focused control; Enter/Space may submit it. Scroll uses CSS-pixel deltas on the document (no ref) or exactly one known element (ref, including a region); it returns actual before/after offsets. It is DOM scrolling, not a wheel gesture; no movement stays unknown. No browser/OS shortcuts. Use fresh node IDs, a unique requestId and optional value/URL/text postcondition (no value for scroll). Browser steps share a deadline. RECOVERY_REQUIRED returns historical metadata only, not current success or restored control. Unknown means DO NOT blindly retry with a new request ID; regain approved control and observe first.',
+  register('browser_act', 'Perform one approved click/fill/press/scroll/wheel/check or same-origin navigation. Check sets a checkbox/switch boolean state, or selects a native radio with checked:true (never false); select another radio to change the group choice. Check does nothing if already correct and verifies after at most one click; it is not an input value. Press uses a focused control; Enter/Space may submit it. Scroll directly changes DOM scroll offsets on the document (no ref) or one known element (ref, including a region), returning measured before/after offsets; no movement stays unknown. Wheel instead sends one real, unmodified CSS-pixel wheel sample at a verified point on the required control/region ref, for wheel-driven interfaces. It may trigger handlers or scroll ancestors, not necessarily the named element. Deltas are not proof of movement. Use a text/URL postcondition for verified wheel feedback; absent one, outcome stays unknown and the immediate observation may precede the wheel effect. No browser/OS shortcuts. Use fresh node IDs, a unique requestId and optional value/URL/text postcondition (no value for scroll/wheel). Browser steps share a deadline. RECOVERY_REQUIRED returns historical metadata only, not current success or restored control. Unknown means DO NOT blindly retry with a new request ID; regain approved control and observe first.',
     { requestId: schemaString, leaseId: schemaString, documentEpoch: schemaString, action, timeoutMs: { type: 'integer' } },
     ['requestId', 'leaseId', 'documentEpoch', 'action'], (args, exec) => run('browser.act', { request: actionRequest(args) }, exec));
   register('browser_handoff', 'Release control and leave the page open for the user. Never closes user tabs.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => {
       const leaseId = string(args.leaseId), { scope } = executionScope(exec);
-      screenshots.revokeLease(scope.wireSessionId, leaseId);
+      revokeCaptureLease(scope.wireSessionId, leaseId);
       return run('browser.release', { leaseId }, exec);
     });
   ctx.tools.register({ name: 'browser_screenshot',
-    description: 'Capture the authorized tab viewport as a Host-owned image attachment. For text-only models, use an approved vision tool on this attachment; do not assume you can see it.',
+    description: 'Capture the authorized tab viewport as a Host-owned image attachment. For text-only models, do not assume you can see it. Optional Vision Router tools require this Session to have Vision mode enabled and separately authorized image-backend routing; browser capture approval is not approval of an arbitrary cloud/fallback endpoint. Use the returned full attachmentId as the image argument and annotate:false for vision_ground. The Host tool result must be published in this Session for attachment lookup. This plugin does not dispatch a vision model or authorize visual clicks.',
     parameters: { type: 'object', properties: { leaseId: schemaString }, required: ['leaseId'], additionalProperties: false },
     output: { schema: {}, render: (_args: unknown, value: any) => [
       { type: 'text', text: JSON.stringify(value) }, { type: 'image', attachment: value.attachment },
     ] },
     timeoutMs: 30_000,
     async execute(raw: unknown, exec: Execution) {
-      const { scope, signal } = executionScope(exec);
+      const { scope, signal: owningSignal } = executionScope(exec);
       const attachments = ctx.get?.('attachments');
       if (typeof attachments?.saveImage !== 'function' || typeof attachments?.readImage !== 'function') {
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'DSH canonical attachment service is unavailable');
       }
       const leaseId = string(record(raw).leaseId);
-      const shot = await run('browser.capture', { leaseId }, exec) as Screenshot;
-      checkAbort(signal);
-      const attachment = await attachments.saveImage({ data: Buffer.from(shot.data, 'base64'), mediaType: shot.mimeType, name: 'Browser viewport' });
-      checkAbort(signal);
-      // Host normalization can change bytes and dimensions. Hash the exact image
-      // a visual tool will read, never the pre-normalization browser JPEG.
-      const canonical = await attachments.readImage(attachment, signal);
-      checkAbort(signal);
-      const screenshot = screenshots.register(scope.wireSessionId, leaseId, shot, {
-        attachmentId: string(attachment.attachmentId, 128), width: attachment.width, height: attachment.height,
-        bytes: canonical.data,
-      });
-      return { attachment, tab: shot.tab, documentEpoch: shot.documentEpoch, capturedAt: shot.capturedAt,
-        viewport: screenshot.viewport, coordinateSpace: screenshot.coordinateSpace,
-        imageToViewport: screenshot.imageToViewport, screenshot };
+      if (captures.size >= 8) throw new BrowserError('QUEUE_FULL', 'Too many pending screenshot publications');
+      const capture: PendingCapture = { scope, leaseId, controller: new AbortController() };
+      const signal = AbortSignal.any([owningSignal, capture.controller.signal]);
+      captures.add(capture);
+      try {
+        const channel = await peer(); capture.peer = channel;
+        checkAbort(signal);
+        const params = { leaseId, sessionId: scope.wireSessionId };
+        const shot = await channel.call('browser.capture', params, signal) as Screenshot;
+        checkAbort(signal);
+        const attachment = await attachments.saveImage({ data: Buffer.from(shot.data, 'base64'), mediaType: shot.mimeType, name: 'Browser viewport' });
+        checkAbort(signal);
+        // Host normalization can change bytes and dimensions. Hash the exact image
+        // a visual tool will read, never the pre-normalization browser JPEG.
+        const canonical = await attachments.readImage(attachment, signal);
+        checkAbort(signal);
+        // Reuse the SAME connection: reconnect never restores this image's lease.
+        // Notification is an early cancellation hint, not the sole authority check.
+        const validity = record(await channel.call('browser.validateLease', params, signal));
+        if (validity.valid !== true || Object.keys(validity).length !== 1) throw new BrowserError('LEASE_REVOKED', 'Screenshot authority could not be confirmed');
+        checkAbort(signal);
+        const screenshot = screenshots.register(scope.wireSessionId, leaseId, shot, {
+          attachmentId: string(attachment.attachmentId, 128), width: attachment.width, height: attachment.height,
+          bytes: canonical.data,
+        });
+        return { attachment, tab: shot.tab, documentEpoch: shot.documentEpoch, capturedAt: shot.capturedAt,
+          viewport: screenshot.viewport, coordinateSpace: screenshot.coordinateSpace,
+          imageToViewport: screenshot.imageToViewport, screenshot };
+      } finally { captures.delete(capture); }
     },
   });
 

@@ -1,6 +1,6 @@
 # dsh-vision-router：浏览器视觉适配专项设计
 
-日期：2026-09-11。状态：截图引用与坐标适配基础已实现，视觉工具派发、外发策略与点击闭环待完成；没有安装、升级或修改用户的视觉配置，也没有向视觉供应商发送截图。
+日期：2026-09-12。状态：截图引用与坐标适配基础已实现，真实 DSH 与 Vision Router 公开入口的隔离工具协作测试已通过；生产自动派发、外发策略与点击闭环待完成。没有安装、升级或修改用户的视觉配置，也没有向外部视觉供应商发送截图。
 
 当前实现见 `packages/vision-adapter/src/`：`ScreenshotRegistry` 保存轮次/租约绑定的规范化截图元数据，`parseRouterGrounding` 严格解析公开 `vision_ground` JSON，`boxToViewport` 执行仿射坐标转换。`browser_screenshot` 已接入真实 Host 图片哈希与尺寸。解析结果仅为不可信候选，不是可执行点击授权；目前没有新增视觉点击工具，也未自动调用 Vision Router。标准测试包含 30 组 DPR/zoom/scroll/规范化几何夹具，但这些不是视觉模型识别正确率或 30 组真实浏览器命中验收。当前整体测试与集成证据见 [实现进度](../implementation-progress.md)。
 
@@ -27,7 +27,7 @@
 
 ### A. 首期：标准工具协作，耦合最小
 
-1. `browser_observe({screenshot:'viewport'})` 捕获当前授权标签页，生成 `ScreenshotRef`。
+1. `browser_screenshot({leaseId})` 捕获当前授权标签页，生成 `ScreenshotRef` 与 Host 图片结果。
 2. DSH adapter 将图片交给 Host 的正式附件入口；若当前版本无法把工具生成图注册为会话可读附件，使用明确授权的 workspace 图片路径作为兼容路线。两条路线都需端到端测试，不能只生成 hash 字符串。
 3. 主模型调用 `vision_ground` 或 `vision_describe`。只把此图片与局部问题交给视觉模型，不附送全部浏览器历史。
 4. 视觉适配层将有效结果包装为 `VisualTarget`；`browser_act` 再验证截图、几何、权限、租约与实际命中。
@@ -130,7 +130,25 @@ sequenceDiagram
 - 敏感截图、本地-only 配置：网络监测证明无未授权图片外发；云端演示配置单独测。
 - 同一 screenshot 的缓存：键含内容 hash、问题、模型/配置版本与策略域，绝不跨越会话权限复用。
 
-本次仅运行了上游纯坐标变换测试 `grounding-coordinate-frame.test.js`：**5/5 通过**。这验证确定性几何函数，不验证视觉模型准确率，也不表示 DSH 浏览器端到端集成已经通过。
+早期上游纯坐标变换测试 `grounding-coordinate-frame.test.js` 为 5/5 通过。现在新增 `scripts/smoke-vision-router.mjs`，通过实际 DSH `0.1.5-rc.1` ToolRuntime、Session、附件/文件/LLM 服务及 Vision Router `2.1.5` 的公开入口运行 6 项检查；浏览器侧仍是 FakeProvider，本地 HTTP 后端是确定性像素检测器，不是 LLM，不能据此声称真实 Chrome→视觉模型→点击的端到端验收完成。
+
+### 6.1 已验证的集成前提与限制
+
+- Host 的工具结果必须真正发布到当前 Session 的 `tool/result` 事件；仅保存图片或在内存中持有 hash 不会授予 Router 会话读取权限。实际 DSH 事件要求 `surfaceOp: "append"`；测试使用公开 `createToolResultMessage` 构造图片结果。
+- Vision Router 的当前会话 Vision 模式必须开启，且路由必须属于它注册的真实适配器。模式关闭时，工具在图片后端请求前拒绝；测试只在临时 Agent 选择其已注册包装路由，没有更改用户设置。
+- `vision_ground` 即使接收 Host 附件，也会生成临时 1000×1000 letterbox 图并通过 Host 文件服务读取。因此 Host 文件服务和隔离工作目录是必需前提，`annotate:false` 不代表不生成内部临时文件。
+- 测试图片含随机位置的洋红矩形，HTTP 服务只从实际接收的图像像素计算框；原始随机坐标未出现在提示词中。公开结果经上游逆变换后，再由本项目映射到 CSS；没有重复逆变换。
+- 同一真实 Session 可用完整 ID 或其明确可解析的短别名；不同 Session 即使持有完整 ID 也不能读取，不产生视觉后端请求。
+- 显式临时配置仅启用本机 LM Studio 兼容端点，并关闭其他 providers/httpProviders/freeFallback。429 返回显式失败，没有重复图像请求。本测试在 Socket 连接前仅放行自身确切的 loopback 端口和 Broker Unix socket，其余全部拒绝；这不是生产网络沙箱。
+- 上游仍尝试连接 npm/GitHub 检查更新（源码 `lib/update-check.js`）。测试拦截并报告了这两个连接；没有外部网络连接成功。这再次表明关闭视觉 fallback 不等于整个插件完全离线。此处没有证明生产设置可冻结某次视觉调用的最终后端。
+
+可选运行方式（两个包目录必须已具备其依赖；本命令不安装插件）：
+
+```bash
+pnpm test:vision-router /absolute/path/to/installed/dsh /absolute/path/to/dsh-vision-router
+```
+
+报告为 `output/playwright/vision-router-smoke.json`。它记录版本、6 项检查、实际图像请求尺寸和被拦截的更新连接，不写截图内容、密钥或用户配置。
 
 ## 7. 来源
 

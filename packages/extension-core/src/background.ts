@@ -1,6 +1,7 @@
 import { BrowserError, checkAbort, errorCode, originOf, type Lease } from '../../contracts/src/index.js';
 import { record, string } from '../../contracts/src/validation.js';
 import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
+import { allowedMouseEvent } from '../../provider-chromium/src/mouse.js';
 import { axReadRequest, readAXTree } from '../../provider-chromium/src/ax-reader.js';
 import { axFindRequest, findAXNodes } from '../../provider-chromium/src/ax-query.js';
 import { wireMessage, acceptWelcome, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
@@ -136,6 +137,9 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     }
     if (command === 'Input.dispatchKeyEvent' && !allowedKeyEvent(params)) {
       throw new BrowserError('POLICY_DENIED', 'Only canonical page-key events are exposed');
+    }
+    if (command === 'Input.dispatchMouseEvent' && !allowedMouseEvent(params)) {
+      throw new BrowserError('POLICY_DENIED', 'Only canonical left-click and unmodified wheel events are exposed');
     }
     if (command === 'Page.navigate' && originOf(string(params.url, 8192)) !== lease.origin) {
       throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease origin');

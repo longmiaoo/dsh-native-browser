@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>DSH Browser</title>
+<style>body{font:14px system-ui;width:290px;padding:16px;background:#fafafa;color:#17202a}h1{font-size:18px}button{display:block;width:100%;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:7px;background:white;cursor:pointer}#stop{background:#b42318;color:white}p{line-height:1.6}#status{overflow-wrap:anywhere}</style></head>
+<body><h1>DSH Native Browser</h1><p>仅允许你选择的标签页。浏览器操作仍需 DSH 审批。</p><p id="status" role="status">检查连接…</p>
+<button id="allow">允许当前标签页并连接</button><button id="stop">停止控制当前标签页</button>
+<p>开发预览：授权只保留在内存中。断线不会自动继续操作。</p><script src="popup.js"></script></body></html>

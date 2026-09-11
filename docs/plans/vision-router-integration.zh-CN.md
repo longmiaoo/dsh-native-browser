@@ -1,6 +1,8 @@
 # dsh-vision-router：浏览器视觉适配专项设计
 
-日期：2026-09-11。状态：源码核查完成、接入待实现；没有安装、升级或修改用户的视觉配置，也没有向视觉供应商发送截图。
+日期：2026-09-11。状态：截图引用与坐标适配基础已实现，视觉工具派发、外发策略与点击闭环待完成；没有安装、升级或修改用户的视觉配置，也没有向视觉供应商发送截图。
+
+当前实现见 `packages/vision-adapter/src/`：`ScreenshotRegistry` 保存轮次/租约绑定的规范化截图元数据，`parseRouterGrounding` 严格解析公开 `vision_ground` JSON，`boxToViewport` 执行仿射坐标转换。`browser_screenshot` 已接入真实 Host 图片哈希与尺寸。解析结果仅为不可信候选，不是可执行点击授权；目前没有新增视觉点击工具，也未自动调用 Vision Router。标准测试包含 30 组 DPR/zoom/scroll/规范化几何夹具，但这些不是视觉模型识别正确率或 30 组真实浏览器命中验收。当前整体测试与集成证据见 [实现进度](../implementation-progress.md)。
 
 ## 1. 结论
 

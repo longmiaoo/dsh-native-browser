@@ -2,16 +2,26 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { projectStatus, name, apply } from '../index.js'
+import { applyObservationUpdate } from 'dsh-native-browser/observations'
 
-test('exports a loadable pre-alpha Cordis plugin', () => {
+test('publishes a browser-independent observation reducer with TypeScript declarations', async () => {
+  assert.equal(typeof applyObservationUpdate, 'function')
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  const declaration = await readFile(new URL(`../${manifest.exports['./observations'].types}`, import.meta.url), 'utf8')
+  assert.match(declaration, /export declare function applyObservationUpdate/)
+})
+
+test('exports a loadable development-preview Cordis plugin', () => {
   assert.equal(name, 'dsh-native-browser')
   assert.equal(typeof apply, 'function')
   assert.deepEqual(projectStatus, {
-    phase: 'pre-alpha',
+    phase: 'development-preview',
     browser: 'chrome',
-    toolsRegistered: false,
+    toolsRegistered: true,
   })
-  assert.doesNotThrow(() => apply())
+  const tools = []
+  assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {} }))
+  assert.equal(tools.length, 6)
 })
 
 test('bundle patch mounts the published package name', async () => {

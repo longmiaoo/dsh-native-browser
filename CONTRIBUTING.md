@@ -1,13 +1,13 @@
 # Contributing
 
-The project is Chrome-only until the Chrome path meets its reliability and latency gates. Please do not add browser abstractions for Edge, Firefox or Safari yet.
+Chrome is the first production target. Browser-independent contracts are required from day one; Chrome and Edge share the Chromium engine. Follow the [v2 plan](docs/plans/browser-runtime-plan-v2.zh-CN.md), which supersedes the earlier decision to defer browser abstractions.
 
 ## Before opening a change
 
-1. Read [the architecture](docs/architecture.md) and the relevant decision records.
+1. Read the [current plan](docs/plans/browser-runtime-plan-v2.zh-CN.md) and [implementation progress](docs/implementation-progress.md).
 2. Keep protocol changes versioned and backward-compatible within a minor release.
 3. Add deterministic tests for lifecycle, cancellation and stale-target behavior.
-4. Run `pnpm check`, `pnpm test` and `pnpm pack --dry-run`.
+4. Run `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm test:chrome` (with local Chrome), and inspect `pnpm pack` output.
 5. Never commit Chrome profiles, cookies, native-host secrets, screenshots with user data or local absolute paths.
 
 ## Engineering bar

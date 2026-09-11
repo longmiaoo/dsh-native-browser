@@ -20,23 +20,23 @@ The target is not another thin `click(x, y)` wrapper. The design is a stateful b
 
 ## Project status
 
-**Pre-alpha / architecture and protocol phase.** The repository currently contains a valid DSH bundle scaffold, research, architecture decisions and validation checks. It does **not** register browser tools yet and should not be presented as production-ready.
+**Development preview — implementation in progress, not production-ready.** The repository now contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider and six DSH tools. Existing-user-profile extension integration, vision-model accuracy, broad page compatibility and release hardening are still acceptance work, not completed claims.
 
-The first usable milestone is a Chrome-only vertical slice: connect an extension, claim or create one tab, observe its accessibility tree, navigate, click and type, then release it safely.
+Verified so far: deterministic contract/security tests and the assembled local stack in an isolated Chrome-for-Testing profile: real MV3, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime and image attachments. Live checks cover input, delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No model/vision call or real signed-in business account has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
 
 ## Scope
 
 In scope for the first production release:
 
-- Google Chrome stable on macOS, Windows and Linux;
+- Google Chrome stable on macOS first; Windows/Linux support follows separate installer and compatibility gates;
 - the user's existing Chrome profile and authenticated sessions;
 - DSH `web` and `desktop` profiles;
 - semantic browsing, screenshots, downloads, dialogs, files and multi-tab workflows;
 - local-only control plane with explicit permissions and auditable lifecycle events.
 
-Out of scope until Chrome is excellent:
+Architectural interfaces are cross-browser from day one. Deferred production support includes:
 
-- Edge, Chromium variants, Firefox and Safari;
+- Edge and other Chromium brands (shared engine; early smoke testing before formal support), Firefox and Safari (separate providers);
 - hosted/remote browser farms;
 - CAPTCHA bypass or stealth claims;
 - arbitrary unrestricted CDP exposed directly to the model.
@@ -58,7 +58,7 @@ flowchart LR
 
 The runtime keeps live browser objects and event subscriptions out of the model context. The model receives compact, typed observations and stable references; the runtime performs freshness, visibility, stability and hit-target checks immediately before actions.
 
-Read the [target architecture](docs/architecture.md), [Codex Chrome research](docs/research/codex-chrome-browser-architecture.md), [wire protocol draft](docs/protocol.md) and [roadmap](docs/roadmap.md).
+The current design is the [v2 runtime implementation plan](docs/plans/browser-runtime-plan-v2.zh-CN.md), including [Vision Router integration](docs/plans/vision-router-integration.zh-CN.md). Earlier [architecture](docs/architecture.md), [research](docs/research/codex-chrome-browser-architecture.md) and [protocol](docs/protocol.md) documents are historical inputs; they do not override the v2 plan or describe all current implementation details.
 
 ## DSH discovery metadata
 
@@ -77,10 +77,11 @@ Prerequisites: Node.js 22.19 or newer and pnpm 11.
 pnpm install
 pnpm check
 pnpm test
-pnpm pack --dry-run
+pnpm test:chrome
+pnpm pack
 ```
 
-Do not publish or recommend installation yet. Once the first vertical slice is available, the intended command will be:
+Do not publish or recommend production installation yet. Local development builds can be exercised using [the explicit opt-in setup](docs/development.md). The intended public installation command remains:
 
 ```bash
 dsh plugin --profile web add dsh-native-browser

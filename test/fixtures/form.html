@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>DSH Browser Test Fixture</title>
+<style>body{font:16px system-ui;margin:60px;max-width:720px;color:#17202a}input,button{font:inherit;padding:12px;margin:12px 0}input{display:block;width:360px}button{background:#126c55;color:white;border:0;border-radius:6px}#cover{display:none;position:fixed;inset:0;background:#2228;z-index:99}small{color:#667085}</style></head>
+<body><h1>浏览器执行链路验证</h1><p>仅本机测试，无真实账号或业务数据。</p><form id="search-region" aria-label="搜索表单"><label for="query">搜索词</label><input id="query" name="query" autocomplete="off">
+<button id="submit" type="button">提交测试</button><button id="delayed" type="button">延迟反馈</button><p id="result" role="status">尚未提交</p></form><small>验证中文输入、AX 引用、点击、后置条件与截图。</small><div id="cover"></div>
+<section id="scroll-pane" aria-label="滚动容器" style="width:400px;height:150px;overflow:auto"><div style="width:1200px;height:600px">
+<section id="nested-scroll-pane" aria-label="内层滚动容器" style="width:200px;height:80px;overflow:auto"><div style="width:600px;height:300px">内层滚动内容</div></section>
+</div></section><p id="scroll-message">等待滚动</p>
+<section id="rtl-scroll-pane" aria-label="RTL滚动容器" dir="rtl" style="width:240px;height:80px;overflow:auto"><div style="width:800px;height:60px">从右向左的内容</div></section>
+<section aria-label="页面底部" style="margin-top:1100px"><label for="offscreen">页底输入</label><input id="offscreen" autocomplete="off"></section>
+<script>
+window.fixtureClicks = { submit: 0, delayed: 0 };
+window.fixtureKeys = [];
+document.getElementById('scroll-pane').addEventListener('scroll', event => {
+  if (event.target.scrollTop >= 200) document.getElementById('scroll-message').textContent = '已加载滚动内容';
+});
+for (const type of ['keydown', 'keyup']) document.addEventListener(type, event => window.fixtureKeys.push({type:event.type,
+  key:event.key, code:event.code, shift:event.shiftKey, ctrl:event.ctrlKey, alt:event.altKey, meta:event.metaKey,
+  trusted:event.isTrusted, target:event.target.id}));
+document.addEventListener('submit', event => {
+  if (event.target.id !== 'search-region') return;
+  event.preventDefault(); document.getElementById('result').textContent='键盘已提交：'+document.getElementById('query').value;
+});
+document.getElementById('submit').addEventListener('click',()=>{window.fixtureClicks.submit++; document.getElementById('result').textContent='已提交：'+document.getElementById('query').value; location.hash='submitted';});
+document.getElementById('delayed').addEventListener('click',()=>{window.fixtureClicks.delayed++; setTimeout(()=>{document.getElementById('result').textContent='延迟保存成功';},180);});
+</script></body></html>

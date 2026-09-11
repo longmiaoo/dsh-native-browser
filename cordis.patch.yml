@@ -1,6 +1,5 @@
-# Pre-alpha bundle layer. This mounts only the lifecycle-safe package scaffold;
-# no model-facing browser tools are registered until the Chrome vertical slice
-# satisfies the security and reliability gates documented in docs/roadmap.md.
+# Development preview. Browser tools require a running local Broker, native host
+# registration, extension tab consent and DSH approval. See docs/development.md.
 - insert:
     - id: native-browser
       name: dsh-native-browser

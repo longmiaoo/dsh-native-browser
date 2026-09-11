@@ -1,206 +1,329 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/longmiaoo/dsh-native-browser/blob/main/protocol/v1.schema.json",
-  "title": "dsh-native-browser protocol v1 envelope",
-  "description": "Pre-alpha schema for logical messages transported through Chrome Native Messaging.",
+  "title": "DSH Native Browser development wire protocol v1",
+  "description": "Generated from packages/contracts/src/wire.ts. Envelope validation is not method-payload authorization.",
   "oneOf": [
-    { "$ref": "#/$defs/hello" },
-    { "$ref": "#/$defs/welcome" },
-    { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" },
-    { "$ref": "#/$defs/event" },
-    { "$ref": "#/$defs/cancel" },
-    { "$ref": "#/$defs/goodbye" }
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "request"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "response"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ok": {
+          "const": true
+        },
+        "value": {}
+      },
+      "required": [
+        "type",
+        "id",
+        "ok",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "response"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "enum": [
+            "INVALID_REQUEST",
+            "POLICY_DENIED",
+            "LEASE_BUSY",
+            "LEASE_REVOKED",
+            "USER_STOPPED",
+            "CANCELLED",
+            "DEADLINE_EXCEEDED",
+            "QUEUE_FULL",
+            "CONNECTION_LOST",
+            "PROTOCOL_MISMATCH",
+            "STALE_TARGET",
+            "AMBIGUOUS_TARGET",
+            "NOT_ACTIONABLE",
+            "UNSUPPORTED_CAPABILITY",
+            "NAVIGATION_FAILED",
+            "VISION_UNAVAILABLE",
+            "REQUEST_ID_CONFLICT",
+            "JOURNAL_FULL",
+            "JOURNAL_UNAVAILABLE",
+            "RECOVERY_REQUIRED",
+            "BROKER_BUSY",
+            "BROKER_STATE_UNSAFE",
+            "INTERNAL_ERROR"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "ok",
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "event"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+        },
+        "value": {}
+      },
+      "required": [
+        "type",
+        "event",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "cancel"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "additionalProperties": false
+    }
   ],
   "$defs": {
-    "base": {
-      "type": "object",
-      "required": ["protocol", "kind", "session", "epoch"],
-      "properties": {
-        "protocol": { "const": 1 },
-        "kind": { "type": "string" },
-        "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-        "epoch": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "implementation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "version", "protocolMin", "protocolMax"],
-      "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "protocolMin": { "type": "integer", "minimum": 1 },
-        "protocolMax": { "type": "integer", "minimum": 1 }
-      }
-    },
     "hello": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
+      "oneOf": [
         {
           "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "nonce", "implementation"],
           "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "hello" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 0 },
-            "nonce": { "type": "string", "minLength": 32, "maxLength": 256 },
-            "implementation": { "$ref": "#/$defs/implementation" }
-          }
-        }
-      ]
-    },
-    "welcome": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
+            "bootstrap": {
+              "const": 1
+            },
+            "versions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            },
+            "token": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requiredCapabilities": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+              }
+            },
+            "role": {
+              "const": "client"
+            },
+            "journalKey": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "bootstrap",
+            "versions",
+            "role"
+          ],
+          "additionalProperties": false
+        },
         {
           "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "nonce", "implementation", "capabilities"],
           "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "welcome" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 1 },
-            "nonce": { "type": "string", "minLength": 32, "maxLength": 256 },
-            "implementation": { "$ref": "#/$defs/implementation" },
+            "bootstrap": {
+              "const": 1
+            },
+            "versions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            },
+            "token": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requiredCapabilities": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+              }
+            },
+            "role": {
+              "const": "provider"
+            },
             "capabilities": {
               "type": "array",
+              "maxItems": 64,
               "uniqueItems": true,
-              "items": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9.:-]{0,127}$" }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+              }
+            },
+            "instance": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "family": {
+                  "const": "chromium"
+                },
+                "brand": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "profileLabel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "family",
+                "brand",
+                "version",
+                "profileLabel"
+              ],
+              "additionalProperties": false
             }
-          }
-        }
-      ]
-    },
-    "request": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "id", "method", "params"],
-          "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "request" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 1 },
-            "id": { "type": "string", "minLength": 8, "maxLength": 128 },
-            "method": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]+\\.[a-z][a-zA-Z0-9]+$" },
-            "params": { "type": "object" }
-          }
-        }
-      ]
-    },
-    "response": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "required": ["protocol", "kind", "session", "epoch", "id", "ok"],
-          "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "response" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 1 },
-            "id": { "type": "string", "minLength": 8, "maxLength": 128 },
-            "ok": { "type": "boolean" },
-            "result": true,
-            "error": { "$ref": "#/$defs/error" }
           },
-          "allOf": [
-            {
-              "if": { "properties": { "ok": { "const": true } } },
-              "then": { "required": ["result"], "not": { "required": ["error"] } },
-              "else": { "required": ["error"], "not": { "required": ["result"] } }
-            }
+          "required": [
+            "bootstrap",
+            "versions",
+            "role",
+            "capabilities",
+            "instance"
           ],
           "additionalProperties": false
         }
       ]
     },
-    "error": {
+    "welcome": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["code", "message", "retryable"],
       "properties": {
-        "code": {
-          "enum": [
-            "NOT_CONNECTED",
-            "VERSION_MISMATCH",
-            "TAB_NOT_FOUND",
-            "TAB_NOT_CLAIMED",
-            "STALE_TARGET",
-            "TARGET_AMBIGUOUS",
-            "TARGET_NOT_ACTIONABLE",
-            "NAVIGATION_BLOCKED",
-            "APPROVAL_REQUIRED",
-            "HUMAN_INTERVENED",
-            "OPERATION_ABORTED",
-            "CHROME_RESTRICTED",
-            "INTERNAL_PROTOCOL_ERROR"
-          ]
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         },
-        "message": { "type": "string", "maxLength": 4096 },
-        "retryable": { "type": "boolean" },
-        "observation": { "type": "object" }
-      }
-    },
-    "event": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "sequence", "event", "payload"],
-          "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "event" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 1 },
-            "sequence": { "type": "integer", "minimum": 1 },
-            "event": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]+\\.[a-z][a-zA-Z0-9]+$" },
-            "payload": { "type": "object" }
+        "connectionEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
           }
         }
-      ]
-    },
-    "cancel": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "id", "operation"],
-          "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "cancel" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 1 },
-            "id": { "type": "string", "minLength": 8, "maxLength": 128 },
-            "operation": { "type": "string", "minLength": 8, "maxLength": 128 }
-          }
-        }
-      ]
-    },
-    "goodbye": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["protocol", "kind", "session", "epoch", "reason"],
-          "properties": {
-            "protocol": { "const": 1 },
-            "kind": { "const": "goodbye" },
-            "session": { "type": "string", "minLength": 16, "maxLength": 256 },
-            "epoch": { "type": "integer", "minimum": 0 },
-            "reason": { "type": "string", "maxLength": 1024 }
-          }
-        }
-      ]
+      },
+      "required": [
+        "version",
+        "connectionEpoch",
+        "capabilities"
+      ],
+      "additionalProperties": false
     }
   }
 }

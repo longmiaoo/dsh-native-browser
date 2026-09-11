@@ -141,3 +141,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local-only browser QA artifacts and isolated Playwright sessions
+output/
+.playwright-cli/
+.playwright/

@@ -6,10 +6,16 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./observations": {
+      "types": "./dist/packages/contracts/src/observations.d.ts",
+      "import": "./dist/packages/contracts/src/observations.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
+    "bin",
+    "dist",
     "cordis.patch.yml",
     "docs",
     "protocol",
@@ -19,9 +25,17 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node scripts/check-metadata.mjs",
-    "test": "node --test",
+    "build": "tsc && node scripts/build-extension.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:chrome": "pnpm build && node scripts/smoke-chrome.mjs",
+    "test:extension": "pnpm build && node scripts/smoke-extension.mjs",
+    "test:native": "pnpm build && node scripts/smoke-native.mjs",
+    "check": "node scripts/check-metadata.mjs && node scripts/check-boundaries.mjs",
+    "test": "pnpm build && node --test test/*.test.mjs",
     "prepack": "pnpm check && pnpm test"
+  },
+  "bin": {
+    "dsh-native-browser": "bin/dsh-native-browser.mjs"
   },
   "keywords": [
     "dsh-plugin",
@@ -58,7 +72,13 @@
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@types/chrome": "^0.2.9",
+    "@types/node": "^22.20.2",
+    "ajv": "8.20.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
+    "typescript": "5.9.3"
   },
   "dsh": {
     "bundle": {

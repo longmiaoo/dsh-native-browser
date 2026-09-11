@@ -1,0 +1,78 @@
+{
+  "name": "dsh-native-browser",
+  "version": "0.1.0-alpha.0",
+  "description": "Chrome-first native browser runtime for DeepSeek Harness with semantic observation, reliable CDP actions, and human-agent handoff",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "docs",
+    "protocol",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node scripts/check-metadata.mjs",
+    "test": "node --test",
+    "prepack": "pnpm check && pnpm test"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "browser-automation",
+    "browser-agent",
+    "computer-use",
+    "chrome",
+    "chrome-extension",
+    "cdp",
+    "accessibility-tree",
+    "human-in-the-loop"
+  ],
+  "author": "longmiaoo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/longmiaoo/dsh-native-browser.git"
+  },
+  "homepage": "https://github.com/longmiaoo/dsh-native-browser#readme",
+  "bugs": {
+    "url": "https://github.com/longmiaoo/dsh-native-browser/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "packageManager": "pnpm@11.1.1",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.5-rc.1 <0.2.0",
+      "profiles": [
+        "web",
+        "desktop"
+      ],
+      "dshReleases": {
+        "0.1.5-rc.1": "compatible"
+      }
+    }
+  }
+}

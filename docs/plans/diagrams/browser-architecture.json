@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "可扩展浏览器运行时 · 目标架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1180,
+      760
+    ]
+  },
+  "components": [
+    {
+      "id": "dsh",
+      "type": "frontend",
+      "label": "DSH 接入层",
+      "sublabel": "工具 · 审批 · 生命周期",
+      "pos": [
+        60,
+        65
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "broker",
+      "type": "backend",
+      "label": "Browser Broker",
+      "sublabel": "会话 · 租约 · 动作调度",
+      "pos": [
+        460,
+        65
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Chromium Provider",
+      "sublabel": "共享语义与动作引擎",
+      "pos": [
+        860,
+        65
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "other",
+      "type": "external",
+      "label": "未来非 Chromium",
+      "sublabel": "独立 Provider · 能力协商",
+      "pos": [
+        60,
+        275
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "状态与质量内核",
+      "sublabel": "AX / DOM · 引用 · 追踪",
+      "pos": [
+        460,
+        275
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "messagebus",
+      "label": "Native Bridge",
+      "sublabel": "本机 IPC · 协议 · 背压",
+      "pos": [
+        860,
+        275
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "extension",
+      "type": "backend",
+      "label": "共享 MV3 扩展",
+      "sublabel": "CDP · 执行检查 · 停止",
+      "pos": [
+        860,
+        485
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "chrome",
+      "type": "external",
+      "label": "Google Chrome",
+      "sublabel": "首个交付 · 真实登录态",
+      "pos": [
+        460,
+        485
+      ],
+      "size": [
+        240,
+        78
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "external",
+      "label": "Microsoft Edge",
+      "sublabel": "后续接入 · 品牌适配",
+      "pos": [
+        460,
+        665
+      ],
+      "size": [
+        240,
+        78
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "dsh",
+      "to": "broker",
+      "label": "本机 RPC",
+      "variant": "emphasis"
+    },
+    {
+      "from": "broker",
+      "to": "provider",
+      "label": "Provider 契约",
+      "variant": "emphasis"
+    },
+    {
+      "from": "broker",
+      "to": "state",
+      "label": "观察与审计",
+      "labelDy": 72
+    },
+    {
+      "from": "broker",
+      "to": "other",
+      "label": "后续 Provider",
+      "variant": "dashed"
+    },
+    {
+      "from": "provider",
+      "to": "bridge",
+      "label": "类型化命令",
+      "labelDy": 72,
+      "variant": "emphasis"
+    },
+    {
+      "from": "bridge",
+      "to": "extension",
+      "label": "Native Messaging",
+      "labelDy": 72,
+      "variant": "emphasis"
+    },
+    {
+      "from": "extension",
+      "to": "chrome",
+      "label": "debugger / CDP",
+      "variant": "emphasis"
+    },
+    {
+      "from": "extension",
+      "to": "edge",
+      "label": "同一扩展内核",
+      "variant": "dashed"
+    }
+  ]
+}

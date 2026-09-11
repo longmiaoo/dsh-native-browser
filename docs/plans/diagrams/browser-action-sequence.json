@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": { "title": "一次可靠动作 · 观察到结果闭环", "locale": "zh-CN", "quality_profile": "showcase", "column_fit": "spread", "viewBox": [1040, 660] },
+  "participants": [
+    { "id": "dsh", "type": "frontend", "label": "DSH", "sublabel": "模型与审批" },
+    { "id": "broker", "type": "backend", "label": "Broker", "sublabel": "租约与调度" },
+    { "id": "engine", "type": "backend", "label": "Provider", "sublabel": "语义与引用" },
+    { "id": "extension", "type": "security", "label": "MV3 扩展", "sublabel": "本地停止闸门" },
+    { "id": "tab", "type": "external", "label": "浏览器标签页", "sublabel": "页面与用户" }
+  ],
+  "messages": [
+    { "from": "dsh", "to": "broker", "y": 160, "label": "动作 + 引用 + 预期结果", "variant": "emphasis" },
+    { "from": "broker", "to": "engine", "y": 200, "label": "审批通过 · 租约有效", "variant": "security" },
+    { "from": "engine", "to": "extension", "y": 240, "label": "定位与可操作性检查" },
+    { "from": "extension", "to": "tab", "y": 280, "label": "读取当前目标状态" },
+    { "from": "tab", "to": "engine", "y": 320, "label": "身份 · 可见性 · 命中区域", "variant": "return" },
+    { "from": "engine", "to": "extension", "y": 360, "label": "带 fencing token 派发", "variant": "emphasis" },
+    { "from": "extension", "to": "tab", "y": 400, "label": "闸门复核后输入", "variant": "security" },
+    { "from": "tab", "to": "extension", "y": 440, "label": "页面事件 / 导航", "variant": "return" },
+    { "from": "extension", "to": "engine", "y": 480, "label": "结果证据与状态变化", "variant": "return" },
+    { "from": "engine", "to": "broker", "y": 520, "label": "后置条件 + 增量观察", "variant": "return" },
+    { "from": "broker", "to": "dsh", "y": 560, "label": "执行结果 · 下一步可用引用", "variant": "return" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "一次调用完成闭环", "items": ["检查、输入、等待与观察在本地编排", "减少模型往返，不省略结果确认"] },
+    { "dot": "rose", "title": "异常不能假装成功", "items": ["目标歧义时停止，控制权失效时拒绝", "派发后断线标为 unknown，不自动重放"] }
+  ]
+}

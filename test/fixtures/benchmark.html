@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>DSH isolated executor benchmark</title>
+<style>body{font:16px system-ui;margin:24px}input,textarea,button,[contenteditable]{font:inherit;margin:5px;padding:5px}section{margin:8px}#cover{display:none;position:fixed;inset:0;z-index:99;background:#5558}#pane{height:80px;width:400px;overflow:auto}#canvas{width:180px;height:50px;background:#def}</style>
+<h1>Isolated executor benchmark</h1><p id="reading">Baseline reading content</p>
+<form aria-label="Benchmark form"><label>Benchmark input<input id="input" autocomplete="off"></label>
+<label>Benchmark textarea<textarea id="area">Original</textarea></label>
+<button id="submit" type="submit">Submit form</button><button id="delayed" type="button">Delayed feedback</button></form>
+<label><input id="check" type="checkbox">Checkbox</label>
+<label><input type="radio" name="choice" value="a" checked>Radio A</label><label><input id="radio-b" type="radio" name="choice" value="b">Radio B</label>
+<div id="editor" role="textbox" aria-label="Rich editor" contenteditable="true" style="white-space:pre-wrap"><b>Original</b></div><div id="shadow"></div>
+<section aria-label="Group A"><button id="a">Duplicate</button></section><section aria-label="Group B"><button id="b">Duplicate</button></section>
+<section id="pane" aria-label="Scroll region"><div style="height:500px">Scrollable content</div></section>
+<section id="canvas" aria-label="Wheel region">Wheel target</section><p id="status" role="status">Ready</p><div id="cover"></div>
+<script>
+window.bench={events:[],counts:{submit:0,delayed:0,a:0,b:0,wheel:0}};
+document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<label>Shadow input<input id="shadow-input" aria-label="Shadow input"></label>';
+for(const type of ['input','click','keydown','wheel'])document.addEventListener(type,e=>bench.events.push({type,id:e.composedPath()[0].id,trusted:e.isTrusted}));
+document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();bench.counts.submit++;document.querySelector('#status').textContent='Form submitted';});
+document.querySelector('#delayed').addEventListener('click',()=>{bench.counts.delayed++;setTimeout(()=>document.querySelector('#status').textContent='Delayed saved',80);});
+for(const id of ['a','b'])document.querySelector('#'+id).addEventListener('click',()=>{bench.counts[id]++;document.querySelector('#status').textContent='Clicked '+id;});
+document.querySelector('#pane').addEventListener('scroll',e=>{if(e.target.scrollTop>=150)document.querySelector('#status').textContent='Scrolled';});
+document.querySelector('#canvas').addEventListener('wheel',e=>{e.preventDefault();bench.counts.wheel++;document.querySelector('#status').textContent='Wheel received';},{passive:false});
+</script></html>

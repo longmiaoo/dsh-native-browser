@@ -20,11 +20,15 @@ The target is not another thin `click(x, y)` wrapper. The design is a stateful b
 
 ## Project status
 
-**Development preview — implementation in progress, not production-ready.** The repository now contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider and six DSH tools. Existing-user-profile extension integration, vision-model accuracy, broad page compatibility and release hardening are still acceptance work, not completed claims.
+**Development preview — implementation in progress, not production-ready.** The repository now contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. Existing-user-profile extension integration, vision-model accuracy, broad page compatibility and release hardening are still acceptance work, not completed claims.
 
 Verified so far: deterministic contract/security tests and the assembled local stack in an isolated Chrome-for-Testing profile: real MV3, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime and image attachments. Live checks cover input, delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No model/vision call or real signed-in business account has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
 
+The early Edge compatibility smoke also passes in an isolated Edge profile with the same runtime-core: 20 unchanged executor fixture oracles plus batch, paging, navigation, Stop and handoff checks. This is an architecture gate, not formal Edge release support; see [the retained evidence](docs/compatibility/2026-09-12-edge-native.json).
+
 ## Scope
+
+Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads now support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; explicit same-origin/same-process child clicks now use `browser_act({frame,...})` with child-only text verification; other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions so an OOPIF omitted from the root tree cannot bypass the origin gate. See [frame discovery](docs/development.md#frame-discovery-foundation).
 
 In scope for the first production release:
 

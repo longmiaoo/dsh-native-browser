@@ -3,7 +3,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserError, originOf, type BrowserInstance } from '../../contracts/src/index.js';
-import { actionRequest, observeOptions, record, string } from '../../contracts/src/validation.js';
+import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string } from '../../contracts/src/validation.js';
 import { BrowserRuntime } from '../../runtime-core/src/runtime.js';
 import { ChromiumProvider } from '../../provider-chromium/src/provider.js';
 import { RpcPeer } from '../../transport-native/src/rpc.js';
@@ -21,7 +21,7 @@ function instanceOf(raw: unknown): BrowserInstance {
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
   return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
     profileLabel: string(v.profileLabel), capabilities: { ax: true, axSubtree: true, dom: true, screenshot: true,
-      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, oopif: false } };
+      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, oopif: false } };
 }
 
 type BrokerOptions = { directory: string; allowedOrigins: string[]; maxConnections?: number };
@@ -107,9 +107,18 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
         return runtime.claim(owner, string(p.instanceId), string(p.tab), signal, connection);
       }
       if (method === 'browser.observe') return runtime.observe(owner, string(p.leaseId), signal, observeOptions(p));
+      if (method === 'browser.readPage') return runtime.readPage(owner, string(p.leaseId), pageReadOptions(p.options), signal);
+      if (method === 'browser.frames') return runtime.frames(owner, string(p.leaseId), signal);
       if (method === 'browser.capture') return runtime.capture(owner, string(p.leaseId), signal);
       if (method === 'browser.validateLease') return runtime.validateLease(owner, string(p.leaseId), signal);
       if (method === 'browser.act') return runtime.act(owner, actionRequest(p.request), signal, JSON.stringify([journalKey, string(p.sessionId)]));
+      if (method === 'browser.batch') {
+        const request = batchRequest(p.request), approvalId = string(p.approvalId, 128);
+        return runtime.batch(owner, request, signal, async (index, stepSignal) => {
+          const result = await peer.call('browser.approveBatchStep', { approvalId, index }, stepSignal);
+          return record(result).allowed === true;
+        }, JSON.stringify([journalKey, string(p.sessionId)]));
+      }
       if (method === 'browser.release') {
         const id = string(p.leaseId);
         await runtime.release(owner, id);

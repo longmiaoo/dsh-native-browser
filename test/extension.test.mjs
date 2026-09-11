@@ -6,6 +6,8 @@ import { webcrypto } from 'node:crypto';
 import { keyEvent } from '../dist/packages/provider-chromium/src/keyboard.js';
 import { wheelEvent } from '../dist/packages/provider-chromium/src/mouse.js';
 import { brokerCapabilities } from '../dist/packages/contracts/src/wire.js';
+import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetricsFunction } from '../dist/packages/provider-chromium/src/frame-geometry-functions.js';
+import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
@@ -25,7 +27,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     debugger: { attach: async () => {}, detach: async source => { chrome.debugger.onDetach.emit(source); },
       sendCommand: async (_target, method, params) => { commands.push({ method, params }); return {}; }, onDetach: event(), onEvent: event() } };
   vm.runInNewContext(source, { chrome, crypto: webcrypto, navigator: { userAgent: 'Chrome fixture' },
-    URL, TextEncoder, AbortController, ...timers, console });
+    URL, TextEncoder, AbortController, AbortSignal, structuredClone, ...timers, console });
   const ui = command => new Promise(resolve => chrome.runtime.onMessage.listeners[0]({ command },
     { id: chrome.runtime.id, url: chrome.runtime.getURL('popup.html') }, resolve));
   await ui('allow');
@@ -44,6 +46,213 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
   });
   return { chrome, port, ports, welcome, hello, ui, call, lease, commands, tab, sent };
 }
+
+test('page traversal is lease-gated and navigation revokes retained continuations', async () => {
+  const f=await fixture();
+  assert.equal((await f.call('ax.page',{lease:f.lease,request:{frameId:'frame'}})).ok,false);
+  await f.call('lease.grant',{lease:f.lease});let loader='loader';
+  const root={nodeId:'1',backendDOMNodeId:1,role:{value:'RootWebArea'},name:{value:''},childIds:Array.from({length:140},(_,i)=>String(i+2))};
+  f.chrome.debugger.sendCommand=async(_target,method)=>{
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'frame',loaderId:loader,url:f.tab.url}}};
+    if(method==='Accessibility.getRootAXNode')return {node:root};
+    if(method==='Accessibility.getChildAXNodes')return {nodes:root.childIds.map(id=>({nodeId:id,backendDOMNodeId:Number(id),role:{value:'button'},name:{value:'Button '+id},childIds:[]}))};
+    return {};
+  };
+  const first=await f.call('ax.page',{lease:f.lease,request:{frameId:'frame'}});assert.equal(first.ok,true);assert.ok(first.value.page.continuation);
+  f.chrome.debugger.onEvent.emit({tabId:7},'Page.frameNavigated',{frame:{id:'frame'}});loader='next';
+  const old=await f.call('ax.page',{lease:f.lease,request:{frameId:'frame',continuation:first.value.page.continuation}});
+  assert.equal(old.ok,false);assert.equal(old.code,'STALE_TARGET');
+  assert.equal((await f.call('ax.page',{lease:f.lease,request:{frameId:'foreign'}})).code,'POLICY_DENIED');
+  await f.ui('stop');
+});
+
+test('frame discovery is lazy, lease-gated and flat child sessions cannot become public raw CDP authority', async () => {
+  const f=await fixture();assert.equal((await f.call('frames.list',{lease:f.lease})).ok,false);
+  await f.call('lease.grant',{lease:f.lease});assert.equal(f.commands.some(c=>c.method==='Target.setAutoAttach'),false);
+  const routes=[];
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    routes.push({target,method});const session=target.sessionId??'';
+    if(method==='Runtime.enable')f.chrome.debugger.onEvent.emit(target,'Runtime.executionContextCreated',
+      {context:{id:1,uniqueId:session||'root',auxData:{isDefault:true,frameId:session?'child':'root'}}});
+    if(method==='Target.setAutoAttach'&&!session)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
+      {sessionId:'child-session',targetInfo:{type:'iframe',targetId:'not-a-frame'}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:session?'child':'root',...(session?{parentId:'root'}:{}),
+      loaderId:session||'root-loader',url:session?'https://foreign.test/private?secret':f.tab.url}}};
+    return {};
+  };
+  const result=await f.call('frames.list',{lease:f.lease});assert.equal(result.ok,true);assert.equal(result.value.frames.length,2);
+  assert.equal(result.value.frames[1].sessionId,'child-session');assert.doesNotMatch(JSON.stringify(result.value),/private|secret/);
+  assert.ok(routes.some(c=>c.target.sessionId==='child-session'&&c.method==='Target.setAutoAttach'));
+  assert.equal((await f.call('frames.list',{lease:f.lease,includeText:true})).code,'INVALID_REQUEST');
+  assert.equal((await f.call('cdp',{lease:f.lease,sessionId:'child-session',method:'Runtime.enable',params:{}})).ok,false);
+  await f.ui('stop');const count=routes.length;assert.equal((await f.call('frames.list',{lease:f.lease})).ok,false);assert.equal(routes.length,count);
+});
+
+test('partial frame initialization failure revokes the gate and detaches without queue deadlock', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});
+  f.chrome.debugger.sendCommand=async(_target,method)=>{if(method==='Target.setAutoAttach')throw Error('setup failed');return {};};
+  assert.equal((await f.call('frames.list',{lease:f.lease})).ok,false);
+  assert.equal((await f.ui('status')).controlled,false);
+  assert.equal((await f.call('frames.list',{lease:f.lease})).code,'LEASE_REVOKED');await f.ui('stop');
+});
+
+test('screenshot last-mile gate discovers hidden OOPIFs even before an explicit inventory', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let captures=0;
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Target.setAutoAttach'&&!target.sessionId)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
+      {sessionId:'remote',targetInfo:{type:'iframe'}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:target.sessionId?'child':'root',
+      ...(target.sessionId?{parentId:'root'}:{}),loaderId:'loader',url:target.sessionId?'https://foreign.test/private':f.tab.url}}};
+    if(method==='Page.captureScreenshot'){captures++;return {data:'must-not-return'};}return {};
+  };
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg'}});
+  assert.equal(response.code,'POLICY_DENIED');assert.equal(captures,0);await f.ui('stop');
+});
+test('frame churn during screenshot discards pixels even when final tree looks unchanged', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'loader',url:f.tab.url}}};
+    if(method==='Page.captureScreenshot'){
+      f.chrome.debugger.onEvent.emit(target,'Page.frameAttached',{frameId:'transient',parentFrameId:'root'});
+      f.chrome.debugger.onEvent.emit(target,'Page.frameDetached',{frameId:'transient',reason:'remove'});
+      return {data:'discard-pixels'};
+    }return {};
+  };
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg'}});
+  assert.equal(response.code,'STALE_TARGET');assert.equal(response.value,undefined);await f.ui('stop');
+});
+
+test('frame AX final dispatch rechecks topology after the asynchronous tab authority lookup',async()=>{
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let enabled=false,reads=0;
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Runtime.enable')f.chrome.debugger.onEvent.emit(target,'Runtime.executionContextCreated',
+      {context:{id:2,uniqueId:'child-context',auxData:{isDefault:true,frameId:'child'}}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'root-doc',url:f.tab.url},childFrames:[
+      {frame:{id:'child',parentId:'root',loaderId:'child-doc',url:f.tab.url}}]}};
+    if(method==='Accessibility.enable')enabled=true;
+    if(method==='Accessibility.getRootAXNode')reads++;
+    return {};
+  };
+  f.chrome.tabs.get=async()=>{if(enabled){enabled=false;f.chrome.debugger.onEvent.emit({tabId:7},'Page.frameNavigated',{frame:{id:'child',parentId:'root'}});}return {...f.tab};};
+  const result=await f.call('ax.frame',{lease:f.lease,binding:{frameId:'child',loaderId:'child-doc',contextUniqueId:'child-context',rootFrameId:'root',rootLoaderId:'root-doc'}});
+  assert.equal(result.code,'STALE_TARGET');assert.equal(reads,0);await f.ui('stop');
+});
+test('frame AX does not expose arbitrary session selection and actual Stop discards a pending source result',async()=>{
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let finish,entered;
+  const started=new Promise(resolve=>entered=resolve),binding={frameId:'child',loaderId:'child-doc',contextUniqueId:'child-context',rootFrameId:'root',rootLoaderId:'root-doc'};
+  assert.equal((await f.call('ax.frame',{lease:f.lease,binding:{...binding,sessionId:'raw'}})).code,'INVALID_REQUEST');
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Runtime.enable')f.chrome.debugger.onEvent.emit(target,'Runtime.executionContextCreated',
+      {context:{id:2,uniqueId:'child-context',auxData:{isDefault:true,frameId:'child'}}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'root-doc',url:f.tab.url},childFrames:[
+      {frame:{id:'child',parentId:'root',loaderId:'child-doc',url:f.tab.url}}]}};
+    if(method==='Accessibility.getRootAXNode'){entered();return new Promise(resolve=>finish=()=>resolve({node:{nodeId:'1',role:{value:'StaticText'},name:{value:'must discard'}}}));}
+    return {};
+  };
+  const pending=f.call('ax.frame',{lease:f.lease,binding});await started;const stopped=f.ui('stop');
+  await new Promise(resolve=>setImmediate(resolve));finish();const result=await pending;assert.equal(result.ok,false);assert.equal(result.value,undefined);await stopped;
+});
+
+async function geometryFixture(){
+  const f=await fixture();
+  f.request={binding:{frameId:'child',loaderId:'child-doc',contextUniqueId:'child-context',rootFrameId:'root',rootLoaderId:'root-doc'},backendNodeId:17};
+  f.geometryCalls=[];
+  f.chrome.debugger.sendCommand=async(target,method,p={})=>{
+    f.geometryCalls.push({target,method,p});const override=await f.geometryOverride?.(method,p);if(override!==undefined)return override;
+    if(method==='Runtime.enable')for(const [index,id] of ['root','child'].entries())f.chrome.debugger.onEvent.emit(target,'Runtime.executionContextCreated',
+      {context:{id:index+1,uniqueId:id+'-context',auxData:{isDefault:true,frameId:id}}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'root-doc',url:f.tab.url},childFrames:[
+      {frame:{id:'child',parentId:'root',loaderId:'child-doc',url:f.tab.url}}]}};
+    if(method==='DOM.resolveNode')return {object:{objectId:'obj-'+p.backendNodeId+'-c'+p.executionContextId}};
+    if(method==='DOM.getFrameOwner')return {backendNodeId:11};
+    if(method==='DOM.getBoxModel')return {model:{content:[200,100,300,100,300,200,200,200]}};
+    if(method==='Accessibility.getPartialAXTree')return {nodes:[{backendDOMNodeId:17,role:{value:'button'},name:{value:'Child button'}}]};
+    if(p.functionDeclaration===frameTargetGeometryFunction)return {result:{value:{ok:p.objectId==='obj-17-c2',x:20,y:30,left:10,top:20,width:20,height:20}}};
+    if(p.functionDeclaration===frameBoundOwnerHitFunction)return {result:{value:true}};
+    if(p.functionDeclaration===frameOwnerMetricsFunction)return {result:{value:{viewport:{width:100,height:100},parentViewport:{width:1000,height:800},scale:1}}};
+    return {};
+  };
+  return f;
+}
+test('extension child-click commands bind semantic target, refuse coordinate injection and use a single guarded input pair',async()=>{
+  const f=await geometryFixture(),request={...f.request,role:'button',name:'Child button'},params={lease:f.lease,request};
+  assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');await f.call('lease.grant',{lease:f.lease});
+  assert.equal((await f.call('frame.click',{...params,request:{...request,point:{x:1,y:1}}})).code,'INVALID_REQUEST');
+  const ready=await f.call('frame.click.prepare',params);assert.equal(ready.ok,true,JSON.stringify(ready));assert.equal(ready.value.acknowledged,false);
+  assert.equal(f.geometryCalls.some(c=>c.method.startsWith('Input.')),false);
+  const result=await f.call('frame.click',params);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.value.acknowledged,true);
+  const input=f.geometryCalls.filter(c=>c.method.startsWith('Input.'));assert.deepEqual(input.map(c=>c.p.type),['mousePressed','mouseReleased']);
+  assert.ok(input.every(c=>c.target.sessionId===undefined&&Math.abs(c.p.x-220)<1e-6&&Math.abs(c.p.y-130)<1e-6));
+  assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,2);
+  await f.ui('stop');assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');
+});
+test('extension frame query has exact lease/schema gates, fixed document-root acquisition and no input',async()=>{
+  const f=await geometryFixture(),request={binding:f.request.binding,query:{name:'Child button',role:'button'}},params={lease:f.lease,request};
+  assert.equal((await f.call('ax.frame.find',params)).code,'LEASE_REVOKED');await f.call('lease.grant',{lease:f.lease});
+  assert.equal((await f.call('ax.frame.find',{...params,request:{...request,backendNodeId:1}})).code,'INVALID_REQUEST');
+  f.geometryOverride=(method,p)=>{
+    if(method==='Accessibility.getRootAXNode')return {node:{frameId:'child',backendDOMNodeId:1}};
+    if(method==='Accessibility.queryAXTree')return {nodes:[{backendDOMNodeId:17,role:{value:'button'},name:{value:'Child button'}}]};
+    if(p.functionDeclaration===frameQueryDocumentFunction)return {result:{value:p.objectId==='obj-1-c2'}};
+    if(p.functionDeclaration===frameQueryNodeFunction)return {result:{value:p.objectId==='obj-17-c2'}};
+  };
+  const result=await f.call('ax.frame.find',params);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.value.nodes.length,1);
+  assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);assert.equal(f.geometryCalls.some(c=>c.method.startsWith('Input.')),false);
+  await f.ui('stop');assert.equal((await f.call('ax.frame.find',params)).code,'LEASE_REVOKED');
+});
+test('extension child subtree reads only its semantically bound root under the source lease and fixed function gate',async()=>{
+ const f=await geometryFixture(),params={lease:f.lease,request:{binding:f.request.binding,root:{backendNodeId:17,role:'button',name:'Child button',editable:false}}};
+ assert.equal((await f.call('ax.frame.subtree',params)).code,'LEASE_REVOKED');await f.call('lease.grant',{lease:f.lease});
+ f.geometryOverride=(method,p)=>{
+  if(method==='Accessibility.getRootAXNode')return {node:{frameId:'child',backendDOMNodeId:1}};
+  if(method==='Accessibility.getPartialAXTree')return {nodes:[{nodeId:'button',backendDOMNodeId:17,role:{value:'button'},name:{value:'Child button'},childIds:[]}]};
+  if([frameQueryDocumentFunction,frameQueryNodeFunction,frameWithinRootFunction].includes(p.functionDeclaration))return {result:{value:true}};
+ };
+ const result=await f.call('ax.frame.subtree',params);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.value.nodes.length,1);
+ assert.equal((await f.call('ax.frame.subtree',{...params,request:{...params.request,root:{...params.request.root,sessionId:'raw'}}})).code,'INVALID_REQUEST');
+ assert.equal(f.geometryCalls.some(c=>c.method.startsWith('Input.')),false);await f.ui('stop');
+});
+test('extension child-click loses authority between down and up without replaying down or claiming acknowledgement',async()=>{
+  const f=await geometryFixture();await f.call('lease.grant',{lease:f.lease});
+  f.geometryOverride=(method,p)=>{if(method==='Input.dispatchMouseEvent'&&p.type==='mousePressed')
+    f.chrome.debugger.onEvent.emit({tabId:7},'Page.frameNavigated',{frame:{id:'child'}});};
+  const result=await f.call('frame.click',{lease:f.lease,request:{...f.request,role:'button',name:'Child button'}});
+  assert.equal(result.ok,false);assert.equal(result.value,undefined);assert.equal(f.geometryCalls.filter(c=>c.method.startsWith('Input.')).length,1);
+  await f.ui('stop');
+});
+test('extension bound geometry is lease-gated, read-only, fixed-schema and cleaned up before reply',async()=>{
+  const f=await geometryFixture(),params={lease:f.lease,request:f.request};
+  assert.equal((await f.call('frame.geometry',params)).code,'LEASE_REVOKED');assert.equal(f.geometryCalls.length,0);
+  await f.call('lease.grant',{lease:f.lease});
+  assert.equal((await f.call('frame.geometry',{...params,script:'anything'})).code,'INVALID_REQUEST');
+  const result=await f.call('frame.geometry',params);assert.equal(result.ok,true,JSON.stringify(result));
+  assert.equal(result.value.depth,1);assert.ok(Math.abs(result.value.point.x-220)<1e-6&&Math.abs(result.value.point.y-130)<1e-6);
+  assert.ok(f.geometryCalls.some(c=>c.method==='Runtime.releaseObjectGroup'));
+  assert.ok(f.geometryCalls.every(c=>!c.method.startsWith('Input.')));assert.doesNotMatch(JSON.stringify(result.value),/objectId|sessionId|context/);
+  await f.ui('stop');assert.equal((await f.call('frame.geometry',params)).code,'LEASE_REVOKED');
+});
+test('extension frame geometry repeats the context fence after async authority lookup',async()=>{
+  const f=await geometryFixture();await f.call('lease.grant',{lease:f.lease});let ready=false,lookups=0;
+  f.geometryOverride=method=>{if(method==='DOM.getFrameOwner'){ready=true;lookups=0;}};
+  f.chrome.tabs.get=async()=>{
+    // First lookup is the getFrameOwner response guard, second precedes the
+    // owner resolution whose source revision must now reject the operation.
+    if(ready&&++lookups===2){ready=false;f.chrome.debugger.onEvent.emit({tabId:7},'Page.frameNavigated',{frame:{id:'child'}});}
+    return {...f.tab};
+  };
+  const result=await f.call('frame.geometry',{lease:f.lease,request:f.request});assert.equal(result.code,'STALE_TARGET');
+  assert.equal(f.geometryCalls.filter(c=>c.method==='DOM.resolveNode').length,1);
+  assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);await f.ui('stop');
+});
+test('actual extension Stop during bound object resolution discards the pending geometry without further reads',async()=>{
+  const f=await geometryFixture();await f.call('lease.grant',{lease:f.lease});let entered,finish;
+  const started=new Promise(resolve=>entered=resolve);
+  f.geometryOverride=method=>{if(method==='DOM.resolveNode'){entered();return new Promise(resolve=>finish=()=>resolve({object:{objectId:'late-object'}}));}};
+  const pending=f.call('frame.geometry',{lease:f.lease,request:f.request});await started;
+  const stopped=f.ui('stop');await new Promise(resolve=>setImmediate(resolve));finish();
+  const result=await pending;assert.equal(result.ok,false);assert.equal(result.value,undefined);
+  assert.equal(f.geometryCalls.some(c=>c.method==='Runtime.callFunctionOn'),false);await stopped;
+});
 
 test('extension never dispatches a command before a valid welcome', async () => {
   const f = await fixture({ handshake: false });

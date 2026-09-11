@@ -1,0 +1,659 @@
+{
+  "checkedAt": "2026-09-11T18:21:54.794Z",
+  "brand": "edge",
+  "browserVersion": "152.0.4191.66",
+  "sourceHashes": {
+    "packages/provider-chromium/src/frame-geometry.ts": "d84cecd03e2d250bc18cc720af2e44cdabf7230a2731c4456464157af164bdf3",
+    "packages/provider-chromium/src/actionability.ts": "8a503f8367ac537b681a40b511eb8e0f106adfde635790dbbf084a44f85be3dc",
+    "dist/packages/provider-chromium/src/frame-geometry.js": "f10cd4abf39458aff8a592dc11e1d109e421e039d49c5e3ca20e3533167c13e8",
+    "dist/packages/provider-chromium/src/actionability.js": "f9d01b98d3dc371f994b9b29a2b27db7178084405864022fdb1cde3f9f73c214",
+    "scripts/smoke-frame-geometry.mjs": "bd4afdc181b45c785dbad0e9743590a00ca23d104d0d776347ff630a10e8240c"
+  },
+  "passed": [
+    "borders-padding-and-nested-scroll: computed root point produces one trusted hit at the expected child-local position",
+    "borders-padding-and-nested-scroll: four near-corner points each produce exactly one trusted child-local hit",
+    "borders-padding-and-nested-scroll: parent overlay rejects the unchanged child point without dispatching input",
+    "borders-padding-and-nested-scroll: intermediate-document overlay rejects the point before input",
+    "borders-padding-and-nested-scroll: pointer-disabled iframe owner cannot pass the parent hit test",
+    "borders-padding-and-nested-scroll: movement between verification rounds invalidates the point",
+    "rotated-nonuniform-scaled-ancestors: computed root point produces one trusted hit at the expected child-local position",
+    "rotated-nonuniform-scaled-ancestors: four near-corner points each produce exactly one trusted child-local hit",
+    "rotated-nonuniform-scaled-ancestors: parent overlay rejects the unchanged child point without dispatching input",
+    "rotated-nonuniform-scaled-ancestors: intermediate-document overlay rejects the point before input",
+    "rotated-nonuniform-scaled-ancestors: pointer-disabled iframe owner cannot pass the parent hit test",
+    "rotated-nonuniform-scaled-ancestors: movement between verification rounds invalidates the point",
+    "perspective-and-rotation: computed root point produces one trusted hit at the expected child-local position",
+    "perspective-and-rotation: four near-corner points each produce exactly one trusted child-local hit",
+    "perspective-and-rotation: parent overlay rejects the unchanged child point without dispatching input",
+    "perspective-and-rotation: intermediate-document overlay rejects the point before input",
+    "perspective-and-rotation: pointer-disabled iframe owner cannot pass the parent hit test",
+    "perspective-and-rotation: movement between verification rounds invalidates the point",
+    "high-dpr: computed root point produces one trusted hit at the expected child-local position",
+    "high-dpr: four near-corner points each produce exactly one trusted child-local hit",
+    "high-dpr: parent overlay rejects the unchanged child point without dispatching input",
+    "high-dpr: intermediate-document overlay rejects the point before input",
+    "high-dpr: pointer-disabled iframe owner cannot pass the parent hit test",
+    "high-dpr: movement between verification rounds invalidates the point",
+    "high-dpr-and-css-zoom: computed root point produces one trusted hit at the expected child-local position",
+    "high-dpr-and-css-zoom: four near-corner points each produce exactly one trusted child-local hit",
+    "high-dpr-and-css-zoom: parent overlay rejects the unchanged child point without dispatching input",
+    "high-dpr-and-css-zoom: intermediate-document overlay rejects the point before input",
+    "high-dpr-and-css-zoom: pointer-disabled iframe owner cannot pass the parent hit test",
+    "high-dpr-and-css-zoom: movement between verification rounds invalidates the point",
+    "nested-css-zoom: computed root point produces one trusted hit at the expected child-local position",
+    "nested-css-zoom: four near-corner points each produce exactly one trusted child-local hit",
+    "nested-css-zoom: parent overlay rejects the unchanged child point without dispatching input",
+    "nested-css-zoom: intermediate-document overlay rejects the point before input",
+    "nested-css-zoom: pointer-disabled iframe owner cannot pass the parent hit test",
+    "nested-css-zoom: movement between verification rounds invalidates the point",
+    "zoom-out-and-reflection: computed root point produces one trusted hit at the expected child-local position",
+    "zoom-out-and-reflection: four near-corner points each produce exactly one trusted child-local hit",
+    "zoom-out-and-reflection: parent overlay rejects the unchanged child point without dispatching input",
+    "zoom-out-and-reflection: intermediate-document overlay rejects the point before input",
+    "zoom-out-and-reflection: pointer-disabled iframe owner cannot pass the parent hit test",
+    "zoom-out-and-reflection: movement between verification rounds invalidates the point"
+  ],
+  "samples": [
+    {
+      "scenario": {
+        "name": "borders-padding-and-nested-scroll",
+        "dpr": 1,
+        "outer": "none",
+        "inner": "none"
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 110,
+            "y": 70
+          },
+          "root": {
+            "x": 410,
+            "y": 410.0000000000001
+          },
+          "received": {
+            "trusted": true,
+            "x": 110,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 314,
+            "y": 354.00000000000006
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 536,
+            "y": 354.00000000000006
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 536,
+            "y": 486.0000000000001
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 146
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 314,
+            "y": 486.0000000000001
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "rotated-nonuniform-scaled-ancestors",
+        "dpr": 1,
+        "outer": "rotate(11deg) scale(.92,.85)",
+        "inner": "rotate(-9deg) scale(.85,1.1)"
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 110,
+            "y": 70
+          },
+          "root": {
+            "x": 371.69644601000726,
+            "y": 410.8481897801796
+          },
+          "received": {
+            "trusted": true,
+            "x": 110,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 298.00136182295057,
+            "y": 354.891174548567
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 13
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 471.10586172374997,
+            "y": 362.97908547749273
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 13
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 468.36015859717656,
+            "y": 486.62668228142496
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 145
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 295.25565869637694,
+            "y": 478.5502182274926
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "perspective-and-rotation",
+        "dpr": 1,
+        "outer": "perspective(900px) rotateY(24deg) rotateZ(6deg)",
+        "inner": "perspective(500px) rotateX(15deg)"
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 110,
+            "y": 70
+          },
+          "root": {
+            "x": 379.22292195560277,
+            "y": 418.2310451874976
+          },
+          "received": {
+            "trusted": true,
+            "x": 109,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 301.6683090658964,
+            "y": 358.73162932444706
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 476.54238248607356,
+            "y": 374.1615619533086
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 13
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 478.59384271092705,
+            "y": 496.92554137971894
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 146
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 289.97227572281093,
+            "y": 493.16484080218345
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "high-dpr",
+        "dpr": 2,
+        "outer": "rotate(7deg) scale(.8)",
+        "inner": "skewX(10deg)"
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 110,
+            "y": 70
+          },
+          "root": {
+            "x": 374.72348566153124,
+            "y": 403.97744164315037
+          },
+          "received": {
+            "trusted": true,
+            "x": 110,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 296.1171662408759,
+            "y": 349.19017473646875
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 472.38638021412004,
+            "y": 370.83517474706133
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 478.0059708566458,
+            "y": 477.91759656965456
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 146
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 301.7253100084079,
+            "y": 456.2725965590607
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "high-dpr-and-css-zoom",
+        "dpr": 2,
+        "outer": "rotate(7deg) scale(.8)",
+        "inner": "skewX(10deg)",
+        "zoom": 1.15
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 110,
+            "y": 70
+          },
+          "root": {
+            "x": 429.7679787970773,
+            "y": 492.7312267103292
+          },
+          "received": {
+            "trusted": true,
+            "x": 110,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 339.3736077212562,
+            "y": 429.7242597443256
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 542.0873535355213,
+            "y": 454.6160092282686
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 548.5326730924485,
+            "y": 577.7601548533383
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 146
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 345.8189015674294,
+            "y": 552.8684053693951
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "nested-css-zoom",
+        "dpr": 1.5,
+        "outer": "rotate(7deg) scale(.8)",
+        "inner": "skewX(10deg)",
+        "zoom": 1.1,
+        "parentZoom": 1.15
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 109.99258804321289,
+            "y": 69.99752998352051
+          },
+          "root": {
+            "x": 431.8129290148108,
+            "y": 532.004756306166
+          },
+          "received": {
+            "trusted": true,
+            "x": 109,
+            "y": 69
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 332.378631668606,
+            "y": 462.70295449922605
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 555.376439814404,
+            "y": 490.0783355208495
+          },
+          "received": {
+            "trusted": true,
+            "x": 236,
+            "y": 13
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 562.4670049019621,
+            "y": 625.5329881499019
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 145
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 339.4806324528193,
+            "y": 598.1576071282792
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 145
+          }
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "name": "zoom-out-and-reflection",
+        "dpr": 1.5,
+        "outer": "scaleX(-1)",
+        "inner": "rotate(9deg)",
+        "zoom": 0.8,
+        "parentZoom": 0.9
+      },
+      "positions": [
+        {
+          "local": {
+            "x": 109.98264694213867,
+            "y": 69.99783515930176
+          },
+          "root": {
+            "x": 97.61979474264382,
+            "y": 258.71848924917964
+          },
+          "received": {
+            "trusted": true,
+            "x": 109,
+            "y": 70
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 14
+          },
+          "root": {
+            "x": 159.52300901997347,
+            "y": 207.8431005037576
+          },
+          "received": {
+            "trusted": true,
+            "x": 14,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 14
+          },
+          "root": {
+            "x": 1.6659100712253405,
+            "y": 232.84585089049085
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 14
+          }
+        },
+        {
+          "local": {
+            "x": 236,
+            "y": 146
+          },
+          "root": {
+            "x": 16.62301266203329,
+            "y": 327.29283713883444
+          },
+          "received": {
+            "trusted": true,
+            "x": 235,
+            "y": 146
+          }
+        },
+        {
+          "local": {
+            "x": 14,
+            "y": 146
+          },
+          "root": {
+            "x": 174.49163048523366,
+            "y": 302.290086753059
+          },
+          "received": {
+            "trusted": true,
+            "x": 13,
+            "y": 146
+          }
+        }
+      ]
+    }
+  ],
+  "scope": "Read-only frame geometry primitive plus test-only trusted CDP input on isolated loopback fixtures. Same-process nested frames, not production frame input, Native/DSH permission integration or OOPIF coordinate certification."
+}

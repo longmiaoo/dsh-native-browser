@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-09-11T18:44:41.683Z",
+  "brand": "edge",
+  "browserVersion": "152.0.4191.66",
+  "dshVersion": "0.1.5-rc.1",
+  "passed": [
+    "Public DSH click crosses two transformed bordered/padded same-origin frames beside a foreign sibling, produces one trusted event and child-only verified observation; replay does not click again",
+    "A child click without a postcondition remains unknown and is never replayed",
+    "Root text cannot satisfy a child expectation; a real post-dispatch timeout has no input replay",
+    "A root overlay blocks child dispatch during source-bound preflight",
+    "Renamed and same-name replacement child controls cannot reuse an observed reference",
+    "Foreign sibling metadata and a valid local node reference do not grant cross-origin input",
+    "Child reload invalidates the old document epoch before any input",
+    "The real DSH public ApprovalService can reject child input before dispatch",
+    "Actual extension Stop during pending public approval prevents a late grant from clicking",
+    "SIGKILL after the trusted child click recovers durable intent without restoring control or repeating input",
+    "Each real public approval request has exactly one audited decision"
+  ],
+  "approvalAudit": {
+    "asked": 17,
+    "decided": 17
+  },
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "hashes": {
+    "scripts/smoke-frame-click-native.mjs": "62b4fca14f8fb5b0a33953b97317f0643b43cb9918e968e351632c7ae951ae1d",
+    "packages/provider-chromium/src/frame-click.ts": "518230a6c4075cb74f76bf30bf1598e364b1dfa82cbefc7b7a838292f693e850",
+    "packages/provider-chromium/src/frame-geometry-read.ts": "1ab17f92dcf6b866d3a0a0bfbf50729c7b27de52d2d7bd0b96467e77d3c4ce6a",
+    "packages/provider-chromium/src/frame-sessions.ts": "1fffc334bc614f42e1d1a5574c284380fbaf93cdacc5ad7fe6a47d3259bea6f0",
+    "packages/provider-chromium/src/provider.ts": "a153aed62c92907bcb80cfa57fa6ea4cad9807b25cc9d9bd735ed7f471d3db72",
+    "packages/runtime-core/src/runtime.ts": "01a1415e2c313c209df4474560afe4ad809ca55ff0ce2f7ffd189a6f29b9a108",
+    "packages/dsh-adapter/src/index.ts": "91b9d528f06a38f30d76203836a39ce8af0245a86467480ac699d117a93f5749",
+    "dist/extension/edge/background.js": "a14ff43e0e3a62e0d57a3f8134ecfbf948be3ef13fe132bd9ce25bcaff4a4687"
+  },
+  "scope": "Real DSH ToolRuntime and public ApprovalService with controlled local answerers -> Broker -> Native Host -> MV3 -> isolated browser, owned loopback fixture. Nested same-origin same-process child clicks only; no LLM, actual human approval UI, signed-in pages, cross-origin input, OOPIF geometry or Codex parity claim."
+}

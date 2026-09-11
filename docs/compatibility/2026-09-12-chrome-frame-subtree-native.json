@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-09-11T19:00:52.970Z",
+  "brand": "chrome",
+  "browserVersion": "151.0.7922.10",
+  "dshVersion": "0.1.5-rc.1",
+  "passed": [
+    "Explicit child-region reads preserve local text, controls, Shadow DOM and slot membership while excluding sibling and foreign descendant content",
+    "A region-scoped exact query disambiguates two Save buttons and clicks only Billing through the public trusted/no-replay path",
+    "Frame, region and contextual-query scopes maintain separate exact-base deltas",
+    "Root-page and sibling-frame refs cannot become child-region roots or widen reads",
+    "Renamed or same-name replaced regions reject old reads; fresh discovery produces a distinct valid root",
+    "Adopting the original region into a same-origin sibling document invalidates its old frame-scoped identity",
+    "Actual popup Stop and fresh consent do not revive old child subtree handles"
+  ],
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "hashes": {
+    "scripts/smoke-frame-subtree-native.mjs": "610b3a09f386fdd25e5e3b76335ca5f0866bfd116e53fc9337ad349df36f6ff7",
+    "packages/contracts/src/validation.ts": "3f5fbb419fb6e0ce6c6792fb9db1d8e390ebaa2349c2d8956eff0c40cc76cdf9",
+    "packages/provider-chromium/src/frame-node-scope.ts": "634ad63f774c677e7d234dcdf83528a4b78c176347b5bb08861985b82f8d1616",
+    "packages/provider-chromium/src/frame-query.ts": "aadbbf1d65b7abfd0df17a210b74fb330d7b2c148bd78c682754dc3bef5ef194",
+    "packages/provider-chromium/src/frame-subtree.ts": "0756b3a9e6f336fb0ab4e6b6c6fe73122480537c56d416c0cae7e251d3090419",
+    "packages/provider-chromium/src/frame-query-functions.ts": "c618ab14ef70bc8a830afa101dff866f8d839ad512e42b2b4aa62645060eee5d",
+    "packages/provider-chromium/src/frame-sessions.ts": "aa60af1f3b8d7e42fcab127fc167f41bf15426b3462b6328b3e93f9b9ab03584",
+    "packages/provider-chromium/src/provider.ts": "49cb76c62ff8f24b9fbc1f0fac759fc3c65186a9e77d5f4d197cae62b314118b",
+    "packages/runtime-core/src/runtime.ts": "18f2bf7d55f3c1af51603e7f2759893501564b82967c1359efca0b0732a7cc66",
+    "dist/extension/chrome/background.js": "f4b718472e701c738cb63a545770c2b9a3380883ea44d55db3df10314c8354f1"
+  },
+  "scope": "Real public DSH/Broker/Native Host/MV3 in fresh isolated profiles, owned loopback fixtures, controlled approval service. Explicit same-origin child subtrees/context queries and existing click; no daily accounts, LLM, human approval UI, cross-origin authorization, OOPIF input or Codex parity."
+}

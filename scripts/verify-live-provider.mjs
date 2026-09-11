@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { ChromiumProvider } from '../dist/packages/provider-chromium/src/provider.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { verifyKeyboard } from './verify-keyboard.mjs';
+import { verifyEditable } from './verify-editable.mjs';
+import { verifyAppend } from './verify-append.mjs';
+import { verifyElementState } from './verify-element-state.mjs';
 import { verifyScroll } from './verify-scroll.mjs';
 import { verifyActionability } from './verify-actionability.mjs';
 import { readAXTree } from '../dist/packages/provider-chromium/src/ax-reader.js';
@@ -108,6 +111,12 @@ export async function verifyLiveProvider(page) {
     const keyboardChecks = await verifyKeyboard({ page,
       observe: () => runtime.observe('live-fixture', lease.id, signal),
       act: (id, action) => run(id, delayed.observation, action) });
+    const editableChecks = await verifyEditable({ page, observe: options => runtime.observe('live-fixture', lease.id, signal, options),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
+    const appendChecks = await verifyAppend({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
+    const stateChecks = await verifyElementState({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
+      act: (id, action, options) => run(id, delayed.observation, action, options) });
     const checkedChecks = await verifyChecked({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
       act: (id, action, options) => run(id, delayed.observation, action, options) });
     const labelChecks = await verifyCheckLabels({ page, observe: () => runtime.observe('live-fixture', lease.id, signal),
@@ -155,7 +164,7 @@ export async function verifyLiveProvider(page) {
     return { passed: ['Chinese AX discovery', 'Scoped AX source query, boundaries and measured response bytes', 'Input.insertText', 'Verified fill', 'Verified click', 'Visible reading text',
       'Empty fill with Backspace', 'Temporary overlay wait', 'Delayed text postcondition without click replay',
       'Cancel covered target before input', 'Offscreen target auto-scroll', 'Cross-origin navigation denied',
-      'Same-origin document navigation', 'Old-document reference rejected', 'JPEG viewport capture', 'Lease release', ...keyboardChecks, ...checkedChecks, ...labelChecks, ...radioChecks, ...wheelChecks, ...scrollChecks, ...hitChecks, ...large.passed, ...queryChecks],
+      'Same-origin document navigation', 'Old-document reference rejected', 'JPEG viewport capture', 'Lease release', ...keyboardChecks, ...editableChecks, ...appendChecks, ...stateChecks, ...checkedChecks, ...labelChecks, ...radioChecks, ...wheelChecks, ...scrollChecks, ...hitChecks, ...large.passed, ...queryChecks],
       observationNodes: o.nodes.length, axMetrics, largePage: large.metrics, screenshotBytes: Buffer.from(image.data, 'base64').length, viewport: image.viewport };
   } finally { await runtime.dispose(); await session.detach(); }
 }

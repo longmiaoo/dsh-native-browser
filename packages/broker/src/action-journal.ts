@@ -2,10 +2,10 @@ import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { createHmac, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { BrowserError, type Action, type ActionResult } from '../../contracts/src/index.js';
-import type { ActionJournal, RecoveryRecord } from '../../contracts/src/journal.js';
+import { BrowserError, type ActionResult } from '../../contracts/src/index.js';
+import type { ActionJournal, JournalKind, RecoveryRecord } from '../../contracts/src/journal.js';
 
-type Stored = { v: 1; key: string; hash: string; kind: Action['kind']; at: number; expires: number;
+type Stored = { v: 1; key: string; hash: string; kind: JournalKind; at: number; expires: number;
   state: 'reserved' | 'settled'; dispatch: 'notDispatched' | 'dispatched'; priorOutcome?: ActionResult['outcome'] };
 const hex = /^[a-f0-9]{64}$/;
 const unavailable = () => new BrowserError('JOURNAL_UNAVAILABLE', 'Action journal is unavailable; no new action may dispatch');
@@ -80,7 +80,7 @@ export class FileActionJournal implements ActionJournal {
   private validate(v: any): void {
     const fields = ['v', 'key', 'hash', 'kind', 'at', 'expires', 'state', 'dispatch', ...(v?.state === 'settled' ? ['priorOutcome'] : [])];
     if (!v || typeof v !== 'object' || Object.keys(v).length !== fields.length || Object.keys(v).some(k => !fields.includes(k))
-      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !['click', 'fill', 'press', 'scroll', 'navigate', 'check', 'wheel'].includes(v.kind)
+      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !['click', 'fill', 'append', 'press', 'scroll', 'navigate', 'check', 'wheel', 'batch'].includes(v.kind)
       || !Number.isSafeInteger(v.at) || v.at < 0 || !Number.isSafeInteger(v.expires) || v.expires <= v.at
       || !['reserved', 'settled'].includes(v.state) || !['notDispatched', 'dispatched'].includes(v.dispatch)
       || v.state === 'reserved' && v.dispatch !== 'dispatched'
@@ -112,7 +112,7 @@ export class FileActionJournal implements ActionJournal {
     try { await this.fd.writeFile(bytes); await this.fd.sync(); this.bytes += bytes.length; }
     catch { this.failed = true; throw unavailable(); }
   }
-  reserve(key: string, hash: string, kind: Action['kind']): Promise<boolean> {
+  reserve(key: string, hash: string, kind: JournalKind): Promise<boolean> {
     return this.serialized(async () => {
       if (this.lookup(key, hash)) return false;
       await this.compact();

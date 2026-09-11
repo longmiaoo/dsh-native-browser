@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-09-11T18:54:18.258Z",
+  "brand": "chrome",
+  "browserVersion": "151.0.7922.10",
+  "dshVersion": "0.1.5-rc.1",
+  "passed": [
+    "Exact child query finds an actionable control omitted from the 220-control default view, excluding same-name root/sibling/foreign-descendant controls",
+    "A source-query ref drives the formal child-click path with one trusted event, child text verification and no replay",
+    "Twenty same-name child candidates remain distinct and a changed state reconstructs through the exact query delta base",
+    "Root/frame/query cursor scopes never mix; name matching is literal and role constraints are preserved",
+    "A same-name replacement gets a fresh child ref and the previous ref cannot dispatch",
+    "Foreign frame authority and unsupported frame-plus-subtree queries fail closed",
+    "Child document reload invalidates old queries while a freshly discovered epoch permits a new lookup",
+    "Actual popup Stop and later consent never revive an old frame query identity"
+  ],
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "hashes": {
+    "scripts/smoke-frame-query-native.mjs": "6e72db5aec5af6c987e61b3db1e43f6f1844253901466088f111005904cd07d9",
+    "packages/contracts/src/index.ts": "26e362151b489cfbb7f5941a15db3f18b06e72c3bfeb4343d6cf91b91f87cb0b",
+    "packages/contracts/src/validation.ts": "78cbcf55a48acb178e25f1c38ed75497c7d0fe0add9f080d76a7cabffb9e4508",
+    "packages/provider-chromium/src/frame-query.ts": "1582098564411f1fa0e16775a8d23587c0a631f46a6c847608cb6682791ddf77",
+    "packages/provider-chromium/src/frame-query-functions.ts": "de175b4b846fc6205a781754cc3746958c0a881c090b25b561055afd4f91f7ba",
+    "packages/provider-chromium/src/frame-sessions.ts": "a01cd436d6d272e55cad85a3062ba04f97d6f3d546f5783f246132fa55e0b22a",
+    "packages/provider-chromium/src/provider.ts": "303c822741ec89d6df8118bfc380b6d056c8f2339323499f97cf1ef9891ba27a",
+    "packages/runtime-core/src/runtime.ts": "fb084e4048e51c85267ffab23a8d877a90199e7e2d83e1d3a1539a9e7fe3326d",
+    "packages/dsh-adapter/src/index.ts": "a0ead2286395fd42718bca812b6d6c67a4a7f5913b62a76012e08daa9aa63b60",
+    "dist/extension/chrome/background.js": "e8dad042784aef8687c130dd364f7485c01c215b82ee4140977d330d2cbcb25d"
+  },
+  "scope": "Real DSH tools -> Broker -> browser-started Native Host -> MV3 in isolated loopback-only profiles; controlled test approval service, no LLM/human approval UI/signed-in pages. Exact same-origin child document query and existing same-process click, not cross-origin access, child subtree/paging or Codex parity."
+}

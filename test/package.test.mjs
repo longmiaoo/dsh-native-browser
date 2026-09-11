@@ -21,7 +21,7 @@ test('exports a loadable development-preview Cordis plugin', () => {
   })
   const tools = []
   assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {} }))
-  assert.equal(tools.length, 6)
+  assert.equal(tools.length, 9)
 })
 
 test('bundle patch mounts the published package name', async () => {

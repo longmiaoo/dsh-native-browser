@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nativeAdapter } from './benchmark/native-adapter.mjs';
+import { applyObservationUpdate } from '../dist/packages/contracts/src/observations.js';
+const hostRoot=process.argv[2],executablePath=process.env.DSH_CHROME_TEST_EXECUTABLE,brand=process.env.DSH_TEST_BROWSER_BRAND??'chrome';
+if(!hostRoot||!executablePath)throw Error('Pass installed DSH directory and set DSH_CHROME_TEST_EXECUTABLE');
+const root=path.resolve(import.meta.dirname,'..'),signal=AbortSignal.timeout(120000),passed=[];
+const html=`<!doctype html><meta charset="utf-8"><style>body{margin:0}iframe{position:absolute;left:80px;top:80px;width:750px;height:600px}#other{left:1000px;width:150px}section{margin:15px;padding:10px;border:1px solid}#nested{left:500px;top:400px;width:150px;height:100px}</style><main id="area"></main><script>
+globalThis.hits=[];const area=document.querySelector('#area');
+if(location.pathname==='/')area.innerHTML='<section aria-label="Billing"><button>保存</button></section><iframe id="child" src="/child"></iframe><iframe id="other" src="/other"></iframe>';
+else if(location.pathname==='/child'){
+ area.innerHTML='<section id="billing" aria-label="Billing"><p id="local">Billing-only text</p><button id="save-billing">保存</button><div id="shadow"></div><div id="many"></div><p id="feedback">Waiting</p></section><section id="shipping" aria-label="Shipping"><p>Shipping-only text</p><button id="save-shipping">保存</button></section>';
+ const host=document.querySelector('#shadow');host.attachShadow({mode:'open'}).innerHTML='<button id="shadow-button">影子按钮</button><slot></slot>';const slotted=document.createElement('button');slotted.textContent='插槽按钮';host.append(slotted);
+ for(let i=0;i<20;i++){const b=document.createElement('button');b.textContent='Local '+i;document.querySelector('#many').append(b);}
+ document.querySelector('#save-billing').addEventListener('click',e=>{hits.push({region:'billing',trusted:e.isTrusted});document.querySelector('#feedback').textContent='Billing saved';});
+ document.querySelector('#save-shipping').addEventListener('click',e=>hits.push({region:'shipping',trusted:e.isTrusted}));
+ const nested=document.createElement('iframe');nested.id='nested';nested.src=location.protocol+'//localhost:'+location.port+'/nested';document.querySelector('#billing').append(nested);
+}else area.innerHTML='<section aria-label="Billing"><button>保存</button><p>Foreign-only text</p></section>';
+</script>`;
+let adapter;
+try{
+ adapter=await nativeAdapter({hostRoot,executablePath,signal,brand,html});let h=await adapter.prepare({},'frame-subtree');
+ await h.page.waitForFunction(()=>document.querySelector('#child')?.contentDocument?.querySelector('#billing'));
+ for(const f of h.page.frames())await f.waitForLoadState('load');
+ const inventory=await adapter.tool('browser_frames',{leaseId:h.lease.id}),foreign=inventory.frames.find(f=>f.originRelation==='cross-origin');assert.ok(foreign);
+ const selected=inventory.frames.find(f=>f.id===foreign.parentId),frame={frameId:selected.id,documentEpoch:selected.documentEpoch};
+ const childPage=h.page.frames().find(f=>new URL(f.url()).pathname==='/child'),view=await h.observe({frame});
+ const region=name=>{const found=view.nodes.filter(n=>n.name===name&&n.kind==='region');assert.equal(found.length,1);return found[0].id;};
+ const billing=region('Billing'),shipping=region('Shipping'),read=(rootRef,extra={})=>h.observe({frame,rootRef,...extra});
+ const local=await read(billing);assert.deepEqual(local.scope,{kind:'subtree',frameId:frame.frameId,rootRef:billing});
+ assert.ok(local.text.includes('Billing-only text'));assert.ok(!local.text.includes('Shipping-only text'));assert.ok(!local.text.includes('Foreign-only text'));
+ assert.ok(local.nodes.some(n=>n.name==='影子按钮'));assert.ok(local.nodes.some(n=>n.name==='插槽按钮'));
+ passed.push('Explicit child-region reads preserve local text, controls, Shadow DOM and slot membership while excluding sibling and foreign descendant content');
+ const query={name:'保存',role:'button'},all=await h.observe({frame,query});assert.equal(all.nodes.length,2);
+ const found=await read(billing,{query});assert.equal(found.nodes.length,1);assert.deepEqual(found.scope,{kind:'query',frameId:frame.frameId,rootRef:billing,query});
+ const act={requestId:'billing-save',leaseId:h.lease.id,documentEpoch:frame.documentEpoch,frame,action:{kind:'click',ref:found.nodes[0].id,expected:{kind:'text',text:'Billing saved'}}};
+ assert.equal((await adapter.tool('browser_act',act)).outcome,'succeeded');assert.deepEqual(await childPage.evaluate(()=>hits),[{region:'billing',trusted:true}]);
+ await adapter.tool('browser_act',act);assert.equal(await childPage.evaluate(()=>hits.length),1);
+ passed.push('A region-scoped exact query disambiguates two Save buttons and clicks only Billing through the public trusted/no-replay path');
+ const before=await read(billing);await childPage.locator('#local').evaluate(el=>el.textContent='Updated local text');
+ const delta=await read(billing,{cursor:before.cursor});assert.equal(delta.format,'delta');assert.ok(applyObservationUpdate(before,delta).text.includes('Updated local text'));
+ assert.equal((await read(shipping,{cursor:before.cursor})).resyncRequired,true);assert.equal((await read(billing,{query,cursor:before.cursor})).resyncRequired,true);
+ assert.equal((await read(billing,{cursor:view.cursor})).resyncRequired,true);
+ passed.push('Frame, region and contextual-query scopes maintain separate exact-base deltas');
+ const rootView=await h.observe(),rootRegion=rootView.nodes.find(n=>n.name==='Billing'&&n.kind==='region');assert.ok(rootRegion);
+ await assert.rejects(read(rootRegion.id));await assert.rejects(h.observe({rootRef:billing}));
+ const sibling=inventory.frames.find(f=>f.parentId===inventory.frames.find(f=>f.isMain).id&&f.id!==frame.frameId);
+ const siblingView=await h.observe({frame:{frameId:sibling.id,documentEpoch:sibling.documentEpoch}}),siblingRoot=siblingView.nodes.find(n=>n.name==='Billing');
+ await assert.rejects(read(siblingRoot.id));
+ passed.push('Root-page and sibling-frame refs cannot become child-region roots or widen reads');
+ await childPage.locator('#billing').evaluate(el=>el.setAttribute('aria-label','Renamed'));
+ await assert.rejects(read(billing));await assert.rejects(read(billing,{query}));
+ await childPage.locator('#billing').evaluate(el=>el.setAttribute('aria-label','Billing'));
+ const old=(await h.observe({frame,query:{name:'Billing',role:'region'}})).nodes[0].id;
+ await childPage.locator('#billing').evaluate(el=>el.replaceWith(el.cloneNode(true)));await assert.rejects(read(old));
+ const replacement=(await h.observe({frame,query:{name:'Billing',role:'region'}})).nodes[0].id;assert.notEqual(replacement,old);
+ assert.ok((await read(replacement)).text.includes('Updated local text'));
+ passed.push('Renamed or same-name replaced regions reject old reads; fresh discovery produces a distinct valid root');
+ await childPage.locator('#billing').evaluate(el=>{const other=parent.document.querySelector('#other').contentDocument;other.body.append(other.adoptNode(el));});
+ await assert.rejects(read(replacement));await assert.rejects(read(replacement,{query}));
+ passed.push('Adopting the original region into a same-origin sibling document invalidates its old frame-scoped identity');
+ await adapter.stop();await assert.rejects(read(shipping));await adapter.allow();h=await adapter.prepare({},'frame-subtree-renewed');await assert.rejects(read(shipping));
+ passed.push('Actual popup Stop and fresh consent do not revive old child subtree handles');
+ const versions={browserVersion:adapter.browserVersion,dshVersion:adapter.dshVersion},cleanup=await adapter.close();adapter=undefined;assert.equal(cleanup.complete,true);
+ const files=['scripts/smoke-frame-subtree-native.mjs','packages/contracts/src/validation.ts','packages/provider-chromium/src/frame-node-scope.ts','packages/provider-chromium/src/frame-query.ts','packages/provider-chromium/src/frame-subtree.ts','packages/provider-chromium/src/frame-query-functions.ts','packages/provider-chromium/src/frame-sessions.ts','packages/provider-chromium/src/provider.ts','packages/runtime-core/src/runtime.ts','dist/extension/'+brand+'/background.js'];
+ const hashes=Object.fromEntries(await Promise.all(files.map(async file=>[file,createHash('sha256').update(await readFile(path.join(root,file))).digest('hex')])));
+ const report={checkedAt:new Date().toISOString(),brand,...versions,passed,cleanup,hashes,
+  scope:'Real public DSH/Broker/Native Host/MV3 in fresh isolated profiles, owned loopback fixtures, controlled approval service. Explicit same-origin child subtrees/context queries and existing click; no daily accounts, LLM, human approval UI, cross-origin authorization, OOPIF input or Codex parity.'};
+ await mkdir(path.join(root,'output/playwright'),{recursive:true});await writeFile(path.join(root,'output/playwright',brand+'-frame-subtree-native-smoke.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
+}finally{if(adapter)assert.equal((await adapter.close()).complete,true);}

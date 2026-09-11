@@ -34,7 +34,10 @@ try {
   const call = (name, args) => ctx.tools.execute({ name, callId: `smoke-${++number}`, arguments: args,
     agent: { session }, signal: AbortSignal.timeout(3000) });
   const names = ctx.tools.schemas().map(tool => tool.name);
-  assert.equal(names.length, 6);
+  assert.equal(names.length, 9);
+  assert.ok(names.includes('browser_frames'));
+  assert.ok(names.includes('browser_read_page'));
+  assert.ok(names.includes('browser_batch'));
   const list = await call('browser_list', {});
   assert.equal(list.isError, false);
   const denied = await call('browser_claim', { instanceId: 'fake-1', tab: 'tab-1' });

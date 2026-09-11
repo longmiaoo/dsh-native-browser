@@ -41,7 +41,7 @@ Client hello payload (placeholder token):
 {
   "bootstrap":1,"versions":[1],"role":"client","token":"<private IPC token>",
   "journalKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1"]
+  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1"]
 }
 ```
 
@@ -50,7 +50,7 @@ Provider hello payload before token injection:
 ```json
 {
   "bootstrap":1,"versions":[1],"role":"provider",
-  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1"],
+  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1"],
   "requiredCapabilities":["runtime.v1","provider.ax-read.v1","provider.ax-find.v1"],
   "instance":{"id":"opaque-instance","family":"chromium","brand":"chrome","version":"browser user agent","profileLabel":"User-authorized profile"}
 }
@@ -61,7 +61,7 @@ Welcome payload:
 ```json
 {
   "version":1,"connectionEpoch":"opaque-new-connection",
-  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1"]
+  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1"]
 }
 ```
 
@@ -73,22 +73,49 @@ A legacy client may omit requirements and `journalKey`; it then has only connect
 
 ## Roles and implemented methods
 
+`observe.frame-subtree.v1` / `ax.frame-subtree.v1` add `frame` + `rootRef` to `browser.observe`, optionally with `query`. The new optional portable method is `observeFrameSubtree`; `findFrame` receives an optional root-ref argument. Subtree scope is `{kind:'subtree',frameId,rootRef}`; contextual query scope is `{kind:'query',frameId,rootRef,query}`. Both retain the child `documentEpoch`. Scope equality and the public delta reducer include the frame and root, so old/other-region cursors cannot be applied silently. Missing provider support or stale roots never fall back to root-document or whole-frame reads.
+
+Internal `ax.frame.subtree` accepts exact `{lease,request:{binding,root}}`; `ax.frame.find` adds optional `root` to its previous payload. `root` is `{backendNodeId,role,name,editable}`, derived only from the provider's current child ref cache. It has no caller-selected session/context/object/script fields; backend identity is positive, name is at most 1,000 UTF-16 units and editable is boolean. Source verifies document membership and current role/name/editor capability before and after acquisition, then filters candidates against the same composed root and current AX identity. Query and subtree reads share the private-object read/cleanup fence. [Workflow and resource limits](development.md#known-child-regions-and-contextual-queries).
+
+`observe.frame-query.v1` / `ax.frame-find.v1` permit `browser.observe` with both `frame` and an exact `query`. The optional provider seam is `findFrame`; missing support never falls back to root search. The child epoch stays in `documentEpoch`; scope is `{kind:'query',frameId,query}` (not a whole-frame scope). These fields participate in normal delta/reducer scope validation. The newer scoped-read capability below adds `rootRef`; paging options remain unsupported.
+
+Internal `ax.frame.find` accepts exact `{lease,request:{binding,query}}`, not caller DOM/session selectors. `binding` uses the five `ax.frame` fields. Source validation resolves the child document from frame-aware AX root evidence, verifies the corresponding DOM object, performs literal name/role lookup and verifies up to 128 candidates' document ownership and current object-bound AX identity. Private object groups and graph revisions are fenced through cleanup; runtime rechecks the current frame inventory before publication. Shared object-read scopes cap calls and resources but do not bound Chromium's raw name computation. [Source semantics and limits](development.md#exact-same-origin-child-queries).
+
+`runtime.frame-click.v1` / `input.frame-click.v1` require matching runtime/extension builds for explicit child clicks. `browser.act` adds optional `frame:{frameId,documentEpoch}`, with the top-level epoch required to match that child. Only click/text expectations are allowed; portable provider method `actFrame` is optional and never falls back to root `act`. Authorization sees the explicit frame, and durable hashing includes it. Results use the child epoch and `scope:{kind:'frame',frameId}`. Root action and batch contracts do not infer frame scope.
+
+Internal `frame.click.prepare` and `frame.click` accept exact `{lease,request:{binding,backendNodeId,role,name}}`. `binding` is the five-field `ax.frame` document/context binding; role/name come from the observed cached target, not a new search. Neither command accepts raw coordinates, object/session IDs or scripts. Preparation is read-only and returns `{acknowledged:false}`; click reacquires and revalidates the binding/semantic identity/geometry, sends one fenced pointer pair, cleans up and returns `{acknowledged:true}`. Provider dispatch intent is recorded before sending the latter command; missing/invalid replies or post-dispatch document changes remain uncertain and cannot trigger automatic replay. The child-only postcondition read is separate from that acknowledgement. See [workflow, recovery and limitations](development.md#explicit-same-origin-child-clicks).
+
 | Direction | Methods | Authority / payload boundary |
 |---|---|---|
 | Client → Broker | `browser.instances` | Authenticated client |
 | Client → Broker | `browser.tabs`, `browser.claim` | Connection-bound session, instance/tab identity, origin policy and popup approval |
 | Client → Broker | `browser.observe`, `browser.capture`, `browser.act` | Owning session and live lease; actions additionally carry request ID and document epoch |
+| Client → Broker | `browser.readPage` | `{sessionId,leaseId,options:{rootRef?,continuation?}}`; owning live lease/read policy; fresh bounded window, never a delta baseline |
+| Client → Broker | `browser.frames` | `{sessionId,leaseId}`; same owner/read policy and tab queue; validated frame metadata, not child-content permission |
+| Client → Broker | `browser.batch` | Same owner/lease/action boundaries; `{sessionId,request,approvalId}` with 1–8 explicit steps, shared deadline and whole-plan durable fence |
+| Broker → Client request | `browser.approveBatchStep` | Exact `{approvalId,index}`; private active callback context, same connection/turn and strict next index; public DSH per-step approval, only `{allowed:true}` permits continuation |
 | Client → Broker | `browser.validateLease` | Owning session/live lease, current tab/origin and read policy; returns only `{valid:true}`, never renews a lease or reads page content |
 | Client → Broker | `browser.release`, `browser.releaseSession` | Calling connection's owner scope |
 | Broker → Client event | `browser.lease-revoked` | Exact `{sessionId,leaseId}` on the owning connection only; no token, tab, origin or page data; advisory early cancellation, not an authority grant |
 | Broker → extension | `tabs.list`, `lease.grant`, `lease.revoke` | Current instance, approved tab/origin and fencing token |
-| Broker → extension | `ax.read`, `ax.find`, `cdp` | Live lease/Stop gate; fixed AX requests or allowlisted CDP methods/parameter checks |
+| Broker → extension | `ax.read`, `ax.find`, `ax.page`, `cdp` | Live lease/Stop gate; fixed AX requests or allowlisted CDP methods/parameter checks |
+| Broker → extension | `frames.list` | Exact `{lease}`; lazy recursive iframe attachment, root-document fencing, source frame/session/context metadata only |
+| Broker → extension | `ax.frame` | `{lease,binding:{frameId,loaderId,contextUniqueId,rootFrameId,rootLoaderId}}`; same-origin ancestor-chain policy and exact document/context revision fence, fixed bounded AX traversal only |
+| Broker → extension (internal read seam) | `frame.geometry` | `{lease,request:{binding,backendNodeId}}`; same five-field binding as `ax.frame`, same-origin/same-process source-bound geometry only; returns `{point,local,depth}` after object cleanup, not an input ticket or public action; no caller session, object, script or point |
 
 Providers cannot invoke client runtime methods. The Native Host relays messages; it is not a second runtime. Internal `cdp` is not a public DSH tool or arbitrary model-selected CDP interface. Public tools are documented in [development.md](development.md).
 
 `runtime.capture-publication.v1` is required by current clients. A pending screenshot binds to its original Broker connection, owning turn and lease. Handoff cancels it locally; Broker events cancel it after remote Stop/release, and connection loss cannot silently reconnect the pending image. After Host canonicalization, the client calls `browser.validateLease` on that same connection before returning the result. Events may be delayed, so they are not the sole publication check. This rechecks authority, not document/geometry freshness or the Host's later result-publication pipeline. Existing historical Host images are not retracted.
 
+`runtime.batch.v1` adds runtime-level orchestration, not an extension input API. An outer batch occupies one tab queue slot and reserves durable intent before its first child; each child retains its own intent and action verification. Public `batch:` request IDs are reserved for internal deterministic child fences. Any non-success/unverified result or non-final document change ends the plan. Whole-plan recovery never resumes skipped children. The adapter binds callbacks to the validated local plan rather than trusting a remote-supplied action description; the reverse callback carries no form text or page content. Capacity, approval-policy integration, partial-result semantics and recovery/downgrade limits are specified in [bounded action batches](development.md#bounded-action-batches).
+
+`runtime.page.v1` and provider `ax.page.v1` add explicit live traversal windows. Internal `ax.page` accepts `{lease,request:{frameId,backendNodeId?,continuation?}}`; the extension checks the currently leased root frame/loader before and after source acquisition. Opaque single-use continuations are scoped to lease token/document/root and retain identities/offsets only, not page text. They are distinct from transport IDs, action IDs and observation-delta cursors. Reuse, expiry, changed scope/document or active traversal-path changes fail rather than resyncing to a broader read. Stop/release/disconnect/navigation invalidate state. See [live page windows](development.md#live-page-windows) for budgets, incomplete coverage, current-node rereads and the explicit non-atomic consistency model.
+
 ## Identity, cancellation and replay
+
+`observe.frame.v1` / `ax.frame.v1` add optional `frame:{frameId,documentEpoch}` to `browser.observe`, without a new public tool. The portable optional provider method is `observeFrame`; runtime requires both current inventory and that method. The newer `observe.frame-query.v1` and `observe.frame-subtree.v1` capabilities permit exact child queries and known-root scopes described above. Results use `scope:{kind:'frame',frameId}` and the child's epoch; normal delta/reducer scope checks apply. The root tab URL/title remain metadata, not the source of the child text. Full source identity stays internal. Current content authority permits only an exact same-origin ancestor chain; foreign/opaque ancestors and incomplete evidence fail before AX dispatch. [Read workflow and limitations](development.md#explicit-same-origin-frame-reads).
+
+`runtime.frames.v1` / `frame.sessions.v1` require matching builds for the frame inventory and screenshot safety gate. Public `FrameInventory` contains `{tab,documentEpoch,truncated,frames}`; each frame has opaque `id`, optional `parentId/documentEpoch/origin`, `isMain`, `contextStatus: known|unavailable` and `originRelation: same-origin|cross-origin|opaque`. Runtime projects only these fields, recomputes origin relation, rejects URLs containing paths/queries, and validates one reachable authorized root without cycles. No AX/node-ref or observation-delta authority is granted. Internal source revision/session/context identities do not cross the public boundary. `frameDiscovery:true` is advertised separately from still-false `oopif` action support. [Budgets and current limitations](development.md#frame-discovery-foundation).
 
 `connectionEpoch` is welcome metadata, **not** an authorization field repeated on each message. Authority combines the Broker's connection-bound owner, live lease/fencing token, popup approval, origin, document epoch and validated element identity. Reconnection creates a new extension instance and new authority; old leases are never restored automatically. Claiming does not yet implement the original draft's single-use candidate token/title-match protocol.
 

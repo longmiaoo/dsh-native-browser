@@ -15,6 +15,9 @@ import { providerCapabilities, providerRequirements } from '../dist/packages/con
 import { diagnose } from '../dist/packages/installer/src/doctor.js';
 import { applyObservationUpdate } from 'dsh-native-browser/observations';
 import { verifyKeyboard } from './verify-keyboard.mjs';
+import { verifyEditable } from './verify-editable.mjs';
+import { verifyAppend } from './verify-append.mjs';
+import { verifyElementState } from './verify-element-state.mjs';
 import { verifyScroll } from './verify-scroll.mjs';
 import { verifyActionability } from './verify-actionability.mjs';
 import { verifyLargeObservation } from './verify-large-observation.mjs';
@@ -180,6 +183,9 @@ try {
   assert.equal((await act('native-fill', { kind: 'fill', ref: field.id, text: '原生通信 · DSH' })).outcome, 'succeeded');
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
   passed.push(...await verifyKeyboard({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyEditable({ page, observe: options => value('browser_observe', { leaseId: lease.id, ...options }), act }));
+  passed.push(...await verifyAppend({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyElementState({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyChecked({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyCheckLabels({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
   passed.push(...await verifyRadio({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));

@@ -4,11 +4,20 @@ import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
 import { allowedMouseEvent } from '../../provider-chromium/src/mouse.js';
 import { axReadRequest, readAXTree } from '../../provider-chromium/src/ax-reader.js';
 import { axFindRequest, findAXNodes } from '../../provider-chromium/src/ax-query.js';
+import { AXPager, axPageRequest } from '../../provider-chromium/src/ax-pager.js';
+import { FrameSessions } from '../../provider-chromium/src/frame-sessions.js';
+import { frameReadBinding, readFrameAX } from '../../provider-chromium/src/frame-read.js';
+import { frameFindRequest, findFrameAX } from '../../provider-chromium/src/frame-query.js';
+import { frameSubtreeRequest, readFrameSubtree } from '../../provider-chromium/src/frame-subtree.js';
+import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
+import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { wireMessage, acceptWelcome, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
 const allowed = new Map<number, string>();
 const gates = new Map<number, Lease>();
+const pager = new AXPager();
+const frameSessions = new Map<number, FrameSessions>();
 const attached = new Set<number>();
 const queues = new Map<number, Promise<unknown>>();
 const changeTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -63,6 +72,8 @@ function stop(id: number, forget = true): Promise<void> {
   const lease = gates.get(id);
   // This synchronous change is the last-mile Stop guarantee, before any network/IPC.
   gates.delete(id);
+  frameSessions.get(id)?.dispose(); frameSessions.delete(id);
+  if (lease) pager.revoke(lease.token + '|');
   clearTimeout(changeTimers.get(id)); changeTimers.delete(id);
   changeSequences.delete(id);
   if (forget) allowed.delete(id);
@@ -70,6 +81,25 @@ function stop(id: number, forget = true): Promise<void> {
   return enqueue(id, async () => {
     if (attached.has(id)) { attached.delete(id); await chrome.debugger.detach({ tabId: id }).catch(() => {}); }
   });
+}
+
+async function frameGraph(lease: Lease, signal: AbortSignal) {
+  const id = await ensure(lease, signal);
+  const send = async (sessionId: string, command: string, params: Record<string, unknown>, currentSignal: AbortSignal, beforeDispatch?: () => void) => {
+    await ensure(lease, currentSignal); checkGate(lease, currentSignal);
+    beforeDispatch?.();
+    const result = await chrome.debugger.sendCommand({ tabId: id, ...(sessionId ? { sessionId } : {}) }, command, params) as Record<string, any>;
+    await ensure(lease, currentSignal); return result;
+  };
+  let graph = frameSessions.get(id);
+  if (!graph) {
+    graph = new FrameSessions(send, () => { void stop(id, false); }); frameSessions.set(id, graph);
+    try { await graph.start(signal); }
+    // Auto-attachment may already be active. Close the gate synchronously;
+    // detach is queued, so do not await it from inside this queue slot.
+    catch (error) { if (frameSessions.get(id) === graph) void stop(id, false); throw error; }
+  }
+  return { graph, send };
 }
 
 async function execute(method: string, raw: unknown, signal: AbortSignal): Promise<unknown> {
@@ -105,8 +135,56 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     if (gates.get(id)?.token === lease.token) await stop(id, false);
     return { released: true };
   }
-  if (method === 'ax.read' || method === 'ax.find') {
-    const request = method === 'ax.find' ? axFindRequest(p.request) : axReadRequest(p.request);
+  if (method === 'frames.list') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Frame discovery only accepts its lease');
+    return enqueue(id, async () => {
+      const { graph, send } = await frameGraph(lease, signal);
+      const before = (await send('', 'Page.getFrameTree', {}, signal)).frameTree?.frame;
+      const result = await graph.snapshot(signal);
+      const after = (await send('', 'Page.getFrameTree', {}, signal)).frameTree?.frame;
+      if (!before?.loaderId || !after || before.id !== after.id || before.loaderId !== after.loaderId
+        || originOf(before.url) !== lease.origin || originOf(after.url) !== lease.origin) throw new BrowserError('STALE_TARGET', 'Root document changed during frame discovery');
+      return result;
+    });
+  }
+  if(method==='frame.click.prepare'||method==='frame.click'){
+    if(Object.keys(p).some(key=>!['lease','request'].includes(key)))throw new BrowserError('INVALID_REQUEST','Invalid frame click command');
+    const request=frameClickRequest(p.request);
+    return enqueue(id,async()=>{
+      const {graph}=await frameGraph(lease,signal);
+      const result=await frameClick(graph,request,lease.origin,signal,method==='frame.click');
+      await ensure(lease,signal);return result;
+    });
+  }
+  if (method === 'frame.geometry') {
+    if(Object.keys(p).some(key=>!['lease','request'].includes(key)))throw new BrowserError('INVALID_REQUEST','Invalid frame geometry read');
+    const request=frameGeometryRequest(p.request);
+    return enqueue(id,async()=>{
+      const {graph}=await frameGraph(lease,signal);
+      const result=await readFrameGeometry(graph,request,lease.origin,signal);
+      await ensure(lease,signal);return result;
+    });
+  }
+  if (method === 'ax.frame') {
+    if (Object.keys(p).some(key => !['lease', 'binding'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Invalid frame read');
+    const binding = frameReadBinding(p.binding);
+    return enqueue(id, async () => {
+      const { graph } = await frameGraph(lease, signal);
+      const result = await readFrameAX(graph, binding, lease.origin, signal);
+      await ensure(lease, signal); return result;
+    });
+  }
+  if (method === 'ax.frame.find' || method === 'ax.frame.subtree') {
+    if (Object.keys(p).some(key => !['lease', 'request'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Invalid child query');
+    const request = method === 'ax.frame.find' ? frameFindRequest(p.request) : frameSubtreeRequest(p.request);
+    return enqueue(id, async () => {
+      const { graph } = await frameGraph(lease, signal);
+      const result = await (method === 'ax.frame.find' ? findFrameAX : readFrameSubtree)(graph, request, lease.origin, signal);
+      await ensure(lease, signal); return result;
+    });
+  }
+  if (method === 'ax.read' || method === 'ax.find' || method === 'ax.page') {
+    const request = method === 'ax.page' ? axPageRequest(p.request) : method === 'ax.find' ? axFindRequest(p.request) : axReadRequest(p.request);
     return enqueue(id, async () => {
       const send = async (command: string, params: Record<string, unknown>) => {
         await ensure(lease, signal);
@@ -119,10 +197,12 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       if (!before || before.id !== request.frameId || !before.loaderId || originOf(before.url) !== lease.origin) {
         throw new BrowserError('POLICY_DENIED', 'AX read requires the currently leased root frame');
       }
-      const result = method === 'ax.find' ? await findAXNodes(axFindRequest(p.request), send, signal)
+      const result = method === 'ax.page' ? await pager.read(axPageRequest(p.request), lease.token + '|' + before.id + ':' + before.loaderId, send, signal)
+        : method === 'ax.find' ? await findAXNodes(axFindRequest(p.request), send, signal)
         : await readAXTree(request, send, signal);
       const after = (await send('Page.getFrameTree', {})).frameTree?.frame;
       if (!after || after.id !== before.id || after.loaderId !== before.loaderId || originOf(after.url) !== lease.origin) {
+        if (method === 'ax.page') pager.revoke(lease.token + '|');
         throw new BrowserError('STALE_TARGET', 'Document changed during AX traversal');
       }
       return result;
@@ -150,6 +230,21 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     }
     return enqueue(id, async () => {
       await ensure(lease, signal);
+      if (command === 'Page.captureScreenshot') {
+        // Root Page.getFrameTree omits attached OOPIFs. Inspect all sessions at
+        // the last mile, including captures made before explicit frame discovery.
+        const { graph, send } = await frameGraph(lease, signal);
+        const before = await graph.snapshot(signal);
+        if (before.truncated || before.frames.some(frame => frame.origin !== lease.origin))
+          throw new BrowserError('POLICY_DENIED', 'Screenshot frame authority is incomplete');
+        const image = await send('', command, params, signal);
+        const after = await graph.snapshot(signal);
+        if (after.truncated || after.frames.some(frame => frame.origin !== lease.origin))
+          throw new BrowserError('POLICY_DENIED', 'Screenshot contains an unapproved frame');
+        if (before.revision !== after.revision || JSON.stringify(before.frames) !== JSON.stringify(after.frames))
+          throw new BrowserError('STALE_TARGET', 'Frame documents changed during capture');
+        return image;
+      }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
       return await chrome.debugger.sendCommand({ tabId: id }, command, params);
@@ -173,6 +268,7 @@ function connect(): void {
     for (const controller of pending.values()) controller.abort();
     pending.clear(); seen.clear();
     if (port === current) {
+      pager.clear();
       port = undefined; status = message;
       for (const id of gates.keys()) void stop(id, false);
     }
@@ -255,8 +351,11 @@ chrome.debugger.onDetach.addListener(source => {
 // Payload-free, coalesced hints: page data and AX subtrees never ride the event channel.
 const changeEvents = new Set(['Page.frameNavigated', 'Page.navigatedWithinDocument', 'Page.lifecycleEvent',
   'DOM.documentUpdated', 'Accessibility.nodesUpdated', 'Accessibility.loadComplete']);
-chrome.debugger.onEvent.addListener((source, method) => {
+chrome.debugger.onEvent.addListener((source, method, params) => {
   const id = source.tabId;
+  if (id !== undefined && gates.has(id)) frameSessions.get(id)?.event(source.sessionId ?? '', method, params);
+  if (id !== undefined && gates.has(id) && method === 'Page.frameNavigated'
+    && !source.sessionId && !(params as { frame?: { parentId?: string } })?.frame?.parentId) pager.revoke(gates.get(id)!.token + '|');
   if (id === undefined || !gates.has(id) || !changeEvents.has(method) || changeTimers.has(id)) return;
   changeTimers.set(id, setTimeout(() => {
     changeTimers.delete(id);

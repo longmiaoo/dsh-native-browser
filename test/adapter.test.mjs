@@ -7,6 +7,7 @@ import { apply } from '../index.js';
 import { startBroker } from '../dist/packages/broker/src/server.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
 import { createHash } from 'node:crypto';
+import Ajv from 'ajv';
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
@@ -28,10 +29,140 @@ async function fixture(t) {
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('explicit frame click keeps public approval, exact scope schema and Broker deduplication',async t=>{
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),frame={frameId:'child',documentEpoch:'child-doc'};let calls=0;
+  f.provider.frames=async l=>({tab:l.tab,documentEpoch:'root-doc',truncated:false,frames:[
+    {id:'root',isMain:true,origin:l.origin,documentEpoch:'root-doc',contextStatus:'known'},
+    {id:'child',parentId:'root',isMain:false,origin:l.origin,documentEpoch:'child-doc',contextStatus:'known'}]});
+  f.provider.actFrame=async(l,r,e)=>{calls++;assert.deepEqual(r.frame,frame);e.onDispatch();return {
+    observation:{...await f.provider.observe(l,e.signal),documentEpoch:frame.documentEpoch,scope:{kind:'frame',frameId:frame.frameId}},postcondition:'passed'};};
+  const args={requestId:'child-click',leaseId:lease.id,documentEpoch:frame.documentEpoch,frame,action:{kind:'click',ref:'child-node'}};
+  const validate=new Ajv({strict:false}).compile(f.definitions.get('browser_act').parameters);
+  assert.equal(validate(args),true);assert.equal(validate({...args,frame:{...frame,point:{x:1,y:2}}}),false);
+  const call=f.prepare('browser_act',args);assert.equal(call.decision.kind,'ask');assert.equal((await call.run()).outcome,'succeeded');
+  await f.prepare('browser_act',args).run();assert.equal(calls,1);assert.equal(f.provider.calls.length,0);
+  assert.throws(()=>f.prepare('browser_act',{...args,action:{kind:'fill',ref:'r',text:'x'}}).run(),{code:'INVALID_REQUEST'});
+});
+test('frame-scoped observe schema routes exact child identity and retains normal read lifecycle',async t=>{
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),frame={frameId:'child',documentEpoch:'child-doc'};
+  f.provider.frames=async l=>({tab:l.tab,documentEpoch:'doc',truncated:false,frames:[
+    {id:'root',isMain:true,origin:l.origin,documentEpoch:'doc',contextStatus:'known'},
+    {id:'child',parentId:'root',isMain:false,origin:l.origin,documentEpoch:'child-doc',contextStatus:'known'}]});
+  f.provider.observeFrame=async(l,target,s)=>{assert.deepEqual(target,frame);return {...await f.provider.observe(l,s),documentEpoch:target.documentEpoch,scope:{kind:'frame',frameId:target.frameId}};};
+  const validate=new Ajv({strict:false}).compile(f.definitions.get('browser_observe').parameters);
+  assert.equal(validate({leaseId:lease.id,frame}),true);assert.equal(validate({leaseId:lease.id,frame:{...frame,sessionId:'raw'}}),false);
+  const prepared=f.prepare('browser_observe',{leaseId:lease.id,frame});assert.equal(prepared.decision.kind,'allow');
+  assert.deepEqual((await prepared.run()).scope,{kind:'frame',frameId:'child'});
+  assert.throws(()=>f.prepare('browser_observe',{leaseId:lease.id,frame,rootRef:123}).run(),{code:'INVALID_REQUEST'});
+  f.provider.findFrame=async(l,target,query,s)=>({...await f.provider.observeFrame(l,target,s),scope:{kind:'query',frameId:target.frameId,query}});
+  const query={name:'Exact',role:'button'};assert.equal(validate({leaseId:lease.id,frame,query}),true);
+  const lookup=f.prepare('browser_observe',{leaseId:lease.id,frame,query});assert.equal(lookup.decision.kind,'allow');
+  assert.deepEqual((await lookup.run()).scope,{kind:'query',frameId:frame.frameId,query});
+  f.provider.observeFrameSubtree=async(l,target,rootRef,s)=>({...await f.provider.observeFrame(l,target,s),scope:{kind:'subtree',frameId:target.frameId,rootRef}});
+  assert.deepEqual((await f.prepare('browser_observe',{leaseId:lease.id,frame,rootRef:'region'}).run()).scope,{kind:'subtree',frameId:'child',rootRef:'region'});
+  const old=f.prepare('browser_observe',{leaseId:lease.id,frame});await f.end();await assert.rejects(old.run(),{code:'LEASE_REVOKED'});
+});
+test('frame tool exposes metadata-only schema through Broker and ends with the owning turn', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();
+  f.provider.frames=async l=>({tab:l.tab,documentEpoch:'doc',truncated:false,frames:[
+    {id:'frame-root',isMain:true,documentEpoch:'doc',origin:l.origin,contextStatus:'known',sessionId:'private'}]});
+  const validate=new Ajv({strict:false}).compile(f.definitions.get('browser_frames').parameters);
+  assert.equal(validate({leaseId:lease.id}),true);
+  for(const extra of [{sessionId:'raw'},{frameId:'raw'},{includeText:true}])assert.equal(validate({leaseId:lease.id,...extra}),false);
+  const call=f.prepare('browser_frames',{leaseId:lease.id});assert.equal(call.decision.kind,'allow');
+  assert.equal((await call.run()).frames[0].sessionId,undefined);
+  const old=f.prepare('browser_frames',{leaseId:lease.id});await f.end();await assert.rejects(old.run(),{code:'LEASE_REVOKED'});
+});
 const until = async check => {
   for (let n = 0; n < 100; n++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.fail('Condition did not settle');
 };
+
+test('page tool validates its independent window schema and keeps the owning turn', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),seen=[];
+  f.provider.readPage=async(l,options,signal)=>{seen.push(options);return {...await f.provider.observe(l,signal),page:{index:0,incomplete:false}};};
+  const validate=new Ajv({strict:false}).compile(f.definitions.get('browser_read_page').parameters);
+  assert.equal(validate({leaseId:lease.id}),true);
+  for(const extra of [{cursor:'delta'},{query:{name:'x'}},{offset:20}])assert.equal(validate({leaseId:lease.id,...extra}),false);
+  const prepared=f.prepare('browser_read_page',{leaseId:lease.id,continuation:'opaque'});assert.equal(prepared.decision.kind,'allow');
+  assert.equal((await prepared.run()).page.index,0);assert.deepEqual(seen,[{continuation:'opaque'}]);
+  const old=f.prepare('browser_read_page',{leaseId:lease.id});await f.end();await assert.rejects(old.run(),{code:'LEASE_REVOKED'});
+});
+
+test('state postconditions retain per-action approval, strict public schema and request-ID payload fencing', async t => {
+  const f = await fixture(t), lease = await f.prepare('browser_claim', claimArgs).run();
+  const args = { requestId: 'state-adapter', leaseId: lease.id, documentEpoch: 'doc-1', action: { kind: 'click', ref: 'node-1',
+    expected: { kind: 'state', ref: 'node-1', state: 'enabled' } } };
+  const validate = new Ajv({ strict: false }).compile(f.definitions.get('browser_act').parameters);
+  assert.equal(validate(args), true);
+  for (const expected of [{ ...args.action.expected, state: 'custom-script' }, { ...args.action.expected, objectId: 'forged' }])
+    assert.equal(validate({ ...args, action: { ...args.action, expected } }), false);
+  assert.equal(validate({ ...args, action: { kind: 'navigate', url: 'https://example.test/', expected: args.action.expected } }), false);
+  const call = f.prepare('browser_act', args); assert.equal(call.decision.kind, 'ask');
+  const result = await call.run(); assert.equal(result.outcome, 'succeeded');
+  assert.deepEqual(f.provider.calls[0].expected, args.action.expected); // Portable seam only, not a state oracle.
+  assert.deepEqual(await f.prepare('browser_act', args).run(), result); assert.equal(f.provider.calls.length, 1);
+  await assert.rejects(f.prepare('browser_act', { ...args, action: { ...args.action,
+    expected: { ...args.action.expected, state: 'disabled' } } }).run(), { code: 'REQUEST_ID_CONFLICT' });
+  assert.equal(f.provider.calls.length, 1);
+});
+
+test('batch reverse approvals are per-step, linked to the outer call and contain no input payload in reasons', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),asks=[];
+  f.services.set('approval',{request:async req=>{asks.push(req);return 'allowed-once';}});
+  const args={requestId:'adapter-batch',leaseId:lease.id,documentEpoch:'doc-1',steps:[
+    {action:{kind:'fill',ref:'node-1',text:'private-text-one'}},{action:{kind:'fill',ref:'node-1',text:'private-text-two'}}]};
+  const call=f.prepare('browser_batch',args);assert.equal(call.decision.kind,'allow');
+  const result=await call.run();assert.equal(result.outcome,'succeeded');assert.equal(asks.length,2);
+  assert.ok(asks.every(a=>a.toolName==='browser_batch'&&a.callId===call.exec.callId&&a.agent.session.id==='session'&&!a.reason.includes('private-text')));
+  assert.match(asks[0].reason,/step 1\/2/);assert.match(asks[1].reason,/step 2\/2/);
+  assert.deepEqual(await f.prepare('browser_batch',args).run(),result);assert.equal(asks.length,2);assert.equal(f.provider.calls.length,2);
+});
+
+test('missing, rejecting, cancelled or invalid batch approval cannot dispatch or advance', async t => {
+  for(const outcome of [undefined,'rejected','unavailable','cancelled','invalid']){
+    const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();let asks=0;
+    if(outcome!==undefined)f.services.set('approval',{request:async()=>{asks++;return outcome;}});
+    const args={requestId:'batch-denial',leaseId:lease.id,documentEpoch:'doc-1',steps:[{action:{kind:'fill',ref:'node-1',text:'never'}}]};
+    const r=await f.prepare('browser_batch',args).run();assert.notEqual(r.outcome,'succeeded');assert.equal(f.provider.calls.length,0);
+    assert.equal(r.code,outcome==='cancelled'?'CANCELLED':'POLICY_DENIED');assert.equal(asks,outcome===undefined?0:1);
+  }
+});
+
+test('turn/end invalidates a batch waiting for step approval even if the answer arrives late', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();let entered,finish;
+  const started=new Promise(resolve=>{entered=resolve;});
+  f.services.set('approval',{request:()=>new Promise(resolve=>{finish=resolve;entered();})});
+  const args={requestId:'batch-end',leaseId:lease.id,documentEpoch:'doc-1',steps:[{action:{kind:'fill',ref:'node-1',text:'never'}}]};
+  const call=f.prepare('browser_batch',args),pending=call.run(),rejected=assert.rejects(pending,{code:'LEASE_REVOKED'});
+  await started;f.end();finish('allowed-once');await rejected;assert.equal(f.provider.calls.length,0);
+  await until(()=>f.provider.grants.size===0);
+});
+
+test('batch approval callbacks reject out-of-range, skipped and repeated step indices', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();let asks=0;
+  f.services.set('approval',{request:async()=>{asks++;return 'allowed-once';}});
+  f.broker.runtime.batch=async(_owner,request,signal,approve)=>{
+    await assert.rejects(approve(9,signal),{code:'POLICY_DENIED'});
+    await assert.rejects(approve(1,signal),{code:'POLICY_DENIED'});
+    assert.equal(await approve(0,signal),true);
+    await assert.rejects(approve(0,signal),{code:'POLICY_DENIED'});
+    return {requestId:request.requestId,totalSteps:request.steps.length,outcome:'unknown',dispatch:'notDispatched',postcondition:'unverified'};
+  };
+  await f.prepare('browser_batch',{requestId:'callback-bounds',leaseId:lease.id,documentEpoch:'doc-1',steps:[
+    {action:{kind:'fill',ref:'node-1',text:'one'}},{action:{kind:'fill',ref:'node-1',text:'two'}}]}).run();
+  assert.equal(asks,1);assert.equal(f.provider.calls.length,0);
+});
+
+test('at most eight batch approval contexts are retained, including queued work', async t => {
+  const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();let finish;
+  f.services.set('approval',{request:()=>new Promise(resolve=>{finish=resolve;})});
+  const args=id=>({requestId:id,leaseId:lease.id,documentEpoch:'doc-1',steps:[{action:{kind:'fill',ref:'node-1',text:'never'}}]});
+  const pending=Array.from({length:8},(_,i)=>f.prepare('browser_batch',args(`pending-${i}`)).run().then(value=>({value}),error=>({error})));
+  await until(()=>f.broker.runtime.journalUsage().identities===8);
+  await assert.rejects(f.prepare('browser_batch',args('overflow')).run(),{code:'QUEUE_FULL'});
+  f.end();finish?.('allowed-once');await Promise.all(pending);assert.equal(f.provider.calls.length,0);
+});
 
 test('adapter refuses tool body calls that bypass the owning pre-execute boundary', async t => {
   const f = await fixture(t);

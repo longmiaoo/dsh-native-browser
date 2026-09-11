@@ -3,7 +3,8 @@ export const geometryFunction = `function(preferred) {
   if (!this.isConnected) return {ok:false,connected:false};
   const r=this.getBoundingClientRect(), style=getComputedStyle(this);
   const base={ok:false,eligible:false,connected:true,inViewport:false,x:r.left+r.width/2,y:r.top+r.height/2,
-    left:r.left,top:r.top,width:r.width,height:r.height,tag:this.tagName,readOnly:!!this.readOnly,type:this.type};
+    left:r.left,top:r.top,width:r.width,height:r.height,tag:this.tagName,readOnly:!!this.readOnly,type:this.type,
+    contentEditable:this.isContentEditable===true};
   const parent=node=>node.assignedSlot || node.parentElement || node.getRootNode().host;
   let clip={left:0,top:0,right:innerWidth,bottom:innerHeight}, ancestor=this;
   let allowed=r.width>0&&r.height>0&&style.visibility==='visible'&&!this.matches(':disabled');

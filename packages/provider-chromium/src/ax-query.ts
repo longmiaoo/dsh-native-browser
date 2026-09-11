@@ -41,6 +41,8 @@ export async function findAXNodes(raw: AXFindRequest, send: (method: string, par
     const entry = { backendDOMNodeId: raw.backendDOMNodeId, role: { value: role }, name: { value: name },
       properties: Array.isArray(raw.properties) ? raw.properties.slice(0, 64)
         .filter((p: Dict) => p && ((p.name === 'disabled' || p.name === 'focused') && typeof p.value?.value === 'boolean'
+          || role === 'generic' && (p.name === 'focusable' && typeof p.value?.value === 'boolean'
+            || p.name === 'editable' && ['plaintext', 'richtext'].includes(p.value?.value))
           || p.name === 'checked' && checkedValue(p.value?.value) !== undefined))
         .map((p: Dict) => ({ name: p.name, value: { value: p.value.value } })) : [] };
     const size = new TextEncoder().encode(JSON.stringify(entry)).length + 1;

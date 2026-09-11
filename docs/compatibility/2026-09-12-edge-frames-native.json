@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-09-11T18:08:41.494Z",
+  "brand": "edge",
+  "browserVersion": "152.0.4191.66",
+  "dshVersion": "0.1.5-rc.1",
+  "passed": [
+    "Real extension-owned recursive OOPIF sessions and same-process/opaque frames produce a five-frame, origin-only tree",
+    "Unchanged frame and document identities survive repeat discovery without touching AX delta baselines",
+    "Discovery does not expose child AX text, turn frame IDs into input refs, or authorize cross-origin screenshots",
+    "Explicit same-origin child AX reads Chinese text and controls, preserves independent deltas, omits password values and cannot masquerade as root input",
+    "Foreign and opaque children and same-origin descendants behind a foreign ancestor receive no content read",
+    "Same-process child navigation changes its document epoch while preserving unrelated root identity",
+    "Cross-site to same-process and back preserves the frame handle, renews its document/context epoch and never revives removed descendant handles",
+    "Removing a remote parent removes its recursively attached descendant from the next inventory",
+    "Actual extension Stop revokes discovery; new consent cannot resurrect old frame handles",
+    "Handoff releases recursive debugging sessions and preserves the user-visible test page"
+  ],
+  "frames": 5,
+  "attachmentCount": 3,
+  "recursiveAttachment": true,
+  "readRetries": 0,
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "scope": "Real DSH -> Broker -> Native Host -> MV3 flat sessions, isolated loopback-only profile. Metadata and explicit same-origin ancestor-chain AX reads/deltas; child input, cross-origin approval and geometry not yet implemented. No model or Codex parity claim."
+}

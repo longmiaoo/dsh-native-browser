@@ -9,6 +9,7 @@ import { chromium } from 'playwright-core';
 import { ChromiumProvider } from '../dist/packages/provider-chromium/src/provider.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
+import { verifyFrameGeometryExtension } from './verify-frame-geometry-extension.mjs';
 
 // Only native transport is substituted. The production bundle, popup permission flow,
 // tabs API, debugger attachment, CDP dispatch, and Stop gate run in real MV3 Chrome.
@@ -107,6 +108,7 @@ try {
   assert.equal((await act('mv3-nav', { kind: 'navigate', url: `${origin}/next` })).outcome, 'succeeded');
   const screenshot = await runtime.capture(owner, lease.id, signal); assert.ok(screenshot.data.length > 100);
   assert.ok(capturedEvents.some(e => e.event === 'page.changed'), 'Real debugger event reached the bridge');
+  const frameGeometry=await verifyFrameGeometryExtension({page,worker,channel,lease,origin,signal});
   await popup.evaluate(() => document.querySelector('#stop').click());
   // Wait for the actual popup response, not a fixed delay.
   await popup.waitForFunction(() => document.querySelector('#status').textContent.includes('未授权'));
@@ -121,11 +123,13 @@ try {
     catch (error) { return /not attached/i.test(String(error)); }
   }, Number(lease.tab.slice(`${instance.id}:`.length)));
   assert.equal(detached, true);
+  await assert.rejects(channel.call('frame.geometry',{lease,request:frameGeometry.request},signal),{code:'LEASE_REVOKED'});
   await runtime.release(owner, lease.id);
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
-      'Same-origin navigation', 'JPEG capture', 'Real debugger page change events', 'Popup Stop detaches and blocks later input'],
+      'Same-origin navigation', 'JPEG capture', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
+      ...frameGeometry.checks,'Popup Stop denies subsequent bound frame geometry'],
     scope: 'Real isolated Chrome MV3 extension and runtime; native port is a test bridge, not Native Messaging or DSH/model end-to-end' };
   await mkdir('output/playwright', { recursive: true });
   await writeFile('output/playwright/mv3-smoke.json', JSON.stringify(report, null, 2) + '\n');

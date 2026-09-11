@@ -1,14 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   BrowserError, checkAbort, errorCode, originOf,
-  type ActionRequest, type ActionResult, type Authorize, type BrowserProvider,
+  type ActionRequest, type ActionResult, type BatchRequest, type BatchResult, type BatchStepResult, type ApproveBatchStep, type Authorize, type BrowserProvider,
   type Lease, type FullObservation, type ObserveOptions, type ObservationUpdate, type TabSummary, type ErrorCode,
 } from '../../contracts/src/index.js';
 import { ObservationCache } from './observations.js';
-import { observationScope, observeOptions, sameScope } from '../../contracts/src/validation.js';
+import { actionRequest, batchRequest, observationScope, observeOptions, pageReadOptions, sameScope } from '../../contracts/src/validation.js';
 import { scrollMovedAsRequested, validateScrollEvidence } from '../../contracts/src/scrolling.js';
 import { recoveredAction, type ActionJournal, type RecoveryRecord } from '../../contracts/src/journal.js';
 import { ActionResultCache } from './action-results.js';
+import { frameInventory, sameOriginFrame } from '../../contracts/src/frames.js';
 
 type Entry = {
   scope: string;
@@ -148,14 +149,15 @@ export class BrowserRuntime {
   }
 
   private async authorized(entry: Entry, operation: 'observe' | 'act', signal: AbortSignal,
-    action?: ActionRequest['action']): Promise<void> {
+    action?: ActionRequest['action'], frame?: ActionRequest['frame']): Promise<void> {
     checkAbort(signal);
     this.entry(entry.lease.owner, entry.lease.id);
     const tab = (await entry.provider.listTabs(signal)).find(t => t.id === entry.lease.tab);
     if (!tab || originOf(tab.url) !== entry.lease.origin) {
       throw new BrowserError('POLICY_DENIED', 'Tab moved outside its authorized origin');
     }
-    const request = { owner: entry.lease.owner, tab, operation, ...(action ? { action } : {}) };
+    const request = { owner: entry.lease.owner, tab, operation, ...(action ? { action: structuredClone(action) } : {}),
+      ...(frame ? {frame:structuredClone(frame)} : {}) };
     if (!await this.authorize(request, signal)) throw new BrowserError('POLICY_DENIED', 'Operation denied');
     checkAbort(signal);
     this.entry(entry.lease.owner, entry.lease.id);
@@ -179,23 +181,75 @@ export class BrowserRuntime {
   observe(owner: string, leaseId: string, signal: AbortSignal, options: ObserveOptions): Promise<ObservationUpdate>;
   async observe(owner: string, leaseId: string, signal: AbortSignal, options: ObserveOptions = {}): Promise<ObservationUpdate> {
     const entry = this.entry(owner, leaseId);
-    const { cursor, rootRef, query } = observeOptions(options);
-    const scope = query ? { kind: 'query' as const, query, ...(rootRef === undefined ? {} : { rootRef }) }
+    const { cursor, rootRef, query, frame } = observeOptions(options);
+    const scope = query ? { kind: 'query' as const, query, ...(rootRef === undefined ? {} : { rootRef }), ...(frame ? { frameId: frame.frameId } : {}) }
+      : frame ? rootRef === undefined ? { kind: 'frame' as const, frameId: frame.frameId }
+        : { kind: 'subtree' as const, frameId: frame.frameId, rootRef }
       : rootRef === undefined ? { kind: 'document' as const } : { kind: 'subtree' as const, rootRef };
     const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
     return this.serialized(entry, linked, async () => {
-      await this.authorized(entry, 'observe', linked);
-      if (query && !entry.provider.find) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support semantic queries');
-      if (!query && rootRef !== undefined && !entry.provider.observeSubtree) {
+      await this.authorized(entry, 'observe', linked, undefined, frame);
+      if (frame) {
+        if (!entry.provider.frames || !(query ? entry.provider.findFrame : rootRef === undefined ? entry.provider.observeFrame : entry.provider.observeFrameSubtree)) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot perform this child observation');
+        const inventory = frameInventory(await entry.provider.frames(entry.lease, linked), entry.lease);
+        checkAbort(linked); this.entry(owner, leaseId);
+        sameOriginFrame(inventory, frame, entry.lease);
+      }
+      if (query && !frame && !entry.provider.find) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support semantic queries');
+      if (!frame && !query && rootRef !== undefined && !entry.provider.observeSubtree) {
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support scoped observation');
       }
-      const observation = query ? await entry.provider.find!(entry.lease, query, linked, rootRef)
+      const observation = frame ? query ? await entry.provider.findFrame!(entry.lease, frame, query, linked, rootRef)
+        : rootRef === undefined ? await entry.provider.observeFrame!(entry.lease, frame, linked)
+        : await entry.provider.observeFrameSubtree!(entry.lease, frame, rootRef, linked)
+        : query ? await entry.provider.find!(entry.lease, query, linked, rootRef)
         : rootRef === undefined ? await entry.provider.observe(entry.lease, linked)
         : await entry.provider.observeSubtree!(entry.lease, rootRef, linked);
       checkAbort(linked);
+      if (frame && observation.documentEpoch !== frame.documentEpoch) throw new BrowserError('STALE_TARGET', 'Provider returned another frame document');
+      if (frame) {
+        sameOriginFrame(frameInventory(await entry.provider.frames!(entry.lease, linked), entry.lease), frame, entry.lease);
+        checkAbort(linked); this.entry(owner, leaseId);
+      }
       if (!sameScope(observationScope(observation.scope), scope)) throw new BrowserError('INVALID_REQUEST', 'Provider returned the wrong observation scope');
       if (observation.tab !== entry.lease.tab || originOf(observation.url) !== entry.lease.origin) throw new BrowserError('POLICY_DENIED', 'Observation tab or origin changed');
       return this.observations.publish(owner, leaseId, observation, cursor);
+    });
+  }
+
+  async readPage(owner: string, leaseId: string, raw: import('../../contracts/src/index.js').PageReadOptions, signal: AbortSignal) {
+    const options = pageReadOptions(raw), entry = this.entry(owner, leaseId);
+    const scope = options.rootRef === undefined ? { kind: 'document' as const } : { kind: 'subtree' as const, rootRef: options.rootRef };
+    const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
+    return this.serialized(entry, linked, async () => {
+      await this.authorized(entry, 'observe', linked);
+      if (!entry.provider.readPage) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support page windows');
+      const result = await entry.provider.readPage(entry.lease, options, linked);
+      checkAbort(linked); this.entry(owner, leaseId);
+      if (result.tab !== entry.lease.tab || originOf(result.url) !== entry.lease.origin) throw new BrowserError('POLICY_DENIED', 'Page window moved outside its lease');
+      if (!sameScope(observationScope(result.scope), scope) || !result.page || !Number.isSafeInteger(result.page.index)
+        || result.page.index < 0 || typeof result.page.incomplete !== 'boolean'
+        || typeof result.truncated !== 'boolean' || !Array.isArray(result.nodes) || !Array.isArray(result.text)
+        || result.nodes.some(node => !node || typeof node.id !== 'string' || !node.id || typeof node.role !== 'string' || typeof node.name !== 'string')
+        || new Set(result.nodes.map(node => node.id)).size !== result.nodes.length || result.text.some(text => typeof text !== 'string')
+        || result.page.continuation !== undefined && (typeof result.page.continuation !== 'string' || !result.page.continuation || result.page.continuation.length > 128)
+        || result.truncated !== (result.page.incomplete || result.page.continuation !== undefined)
+        || Buffer.byteLength(JSON.stringify(result)) > 96 * 1024)
+        throw new BrowserError('INVALID_REQUEST', 'Invalid page window');
+      // Windows are not whole-scope snapshots and must never enter the delta cache.
+      return structuredClone(result);
+    });
+  }
+
+  async frames(owner: string, leaseId: string, signal: AbortSignal) {
+    const entry = this.entry(owner, leaseId);
+    const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
+    return this.serialized(entry, linked, async () => {
+      await this.authorized(entry, 'observe', linked);
+      if (!entry.provider.frames) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot discover frames');
+      const result = await entry.provider.frames(entry.lease, linked);
+      checkAbort(linked); this.entry(owner, leaseId);
+      return frameInventory(result, entry.lease);
     });
   }
 
@@ -222,6 +276,20 @@ export class BrowserRuntime {
   }
 
   act(owner: string, request: ActionRequest, signal: AbortSignal, recoveryScope = owner): Promise<ActionResult> {
+    if(request.frame!==undefined)request=actionRequest(request);
+    if (request.requestId?.startsWith('batch:')) throw new BrowserError('INVALID_REQUEST', 'Reserved internal request ID prefix');
+    return this.recorded(owner, request, signal, recoveryScope, (entry, frozen, key, hash) => this.execute(entry, frozen, signal, key, hash));
+  }
+
+  batch(owner: string, raw: BatchRequest, signal: AbortSignal, approve: ApproveBatchStep, recoveryScope = owner): Promise<BatchResult> {
+    const request = batchRequest(raw);
+    return this.recorded(owner, request, signal, recoveryScope,
+      (entry, frozen, key, hash) => this.executeBatch(entry, frozen, signal, approve, recoveryScope, key, hash))
+      .then(result => ({ ...result, totalSteps: request.steps.length }));
+  }
+
+  private recorded<T extends { requestId: string; leaseId: string }>(owner: string, request: T, signal: AbortSignal, recoveryScope: string,
+    execute: (entry: Entry, frozen: T, durableKey: string, hash: string) => Promise<ActionResult>): Promise<ActionResult> {
     checkAbort(signal);
     if (this.closed) throw new BrowserError('CONNECTION_LOST', 'Runtime is closed');
     if (!request.requestId || request.requestId.length > 128) {
@@ -256,7 +324,7 @@ export class BrowserRuntime {
     if (this.journal.size >= this.limits.journalSize) throw new BrowserError('JOURNAL_FULL', 'Action journal is full');
     const record: JournalEntry = { hash };
     this.journal.set(key, record);
-    const result = this.execute(entry, frozen, signal, durableKey, hash);
+    const result = execute(entry, frozen, durableKey, hash);
     record.pending = result;
     this.inFlight.add(result);
     void result.then(value => {
@@ -284,7 +352,74 @@ export class BrowserRuntime {
     return structuredClone(value);
   }
 
-  private async execute(entry: Entry, request: ActionRequest, callerSignal: AbortSignal, durableKey: string, hash: string): Promise<ActionResult> {
+  private async executeBatch(entry: Entry, request: BatchRequest, callerSignal: AbortSignal, approve: ApproveBatchStep,
+    recoveryScope: string, durableKey: string, hash: string): Promise<BatchResult> {
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(new BrowserError('DEADLINE_EXCEEDED', 'Batch deadline exceeded')), request.timeoutMs ?? 30000);
+    timer.unref();
+    const signal = AbortSignal.any([callerSignal, entry.controller.signal, deadline.signal]);
+    const steps: BatchStepResult[] = request.steps.map((_, index) => ({ index, status: 'notRun' }));
+    const childId = (index: number) => `batch:${createHash('sha256').update(request.requestId).digest('hex')}:${index}`;
+    let reserved = false, dispatched = false, last: ActionResult | undefined;
+    let result: BatchResult;
+    const summary = (outcome: ActionResult['outcome'], code?: ErrorCode): BatchResult => ({ requestId: request.requestId,
+      totalSteps: steps.length, steps, outcome, dispatch: dispatched ? 'dispatched' : 'notDispatched',
+      postcondition: outcome === 'succeeded' ? 'passed' : 'unverified', ...(code ? { code } : {}),
+      ...(last?.observation ? { observation: last.observation } : {}) });
+    try {
+      result = await this.serialized(entry, signal, async () => {
+        // The outer intent fences the entire plan before any child may execute.
+        await this.authorized(entry, 'observe', signal);
+        if (this.durable) {
+          reserved = await this.durable.reserve(durableKey, hash, 'batch');
+          if (!reserved) {
+            const record = this.durable.lookup(durableKey, hash);
+            if (!record) throw new BrowserError('JOURNAL_UNAVAILABLE', 'Batch reservation disappeared');
+            return { ...recoveredAction(request.requestId, record), totalSteps: steps.length };
+          }
+        }
+        for (const [index, step] of request.steps.entries()) {
+          last = undefined; // Never return a previous step's observation as current after a later failure.
+          const child: ActionRequest = { requestId: childId(index), leaseId: request.leaseId,
+            documentEpoch: request.documentEpoch, action: step.action, ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }) };
+          try {
+            checkAbort(signal); this.entry(entry.lease.owner, entry.lease.id);
+            await this.authorized(entry, 'act', signal, step.action);
+            if (!await approve(index, signal)) throw new BrowserError('POLICY_DENIED', 'Batch step was not approved');
+            checkAbort(signal); this.entry(entry.lease.owner, entry.lease.id);
+            // Already inside the one tab queue slot. Child actions retain their own
+            // intent/result fences and re-run policy after asynchronous approval.
+            last = await this.recorded(entry.lease.owner, child, signal, recoveryScope,
+              (current, frozen, key, childHash) => this.execute(current, frozen, signal, key, childHash, false));
+          } catch (error) {
+            const code = errorCode(error);
+            last = { requestId: child.requestId, outcome: ['CANCELLED', 'LEASE_REVOKED', 'USER_STOPPED'].includes(code) ? 'cancelled' : 'failed',
+              dispatch: 'notDispatched', postcondition: 'unverified', code };
+          }
+          const { observation, scroll: _scroll, ...metadata } = last;
+          steps[index] = { index, status: 'attempted', result: metadata };
+          dispatched ||= last.dispatch !== 'notDispatched';
+          if (last.outcome !== 'succeeded' || last.postcondition !== 'passed' || last.recovery) return summary(last.outcome === 'succeeded' ? 'unknown' : last.outcome, last.code);
+          if (index < request.steps.length - 1 && observation?.documentEpoch !== request.documentEpoch) return summary('unknown', 'STALE_TARGET');
+        }
+        return summary('succeeded');
+      });
+    } catch (error) {
+      last = undefined;
+      const code = errorCode(error);
+      result = summary(dispatched ? 'unknown' : ['CANCELLED', 'LEASE_REVOKED', 'USER_STOPPED'].includes(code) ? 'cancelled' : 'failed', code);
+    } finally { clearTimeout(timer); }
+    if (reserved) {
+      try { await this.durable!.settle(durableKey, result); }
+      catch {
+        const { observation: _observation, ...metadata } = result;
+        return { ...metadata, outcome: dispatched ? 'unknown' : 'failed', postcondition: 'unverified', code: 'JOURNAL_UNAVAILABLE' };
+      }
+    }
+    return result;
+  }
+
+  private async execute(entry: Entry, request: ActionRequest, callerSignal: AbortSignal, durableKey: string, hash: string, serialize = true): Promise<ActionResult> {
     let dispatched = false, reserved = false;
     const timeout = request.timeoutMs ?? this.limits.actionMs;
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000) {
@@ -296,8 +431,13 @@ export class BrowserRuntime {
     const signal = AbortSignal.any([callerSignal, entry.controller.signal, deadline.signal]);
     let outcome: ActionResult;
     try {
-      outcome = await this.serialized(entry, signal, async () => {
-        await this.authorized(entry, 'act', signal, request.action);
+      const perform = async (): Promise<ActionResult> => {
+        await this.authorized(entry, 'act', signal, request.action, request.frame);
+        if(request.frame){
+          if(!entry.provider.frames||!entry.provider.actFrame)throw new BrowserError('UNSUPPORTED_CAPABILITY','Provider cannot act in child frames');
+          sameOriginFrame(frameInventory(await entry.provider.frames(entry.lease,signal),entry.lease),request.frame,entry.lease);
+          checkAbort(signal);this.entry(entry.lease.owner,entry.lease.id);
+        }
         if (this.durable) {
           reserved = await this.durable.reserve(durableKey, hash, request.action.kind);
           if (!reserved) {
@@ -308,12 +448,20 @@ export class BrowserRuntime {
           // Stop/cancellation while fsync was pending must still prevent provider execution.
           checkAbort(signal); this.entry(entry.lease.owner, entry.lease.id);
         }
-        const result = await entry.provider.act(entry.lease, request, { signal, onDispatch: () => {
+        const executeProvider=request.frame?entry.provider.actFrame!:entry.provider.act;
+        const result = await executeProvider.call(entry.provider,entry.lease, request, { signal, onDispatch: () => {
           checkAbort(signal);
           this.entry(entry.lease.owner, entry.lease.id);
           dispatched = true;
         } });
         checkAbort(signal);
+        if(request.frame){
+          if(result.observation.documentEpoch!==request.frame.documentEpoch)throw new BrowserError('STALE_TARGET','Frame action returned another document');
+          if(!sameScope(observationScope(result.observation.scope),{kind:'frame',frameId:request.frame.frameId}))
+            throw new BrowserError('INVALID_REQUEST','Frame action returned another scope');
+          sameOriginFrame(frameInventory(await entry.provider.frames!(entry.lease,signal),entry.lease),request.frame,entry.lease);
+          checkAbort(signal);this.entry(entry.lease.owner,entry.lease.id);
+        }
         if (result.observation.tab !== entry.lease.tab || originOf(result.observation.url) !== entry.lease.origin) {
           throw new BrowserError('POLICY_DENIED', 'Result moved outside its authorized origin');
         }
@@ -325,7 +473,8 @@ export class BrowserRuntime {
           outcome: result.postcondition === 'passed' ? 'succeeded' : result.postcondition === 'failed' ? 'failed' : 'unknown',
           dispatch: dispatched ? 'observed' : 'notDispatched', postcondition: result.postcondition,
           observation: this.observations.publish(entry.lease.owner, entry.lease.id, result.observation), ...(scroll ? { scroll } : {}) };
-      });
+      };
+      outcome = serialize ? await this.serialized(entry, signal, perform) : await perform();
     } catch (error) {
       const code = errorCode(error);
       outcome = { requestId: request.requestId, outcome: dispatched ? 'unknown' :

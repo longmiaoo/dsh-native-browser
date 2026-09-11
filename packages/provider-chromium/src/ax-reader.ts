@@ -52,6 +52,8 @@ export async function readAXTree(raw: AXReadRequest, send: (method: string, para
         if (Number.isSafeInteger(raw.backendDOMNodeId) && raw.backendDOMNodeId > 0) entry.backendDOMNodeId = raw.backendDOMNodeId;
         if (Array.isArray(raw.properties)) entry.properties = raw.properties.slice(0, 64)
           .filter((p: Dict) => p && ((p.name === 'disabled' || p.name === 'focused') && typeof p.value?.value === 'boolean'
+            || role === 'generic' && (p.name === 'focusable' && typeof p.value?.value === 'boolean'
+              || p.name === 'editable' && ['plaintext', 'richtext'].includes(p.value?.value))
             || p.name === 'checked' && checkedValue(p.value?.value) !== undefined))
           .map((p: Dict) => ({ name: p.name, value: { value: p.value.value } }));
       }

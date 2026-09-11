@@ -1,6 +1,6 @@
-import { randomBytes, randomUUID } from 'node:crypto';
-import { BrowserError, browserKeys, checkAbort, type Screenshot } from '../../contracts/src/index.js';
-import { actionRequest, observeOptions, record, string } from '../../contracts/src/validation.js';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { BrowserError, browserKeys, elementStates, checkAbort, type BatchRequest, type Screenshot } from '../../contracts/src/index.js';
+import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string } from '../../contracts/src/validation.js';
 import { connectBroker } from '../../broker/src/client.js';
 import { defaultDirectory } from '../../broker/src/local-state.js';
 import type { RpcPeer } from '../../transport-native/src/rpc.js';
@@ -20,8 +20,9 @@ interface Context {
 type Config = { runtimeDirectory?: string };
 type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortController };
 type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
+type BatchApproval = { scope: TurnScope; request: BatchRequest; exec: Execution; peer: RpcPeer; signal: AbortSignal; next: number };
 const schemaString = { type: 'string' };
-const tools = new Set(['browser_list', 'browser_claim', 'browser_observe', 'browser_act', 'browser_handoff', 'browser_screenshot']);
+const tools = new Set(['browser_list', 'browser_claim', 'browser_observe', 'browser_read_page', 'browser_frames', 'browser_act', 'browser_batch', 'browser_handoff', 'browser_screenshot']);
 
 /** Uses the public raw ToolDefinition seam. No DSH internal module imports. */
 export function apply(ctx: Context, config: Config = {}): void {
@@ -33,6 +34,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const executions = new WeakMap<Execution, TurnScope>();
   const screenshots = new ScreenshotRegistry();
   const captures = new Set<PendingCapture>();
+  const batchApprovals = new Map<string, BatchApproval>();
   const revokeCaptureLease = (owner: string, leaseId: string) => {
     screenshots.revokeLease(owner, leaseId);
     for (const capture of captures) if (capture.scope.wireSessionId === owner && capture.leaseId === leaseId) {
@@ -69,6 +71,27 @@ export function apply(ctx: Context, config: Config = {}): void {
       const attempt = connectBroker(config.runtimeDirectory ?? defaultDirectory(), journalKey);
       connection = attempt;
       void attempt.then(value => {
+        value.handle(async (method, raw, remoteSignal) => {
+          if (method !== 'browser.approveBatchStep') throw new BrowserError('POLICY_DENIED', 'Unexpected Broker request');
+          const p = record(raw), pending = batchApprovals.get(string(p.approvalId, 128));
+          if (Object.keys(p).some(key => !['approvalId', 'index'].includes(key)) || !pending || pending.peer !== value
+            || connection !== attempt || !Number.isInteger(p.index) || p.index !== pending.next || pending.next >= pending.request.steps.length)
+            throw new BrowserError('POLICY_DENIED', 'No matching active batch approval');
+          const signal = AbortSignal.any([pending.signal, remoteSignal, pending.scope.controller.signal]);
+          checkAbort(signal);
+          const index = pending.next++; // A lost/duplicate approval request cannot consume another grant.
+          const approval = ctx.get?.('approval');
+          if (typeof approval?.request !== 'function') return { allowed: false };
+          const step = pending.request.steps[index]!;
+          const digest = createHash('sha256').update(JSON.stringify(step)).digest('hex').slice(0, 16);
+          // The existing Host callId exposes immutable full batch arguments. Avoid
+          // duplicating input text/page data into the approval reason's audit log.
+          const decision = await approval.request({ agent: pending.exec.agent, toolName: 'browser_batch', callId: pending.exec.callId,
+            reason: `Approve only step ${index + 1}/${pending.request.steps.length}: ${step.action.kind}. Review that exact step in this call's batch arguments (digest ${digest}). Later steps require separate approval; completed effects cannot be rolled back.`, signal });
+          checkAbort(signal);
+          if (decision === 'cancelled') throw new BrowserError('CANCELLED', 'Batch step approval was cancelled');
+          return { allowed: decision === 'allowed-once' };
+        });
         value.onEvent((event, raw) => {
           if (connection !== attempt || event !== 'browser.lease-revoked') return;
           const data = record(raw);
@@ -107,26 +130,38 @@ export function apply(ctx: Context, config: Config = {}): void {
   register('browser_claim', 'Request exclusive control of one user-authorized tab. Requires approval; preserve existing user pages.',
     { instanceId: schemaString, tab: schemaString }, ['instanceId', 'tab'], (args, exec) =>
       run('browser.claim', { instanceId: string(args.instanceId), tab: string(args.tab) }, exec));
-  register('browser_observe', 'Read bounded, untrusted AX text, controls and named regions. Optional rootRef reads only that known subtree. Optional query finds an EXACT case-sensitive accessible name and optional role, beyond the default discovery bounds; combine rootRef to restrict the search. It returns candidates, never chooses or clicks a match: duplicate names require contextual disambiguation, not picking the first. Repeat query/rootRef on each scoped call; query results and subtrees are not whole pages. kind=region refs are read roots/scroll targets, not click/fill/press targets. Omit cursor for a full view; use its cursor for exact-base changes. delta contains node upsert/remove, optional order and text splice; full replaces your bounded view. resyncRequired means changed/missing base, document or scope. Use current documentEpoch/refs; truncated means incomplete. Regex, substring search and cross-frame search are unsupported.',
+  register('browser_observe', 'Read bounded, untrusted AX text, controls and named regions. Optional rootRef reads only that known subtree. Optional query finds an EXACT case-sensitive accessible name and optional role, beyond the default discovery bounds; combine rootRef to restrict the search. It returns candidates, never chooses or clicks a match: duplicate names require contextual disambiguation, not picking the first. Repeat query/rootRef on each scoped call; query results and subtrees are not whole pages. A generic node marked editable:true is an observed editing host, not an invented textbox role; use its exact ref for fill/append/press. kind=region refs are read roots/scroll targets, not click/fill/append/press targets. Omit cursor for a full view; use its cursor for exact-base changes. delta contains node upsert/remove, optional order and text splice; full replaces your bounded view. resyncRequired means changed/missing base, document or scope. Use current documentEpoch/refs; truncated means incomplete. Optional frame:{frameId,documentEpoch} explicitly reads one current child from browser_frames. The target and ALL ancestors must share the leased origin; foreign/opaque frames are denied. Repeat frame on each cursor call; changed epochs require fresh discovery. Frame views have separate node identities and delta scopes; use their refs/epochs only with explicit browser_act frame for supported child clicks; paging remains unsupported. Combine frame with query for exact-name/optional-role lookup only in that child document, including controls omitted from its default view. Query deltas are scoped to both frame and filters. Repeat frame and query with the cursor. Combine frame with a rootRef observed in that child for a local subtree or contextual query. Repeat frame/rootRef/query with cursors. A removed, replaced or wrong-document root fails; it never widens to the whole frame. Regex, substring and cross-frame search remain unsupported.',
     { leaseId: schemaString, cursor: schemaString, rootRef: schemaString,
+      frame: { type: 'object', properties: { frameId: { type: 'string', minLength: 1, maxLength: 128 },
+        documentEpoch: { type: 'string', minLength: 1, maxLength: 512 } }, required: ['frameId', 'documentEpoch'], additionalProperties: false },
       query: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 1000 },
         role: { type: 'string', minLength: 1, maxLength: 80, pattern: '^[A-Za-z][A-Za-z0-9]*$' } }, required: ['name'], additionalProperties: false } },
     ['leaseId'], (args, exec) => run('browser.observe', {
       leaseId: string(args.leaseId), ...observeOptions(args),
     }, exec));
+  register('browser_read_page', 'Read the next bounded live AX window of the authorized document or one known rootRef. Omit continuation to start; repeat the exact rootRef and use page.continuation for the next window. Tokens are single-use, expire after two minutes and do not grant authority. Missing token means traversal ended; page.incomplete means some content was omitted (e.g. frame/depth/oversize boundaries), even at the end. A window is NOT a full snapshot or delta: accumulate distinct windows explicitly, never replace a full-page baseline with one. Structure changes on the active traversal path, navigation, Stop, changed scope, expiry or token reuse fail closed. Earlier windows are historical, not an atomic page snapshot; already-visited branches may change between reads. Only current DOM content is traversed: virtualized/unmounted items require separately approved scrolling. Narrow rootRef on capacity errors. No automatic scrolling, frame access, query mixing or input. Existing refs can age/leave the bounded ref cache; re-observe exact targets before actions.',
+    { leaseId: schemaString, rootRef: schemaString, continuation: schemaString }, ['leaseId'], (args, exec) =>
+      run('browser.readPage', { leaseId: string(args.leaseId), options: pageReadOptions({
+        ...(args.rootRef === undefined ? {} : { rootRef: args.rootRef }),
+        ...(args.continuation === undefined ? {} : { continuation: args.continuation }) }) }, exec));
+  register('browser_frames', 'Discover bounded frame structure in an authorized tab: opaque frame IDs, parent relationships, document epochs and origins only. No child page text, titles, URL paths/queries, raw CDP sessions or execution contexts are returned. contextStatus=known means a context was observed, NOT permission to access it. originRelation is relative to the authorized root. truncated/unavailable means incomplete evidence. Frame IDs are not node refs and cannot be used for browser_act or rootRef. Explicit browser_observe frame reads support only a same-origin ancestor chain. Same-origin child clicks require explicit browser_act frame and fresh observed child refs; discovery alone never grants input or cross-origin screenshot permission.',
+    { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.frames', { leaseId: string(args.leaseId) }, exec));
   const expected = { oneOf: [
     { type: 'object', properties: { kind: { type: 'string', const: 'value' }, value: schemaString }, required: ['kind', 'value'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'url' }, url: schemaString }, required: ['kind', 'url'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'text' }, text: schemaString }, required: ['kind', 'text'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'state' }, ref: { type: 'string', minLength: 1, maxLength: 128 },
+      state: { type: 'string', enum: elementStates } }, required: ['kind', 'ref', 'state'], additionalProperties: false },
   ] };
   const action = { oneOf: [
     { type: 'object', properties: { kind: { type: 'string', const: 'check' }, ref: schemaString, checked: { type: 'boolean' },
       expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'ref', 'checked'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'click' }, ref: schemaString, expected }, required: ['kind', 'ref'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'fill' }, ref: schemaString, text: schemaString, expected }, required: ['kind', 'ref', 'text'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'append' }, ref: schemaString, text: { type: 'string', maxLength: 10000 }, expected }, required: ['kind', 'ref', 'text'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'press' }, ref: schemaString,
       key: { type: 'string', enum: browserKeys }, shift: { type: 'boolean' }, expected }, required: ['kind', 'ref', 'key'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'navigate' }, url: schemaString, expected }, required: ['kind', 'url'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'navigate' }, url: schemaString, expected: { oneOf: expected.oneOf.slice(1, 3) } }, required: ['kind', 'url'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'scroll' }, ref: schemaString,
       deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
       expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'deltaX', 'deltaY'], additionalProperties: false },
@@ -134,9 +169,30 @@ export function apply(ctx: Context, config: Config = {}): void {
       deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
       expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'ref', 'deltaX', 'deltaY'], additionalProperties: false },
   ] };
-  register('browser_act', 'Perform one approved click/fill/press/scroll/wheel/check or same-origin navigation. Check sets a checkbox/switch boolean state, or selects a native radio with checked:true (never false); select another radio to change the group choice. Check does nothing if already correct and verifies after at most one click; it is not an input value. Press uses a focused control; Enter/Space may submit it. Scroll directly changes DOM scroll offsets on the document (no ref) or one known element (ref, including a region), returning measured before/after offsets; no movement stays unknown. Wheel instead sends one real, unmodified CSS-pixel wheel sample at a verified point on the required control/region ref, for wheel-driven interfaces. It may trigger handlers or scroll ancestors, not necessarily the named element. Deltas are not proof of movement. Use a text/URL postcondition for verified wheel feedback; absent one, outcome stays unknown and the immediate observation may precede the wheel effect. No browser/OS shortcuts. Use fresh node IDs, a unique requestId and optional value/URL/text postcondition (no value for scroll/wheel). Browser steps share a deadline. RECOVERY_REQUIRED returns historical metadata only, not current success or restored control. Unknown means DO NOT blindly retry with a new request ID; regain approved control and observe first.',
-    { requestId: schemaString, leaseId: schemaString, documentEpoch: schemaString, action, timeoutMs: { type: 'integer' } },
+  register('browser_act', 'Perform one approved click/fill/append/press/scroll/wheel/check or same-origin navigation. Fill replaces all text in a visible input/textarea or bounded contenteditable editing host (including plaintext-only and generic nodes marked editable:true); it can remove rich formatting. Append instead adds only the provided suffix at the end of a supported input/textarea or editing host, preserving the existing prefix; it is not arbitrary-caret typing or a full refill. It binds the current prefix after actionability and refuses changes before insertion, verifies the whole combined value, respects native maxlength and no-ops on an empty suffix. Combined text is limited to 10000 UTF-16 units. Protected/nested editing islands, password entry and IME composition are unsupported. Contenteditable always verifies the full logical text; an explicit value expectation must equal the final text (including the prefix for append). Check sets a checkbox/switch boolean state, or selects a native radio with checked:true (never false); select another radio to change the group choice. Check does nothing if already correct and verifies after at most one click; it is not an input value. Press uses a focused control; Enter/Space may submit it. Scroll directly changes DOM scroll offsets on the document (no ref) or one known element (ref, including a region), returning measured before/after offsets; no movement stays unknown. Wheel instead sends one real, unmodified CSS-pixel wheel sample at a verified point on the required control/region ref, for wheel-driven interfaces. It may trigger handlers or scroll ancestors, not necessarily the named element. Deltas are not proof of movement. Use a text/URL postcondition for verified wheel feedback; absent one, outcome stays unknown and the immediate observation may precede the wheel effect. No browser/OS shortcuts. Use fresh node IDs, a unique requestId and optional value/URL/text postcondition (no value for scroll/wheel). State postconditions use {kind:state,ref,state} on an already observed connected node: attached/detached/visible/hidden/enabled/disabled/checked/unchecked. The original node is bound before input and rechecked after observation; a same-name replacement never inherits it. Hidden includes detachment, visible means nonempty visible layout (not viewport or hit-test); opacity:0 still counts as visible. Detaching the original does not prove all lookalikes/dialogs are absent. State means final condition, not proof of a transition or business causation. State expectations cannot cross navigation. Browser steps share a deadline. RECOVERY_REQUIRED returns historical metadata only, not current success or restored control. Unknown means DO NOT blindly retry with a new request ID; regain approved control and observe first. Optional frame:{frameId,documentEpoch} selects one observed same-origin child; top-level documentEpoch must equal that child epoch. Currently frame supports click with optional child-text expectation only, not fill/check/press/scroll/wheel/navigation or URL/value/state expectations. All ancestors must share the leased origin and currently one Chromium process. Missing frame never infers a child from a ref. Frame results contain a fresh bounded view of that child, not the root page.',
+    { requestId: schemaString, leaseId: schemaString, documentEpoch: schemaString, action, timeoutMs: { type: 'integer' },
+      frame:{type:'object',properties:{frameId:{type:'string',minLength:1,maxLength:128},documentEpoch:{type:'string',minLength:1,maxLength:512}},required:['frameId','documentEpoch'],additionalProperties:false} },
     ['requestId', 'leaseId', 'documentEpoch', 'action'], (args, exec) => run('browser.act', { request: actionRequest(args) }, exec));
+  register('browser_batch', 'Perform 1-8 explicit browser actions in order with one shared deadline (maximum/default 30000 ms). Each step separately requests user approval and checks current lease, origin, target, actionability and postcondition. This is not a script, blanket approval or atomic transaction: completed side effects are never rolled back. Supply only current known refs from the initial document. Explicit navigation is allowed only as the last step; unexpected document replacement stops remaining steps. A failed, cancelled, unknown or unverified step stops the batch. Use postconditions for click/press/wheel to permit continuation. The result lists attempted/notRun steps with metadata and only the last attempted step observation, not intermediate page payloads. Same requestId deduplicates the WHOLE batch including unfinished steps; never generate a new ID to blindly resume. RECOVERY_REQUIRED contains historical metadata, not current success, restored authority or a resumable plan. Steps omitted during recovery mean their past progress is unknown. The batch occupies one tab queue slot while awaiting step approvals; Stop/handoff can interrupt it. No model JavaScript, newly-created-ref variables, file operations or cross-origin authority expansion.',
+    { requestId: { type: 'string', minLength: 1, maxLength: 128 }, leaseId: schemaString, documentEpoch: schemaString,
+      timeoutMs: { type: 'integer', minimum: 1, maximum: 30000 },
+      steps: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', properties: { action,
+        timeoutMs: { type: 'integer', minimum: 1, maximum: 30000 } }, required: ['action'], additionalProperties: false } } },
+    ['requestId', 'leaseId', 'documentEpoch', 'steps'], async (args, exec) => {
+      const request = batchRequest(args), { scope, signal: owningSignal } = executionScope(exec);
+      if (batchApprovals.size >= 8) throw new BrowserError('QUEUE_FULL', 'Too many active batch approval contexts');
+      const deadline = new AbortController(), approvalId = randomUUID();
+      const timer = setTimeout(() => deadline.abort(new BrowserError('DEADLINE_EXCEEDED', 'Batch deadline exceeded')), request.timeoutMs ?? 30000);
+      timer.unref();
+      const signal = AbortSignal.any([owningSignal, deadline.signal]);
+      try {
+        const channel = await peer(); checkAbort(signal);
+        // Recheck after connection setup because concurrent executions may have entered meanwhile.
+        if (batchApprovals.size >= 8) throw new BrowserError('QUEUE_FULL', 'Too many active batch approval contexts');
+        batchApprovals.set(approvalId, { scope, request, exec, peer: channel, signal, next: 0 });
+        return await channel.call('browser.batch', { request, approvalId, sessionId: scope.wireSessionId }, signal);
+      } finally { clearTimeout(timer); batchApprovals.delete(approvalId); }
+    });
   register('browser_handoff', 'Release control and leave the page open for the user. Never closes user tabs.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => {
       const leaseId = string(args.leaseId), { scope } = executionScope(exec);

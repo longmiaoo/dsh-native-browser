@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-09-11T17:42:32.594Z",
+  "browserVersion": "152.0.4191.66",
+  "userAgentEdgeVersion": "152.0.0.0",
+  "dshVersion": "0.1.5-rc.1",
+  "passed": [
+    "Real Microsoft Edge loads the Edge MV3 bundle and starts the isolated Native Host; DSH discovers the Chromium-family Edge instance",
+    "All 20 existing Chrome L1 executor fixture oracles pass unchanged on Edge, including AX/deltas/query, Chinese/editor input, scrolling/wheel, stale/origin refusal and Host image hashing",
+    "Edge executes a Chinese fill/Enter batch with separate real ApprovalService grants and no whole-batch replay",
+    "The shared source-side pager traverses all 220 Edge controls in bounded scoped windows",
+    "Same-origin Edge navigation verifies its destination and refuses old-document input references",
+    "The real Edge extension Stop blocks pending covered input and subsequent reads on the revoked lease",
+    "Explicit Edge re-consent establishes fresh authority; handoff releases it and leaves the page open",
+    "All approval requests have one audited decision and runtime-core source hashes remain unchanged during Edge verification"
+  ],
+  "casesPassed": [
+    "observe-full",
+    "observe-delta",
+    "observe-text-delta",
+    "observe-subtree",
+    "query-exact",
+    "query-ambiguous",
+    "fill-native",
+    "append-textarea",
+    "check-native",
+    "radio-native",
+    "fill-editor",
+    "fill-shadow",
+    "keyboard-submit",
+    "delayed-click",
+    "overlay-click",
+    "scroll-region",
+    "wheel-handler",
+    "stale-rejection",
+    "origin-rejection",
+    "capture-host"
+  ],
+  "pageWindows": 5,
+  "approvalAudit": {
+    "asked": 45,
+    "decided": 45
+  },
+  "coreSourceSha256": {
+    "action-results.ts": "88a0a3bb49d3bf548f16de4aeb35116af2528a7e04970e00cc4750be176b0a38",
+    "observations.ts": "23838bb0b0a1221bb4d98a3a21e85d54988afc5937a105dd6da68f46120561e6",
+    "runtime.ts": "1b24e3a5df460a998876b14d834c0a7da02a204b8792faf44351e51b92648810"
+  },
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "scope": "Early P2 Edge compatibility gate: installed Edge executable with a fresh temporary headless profile, production Edge bundle/native host/Broker and real DSH ToolRuntime/ApprovalService with controlled answers. No runtime-core edits, regular user profile, LLM, performance baseline, store distribution or full P5 Edge certification."
+}

@@ -1,0 +1,3438 @@
+{
+  "version": 1,
+  "startedAt": "2026-09-11T16:59:51.150Z",
+  "config": {
+    "samples": 5,
+    "warmups": 1,
+    "seed": 1729
+  },
+  "scope": {
+    "level": "L1",
+    "path": "DSH ToolRuntime -> Unix Broker -> Chrome-started Native Host -> MV3 -> Chrome",
+    "profile": "isolated headless Chrome for Testing",
+    "connection": "warm connection; fresh fixture document and lease per sample",
+    "model": null,
+    "codexComparison": false,
+    "approvals": "deterministic allowed-once test service",
+    "deadlinesMs": {
+      "action": 3000,
+      "hostTool": 6000,
+      "page": 6000,
+      "run": 600000
+    },
+    "taskTiming": "run + independent oracle; excludes fixture reset, claim and discovery/setup",
+    "toolTiming": "DSH execute call through result return; does not include browser bootstrap or human/model latency",
+    "responseBytes": "JSON tool result bytes; excludes image attachment file bytes and actual IPC/wire framing",
+    "quantiles": "p50 median; p95 nearest rank, thus maximum for five samples; failures/timeouts retained when timed",
+    "limitations": [
+      "No per-stage production spans or pure RPC RTT",
+      "No model, Codex, regular signed-in profile, or real-site comparison",
+      "No iframe/OOPIF, multi-tab, IME, upload/download/dialog, disconnect/Stop timing or soak baseline",
+      "Small sample size; shared-machine load is not controlled; advisory data, not a release/SLA gate"
+    ]
+  },
+  "environment": {
+    "os": "darwin",
+    "release": "25.5.0",
+    "architecture": "arm64",
+    "cpu": "Apple M4",
+    "logicalCpus": 10,
+    "memoryBytes": 25769803776,
+    "loadAverageAtStart": [
+      2.97900390625,
+      2.6669921875,
+      2.83544921875
+    ],
+    "node": "v22.22.3",
+    "packageVersion": "0.1.0-alpha.0",
+    "gitHead": "7a875f1fa40fb4ecc0991562fecad289894e7161",
+    "gitDirty": true,
+    "sourceSha256": "25d2b7b6840c4948f4de98f891c794bc5d073a46ea3a1b40f963fb331cc90df6",
+    "fixtureSha256": "e22b74de9bac205a77e8f18343c6621923cebbac78b5a557dce5b247f7674c55",
+    "browserVersion": "151.0.7922.10",
+    "dshVersion": "0.1.5-rc.1"
+  },
+  "status": "passed",
+  "fatal": null,
+  "cleanup": {
+    "complete": true,
+    "failed": []
+  },
+  "results": {
+    "rows": [
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 64.32916599999999,
+        "taskMs": 148.3817909999998,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 126.89033400000017,
+            "responseBytes": 6020,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.0512920000001,
+        "taskMs": 81.7372919999998,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 80.14187500000025,
+            "responseBytes": 5328,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "warmup",
+        "round": 0,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 47.77483399999983,
+        "taskMs": 9.212957999999617,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 9.141875000000255,
+            "responseBytes": 336,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "warmup",
+        "round": 0,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.774417000000085,
+        "taskMs": 9.246332999999595,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 9.16066600000022,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.16920800000025,
+        "taskMs": 88.39883299999974,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.80212500000016,
+            "responseBytes": 5308,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "warmup",
+        "round": 0,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.57829200000015,
+        "taskMs": 11.100209000000177,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 9.705417000000125,
+            "responseBytes": 334,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "warmup",
+        "round": 0,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 57.37437499999987,
+        "taskMs": 9.314791000000241,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 9.267084000000068,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.9552920000001,
+        "taskMs": 82.32504199999994,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 80.978208,
+            "responseBytes": 5328,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "warmup",
+        "round": 0,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.54475000000002,
+        "taskMs": 8.913583000000017,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.326542000000245,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "warmup",
+        "round": 0,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.91891600000008,
+        "taskMs": 5.479874999999993,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 5.394250000000284,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.164416000000074,
+        "taskMs": 90.91616700000031,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 82.5889589999997,
+            "responseBytes": 5352,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "warmup",
+        "round": 0,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.14945799999987,
+        "taskMs": 3.687084000000141,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 3.630916999999954,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "warmup",
+        "round": 0,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 47.7365420000001,
+        "taskMs": 228.17749999999978,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 226.09341700000004,
+            "responseBytes": 5320,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.13258300000007,
+        "taskMs": 86.53870800000004,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.18249999999989,
+            "responseBytes": 5312,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.59845799999994,
+        "taskMs": 88.17666700000018,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 79.98075000000017,
+            "responseBytes": 5342,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "warmup",
+        "round": 0,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.3307920000002,
+        "taskMs": 75.00141699999995,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 74.53858300000002,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "warmup",
+        "round": 0,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.98291599999993,
+        "taskMs": 5.3539999999998145,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 4.483416000000034,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.656332999999904,
+        "taskMs": 80.99754099999973,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 72.39620799999966,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "warmup",
+        "round": 0,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.5515419999997,
+        "taskMs": 85.24191700000029,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.81633299999976,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "warmup",
+        "round": 0,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.62512500000048,
+        "taskMs": 190.72975000000042,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 188.46641699999964,
+            "responseBytes": 5330,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 54.87162499999977,
+        "taskMs": 134.87387500000023,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 116.89216699999997,
+            "responseBytes": 6026,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.71637499999997,
+        "taskMs": 83.90891599999941,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.47649999999976,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 1,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.4776669999992,
+        "taskMs": 189.17575000000033,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 187.5154160000002,
+            "responseBytes": 5332,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "measured",
+        "round": 1,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.561375000000226,
+        "taskMs": 4.913290999999845,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 4.889458999999988,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "measured",
+        "round": 1,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.20183400000042,
+        "taskMs": 62.34791700000005,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 62.063458999999966,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.67033300000003,
+        "taskMs": 84.2062079999996,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.71024999999918,
+            "responseBytes": 5344,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.51170899999943,
+        "taskMs": 87.49287499999991,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.41216600000007,
+            "responseBytes": 5316,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 1,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 58.08675000000039,
+        "taskMs": 11.742416999999477,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 10.634041999999681,
+            "responseBytes": 340,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "measured",
+        "round": 1,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.115084000000024,
+        "taskMs": 2.221332999999504,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.2037499999996726,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 1,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.189416000000165,
+        "taskMs": 10.331000000000131,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 10.308415999999852,
+            "responseBytes": 342,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 1,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 42.50329199999942,
+        "taskMs": 7.041208999999981,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 7.00933299999997,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.40562500000033,
+        "taskMs": 73.43158399999993,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 72.1762920000001,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.87429200000042,
+        "taskMs": 82.41449999999986,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 81.1958340000001,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "measured",
+        "round": 1,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.70904200000041,
+        "taskMs": 6.659624999999323,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 6.634750000000167,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "measured",
+        "round": 1,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.643458000000464,
+        "taskMs": 4.190292000000227,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 3.16308300000037,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.30699999999979,
+        "taskMs": 83.55841599999985,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 74.73204200000055,
+            "responseBytes": 5358,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.28637500000059,
+        "taskMs": 85.76566700000058,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 77.01508299999932,
+            "responseBytes": 5338,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 1,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 52.18029200000001,
+        "taskMs": 206.9352089999993,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 204.7808329999998,
+            "responseBytes": 5326,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 1,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 53.71354100000008,
+        "taskMs": 87.64900000000034,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.31254200000058,
+            "responseBytes": 5316,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 1,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 61.33508299999994,
+        "taskMs": 11.545667000000321,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 11.531332999999904,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "measured",
+        "round": 2,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.50408400000015,
+        "taskMs": 2.2277500000000146,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.213999999999942,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.21349999999984,
+        "taskMs": 77.99858300000051,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.50254200000018,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 47.137957999999344,
+        "taskMs": 84.70537499999955,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.63041599999997,
+            "responseBytes": 5314,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 2,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.77425000000039,
+        "taskMs": 12.056209000000308,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 10.89575000000059,
+            "responseBytes": 340,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.35766599999988,
+        "taskMs": 88.27270899999985,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 79.5722909999995,
+            "responseBytes": 5344,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 2,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.497417000000496,
+        "taskMs": 208.3448330000001,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 206.41866600000048,
+            "responseBytes": 5324,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 53.4935830000004,
+        "taskMs": 89.97724999999991,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 81.20737499999996,
+            "responseBytes": 5316,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.98729100000037,
+        "taskMs": 133.13808299999982,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 114.40483300000051,
+            "responseBytes": 6026,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "measured",
+        "round": 2,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 47.890707999999904,
+        "taskMs": 3.130000000000109,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.3399579999995694,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "measured",
+        "round": 2,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.42608299999938,
+        "taskMs": 5.484792000000198,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 5.455958000000464,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 2,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.266999999999825,
+        "taskMs": 8.281957999999577,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.251541999999972,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.88470899999993,
+        "taskMs": 84.93437499999982,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.14066699999967,
+            "responseBytes": 5358,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 2,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.43541699999969,
+        "taskMs": 188.14337500000056,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 186.5694170000006,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "measured",
+        "round": 2,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.61658399999942,
+        "taskMs": 8.562832999999955,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.541375000000698,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 2,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.459375000000364,
+        "taskMs": 9.190542000000278,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 9.176707999999053,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.315207999999984,
+        "taskMs": 79.24554200000057,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.12183299999924,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "measured",
+        "round": 2,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.746666999999434,
+        "taskMs": 59.994833000000654,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 59.26537499999904,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.58075000000099,
+        "taskMs": 82.80133299999943,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 73.33195800000067,
+            "responseBytes": 5338,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 2,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.727333000000726,
+        "taskMs": 8.437082999998893,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 8.412583999999697,
+            "responseBytes": 344,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "measured",
+        "round": 2,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.92829100000017,
+        "taskMs": 85.67504100000042,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 77.04783300000054,
+            "responseBytes": 5338,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.31049999999959,
+        "taskMs": 87.49133400000028,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 71.9184580000001,
+            "responseBytes": 6026,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 3,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 65.18483300000116,
+        "taskMs": 7.8570420000014565,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 7.831415999999081,
+            "responseBytes": 342,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 3,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.55595899999935,
+        "taskMs": 10.768708999999944,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 9.708791999999448,
+            "responseBytes": 340,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 3,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 57.87674999999945,
+        "taskMs": 9.21679199999926,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 9.181249999999636,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.57716600000094,
+        "taskMs": 81.67666699999972,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 80.47124999999869,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "measured",
+        "round": 3,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 50.419958000000406,
+        "taskMs": 6.15612499999952,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 6.127791999999317,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 3,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.902000000000044,
+        "taskMs": 181.83858300000065,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 180.1354999999985,
+            "responseBytes": 5332,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 53.56512500000099,
+        "taskMs": 81.33270900000025,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 80.12404099999912,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.706874999999854,
+        "taskMs": 86.7541250000013,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 77.66424999999981,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "measured",
+        "round": 3,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.28508400000101,
+        "taskMs": 8.192958999999973,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.171875,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.95362499999828,
+        "taskMs": 87.86641599999894,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.33112500000061,
+            "responseBytes": 5358,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "measured",
+        "round": 3,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.045874999999796,
+        "taskMs": 3.625291999998808,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.6424580000002607,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "measured",
+        "round": 3,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.15508299999965,
+        "taskMs": 2.3232499999994616,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.3085829999999987,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.703332999999475,
+        "taskMs": 84.29358300000058,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.49675000000025,
+            "responseBytes": 5346,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 3,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.11883300000045,
+        "taskMs": 7.898416999998517,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 7.8729590000002645,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "measured",
+        "round": 3,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.76208299999962,
+        "taskMs": 58.115750000000844,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 57.82695799999965,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.1494160000002,
+        "taskMs": 84.40887499999917,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.8200420000012,
+            "responseBytes": 5338,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 3,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.29437499999949,
+        "taskMs": 211.2469999999994,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 208.99233300000014,
+            "responseBytes": 5326,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 53.150290999999925,
+        "taskMs": 91.46687500000007,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 79.87245799999982,
+            "responseBytes": 5318,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 3,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.01624999999876,
+        "taskMs": 85.49466699999903,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.7202500000003,
+            "responseBytes": 5316,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 4,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 65.43212499999936,
+        "taskMs": 11.514165999999022,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 10.329625000000306,
+            "responseBytes": 340,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "measured",
+        "round": 4,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.48945800000001,
+        "taskMs": 5.276583999999275,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 5.253208000000086,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.9232090000005,
+        "taskMs": 83.9403340000008,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.37474999999904,
+            "responseBytes": 5314,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.06758300000001,
+        "taskMs": 79.01654199999939,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 70.29679100000067,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 4,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.64983300000131,
+        "taskMs": 8.959959000001618,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.943708000000697,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "measured",
+        "round": 4,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 47.683250000000044,
+        "taskMs": 7.989666999999827,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 7.969125000001441,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.852333000000726,
+        "taskMs": 83.84829200000058,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 74.45425000000068,
+            "responseBytes": 5356,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.48624999999993,
+        "taskMs": 83.2060419999998,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 74.07991599999878,
+            "responseBytes": 5344,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 4,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.453708999999435,
+        "taskMs": 7.521833000000697,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 7.498250000000553,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 4,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.01133300000038,
+        "taskMs": 211.2875419999982,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 208.72662499999933,
+            "responseBytes": 5324,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "measured",
+        "round": 4,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 48.690959000001385,
+        "taskMs": 3.8412920000009763,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.8099999999994907,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 4,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.82366700000057,
+        "taskMs": 9.201708000000508,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 9.175457999999708,
+            "responseBytes": 344,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "measured",
+        "round": 4,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 42.73191699999916,
+        "taskMs": 56.658542000001034,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 56.300499999999374,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.725500000000466,
+        "taskMs": 78.04604199999994,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.76950000000033,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.99812500000007,
+        "taskMs": 133.3533750000006,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 116.1720830000013,
+            "responseBytes": 6028,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.60074999999961,
+        "taskMs": 86.78337499999907,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 77.76579200000015,
+            "responseBytes": 5318,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.44966699999895,
+        "taskMs": 75.04645900000105,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 73.88304100000096,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "measured",
+        "round": 4,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.027665999999954,
+        "taskMs": 85.87591699999939,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 76.8856250000008,
+            "responseBytes": 5338,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "measured",
+        "round": 4,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.36466599999949,
+        "taskMs": 3.9321670000008453,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 3.895250000001397,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 4,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.08295799999905,
+        "taskMs": 186.21654099999978,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 184.77804099999958,
+            "responseBytes": 5334,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "scroll-region",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 0,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.94187500000044,
+        "taskMs": 86.9781669999993,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 71.34024999999929,
+            "responseBytes": 6026,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-shadow",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 1,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.87041599999975,
+        "taskMs": 82.20012500000121,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 73.28441700000076,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "stale-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 5,
+        "order": 2,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.53166699999929,
+        "taskMs": 10.444292000000132,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 9.42254099999991,
+            "responseBytes": 340,
+            "outcome": "failed",
+            "code": "STALE_TARGET",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "query-ambiguous",
+        "group": "safety",
+        "phase": "measured",
+        "round": 5,
+        "order": 3,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.41387500000019,
+        "taskMs": 5.9739169999993464,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 5.176625000000058,
+            "responseBytes": 1380,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "append-textarea",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 4,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.53562500000044,
+        "taskMs": 87.27012500000092,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.42774999999892,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "fill-editor",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 5,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.31854100000055,
+        "taskMs": 88.43995800000084,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 79.94783300000017,
+            "responseBytes": 5344,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "origin-rejection",
+        "group": "safety",
+        "phase": "measured",
+        "round": 5,
+        "order": 6,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.539582999999766,
+        "taskMs": 8.910334000000148,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 8.883875000001353,
+            "responseBytes": 342,
+            "outcome": "failed",
+            "code": "POLICY_DENIED",
+            "dispatch": "notDispatched"
+          }
+        ]
+      },
+      {
+        "taskId": "delayed-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 5,
+        "order": 7,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.6617499999993,
+        "taskMs": 188.42525000000023,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 187.03733300000022,
+            "responseBytes": 5332,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-full",
+        "group": "observe",
+        "phase": "measured",
+        "round": 5,
+        "order": 8,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 53.53770799999984,
+        "taskMs": 7.894083999999566,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 7.872750000000451,
+            "responseBytes": 5068,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "fill-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 9,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.21175000000039,
+        "taskMs": 79.35199999999895,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 70.96999999999935,
+            "responseBytes": 5356,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 5,
+        "order": 10,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.98974999999882,
+        "taskMs": 8.208167000000685,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.17962499999885,
+            "responseBytes": 1006,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "observe-subtree",
+        "group": "observe",
+        "phase": "measured",
+        "round": 5,
+        "order": 11,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.354457999999795,
+        "taskMs": 4.946916999999303,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 4.922500000000582,
+            "responseBytes": 2284,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "query-exact",
+        "group": "observe",
+        "phase": "measured",
+        "round": 5,
+        "order": 12,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 43.96504100000129,
+        "taskMs": 2.9883330000011483,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 2.9746670000004087,
+            "responseBytes": 1198,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "radio-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 13,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 42.96779199999946,
+        "taskMs": 86.68029100000058,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 78.15287500000159,
+            "responseBytes": 5318,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "keyboard-submit",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 14,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 44.76191699999981,
+        "taskMs": 76.87337499999921,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 75.67041699999936,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "capture-host",
+        "group": "capture",
+        "phase": "measured",
+        "round": 5,
+        "order": 15,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.36570799999936,
+        "taskMs": 48.4903749999994,
+        "calls": [
+          {
+            "tool": "browser_screenshot",
+            "durationMs": 48.21416599999975,
+            "responseBytes": 2800,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      },
+      {
+        "taskId": "overlay-click",
+        "group": "waiting",
+        "phase": "measured",
+        "round": 5,
+        "order": 16,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 46.75416600000062,
+        "taskMs": 210.5827079999999,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 208.34391700000015,
+            "responseBytes": 5326,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "check-native",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 17,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 51.78870800000004,
+        "taskMs": 88.31179200000042,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 79.4018329999999,
+            "responseBytes": 5316,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "wheel-handler",
+        "group": "action",
+        "phase": "measured",
+        "round": 5,
+        "order": 18,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 45.440082999999504,
+        "taskMs": 82.04316699999981,
+        "calls": [
+          {
+            "tool": "browser_act",
+            "durationMs": 80.92504100000042,
+            "responseBytes": 5336,
+            "outcome": "succeeded",
+            "code": null,
+            "dispatch": "observed"
+          }
+        ]
+      },
+      {
+        "taskId": "observe-text-delta",
+        "group": "observe",
+        "phase": "measured",
+        "round": 5,
+        "order": 19,
+        "status": "passed",
+        "failure": null,
+        "setupMs": 59.350540999999794,
+        "taskMs": 8.909416999998939,
+        "calls": [
+          {
+            "tool": "browser_observe",
+            "durationMs": 8.891542000001209,
+            "responseBytes": 1160,
+            "outcome": "returned",
+            "code": null,
+            "dispatch": null
+          }
+        ]
+      }
+    ],
+    "measured": {
+      "planned": 100,
+      "passed": 100,
+      "failed": 0,
+      "notRun": 0,
+      "oraclePassRate": 1,
+      "failureCategories": {},
+      "taskMs": {
+        "count": 100,
+        "min": 2.221332999999504,
+        "p50": 78.53129199999967,
+        "p95": 189.17575000000033,
+        "max": 211.2875419999982
+      },
+      "toolMs": {
+        "count": 100,
+        "min": 2.2037499999996726,
+        "p50": 72.73035450000043,
+        "p95": 187.5154160000002,
+        "max": 208.99233300000014
+      },
+      "responseBytes": {
+        "count": 100,
+        "min": 340,
+        "p50": 5316,
+        "p95": 5358,
+        "max": 6028
+      }
+    },
+    "warmup": {
+      "planned": 20,
+      "passed": 20,
+      "failed": 0,
+      "notRun": 0,
+      "oraclePassRate": 1,
+      "failureCategories": {},
+      "taskMs": {
+        "count": 20,
+        "min": 3.687084000000141,
+        "p50": 81.36741649999976,
+        "p95": 190.72975000000042,
+        "max": 228.17749999999978
+      },
+      "toolMs": {
+        "count": 20,
+        "min": 3.630916999999954,
+        "p50": 75.67745799999989,
+        "p95": 188.46641699999964,
+        "max": 226.09341700000004
+      },
+      "responseBytes": {
+        "count": 20,
+        "min": 334,
+        "p50": 5310,
+        "p95": 5352,
+        "max": 6020
+      }
+    },
+    "groups": [
+      {
+        "group": "observe",
+        "planned": 25,
+        "passed": 25,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 25,
+          "min": 2.221332999999504,
+          "p50": 7.521833000000697,
+          "p95": 9.21679199999926,
+          "max": 11.545667000000321
+        },
+        "toolMs": {
+          "count": 25,
+          "min": 2.2037499999996726,
+          "p50": 7.498250000000553,
+          "p95": 9.181249999999636,
+          "max": 11.531332999999904
+        },
+        "responseBytes": {
+          "count": 25,
+          "min": 1006,
+          "p50": 1198,
+          "p95": 5068,
+          "max": 5068
+        }
+      },
+      {
+        "group": "safety",
+        "planned": 15,
+        "passed": 15,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 15,
+          "min": 3.130000000000109,
+          "p50": 8.910334000000148,
+          "p95": 12.056209000000308,
+          "max": 12.056209000000308
+        },
+        "toolMs": {
+          "count": 15,
+          "min": 2.3399579999995694,
+          "p50": 8.883875000001353,
+          "p95": 10.89575000000059,
+          "max": 10.89575000000059
+        },
+        "responseBytes": {
+          "count": 15,
+          "min": 340,
+          "p50": 342,
+          "p95": 1380,
+          "max": 1380
+        }
+      },
+      {
+        "group": "action",
+        "planned": 45,
+        "passed": 45,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 45,
+          "min": 73.43158399999993,
+          "p50": 84.70537499999955,
+          "p95": 133.13808299999982,
+          "max": 134.87387500000023
+        },
+        "toolMs": {
+          "count": 45,
+          "min": 70.29679100000067,
+          "p50": 76.76950000000033,
+          "p95": 114.40483300000051,
+          "max": 116.89216699999997
+        },
+        "responseBytes": {
+          "count": 45,
+          "min": 5314,
+          "p50": 5336,
+          "p95": 6026,
+          "max": 6028
+        }
+      },
+      {
+        "group": "waiting",
+        "planned": 10,
+        "passed": 10,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 10,
+          "min": 181.83858300000065,
+          "p50": 198.05547949999982,
+          "p95": 211.2875419999982,
+          "max": 211.2875419999982
+        },
+        "toolMs": {
+          "count": 10,
+          "min": 180.1354999999985,
+          "p50": 196.1481245,
+          "p95": 208.99233300000014,
+          "max": 208.99233300000014
+        },
+        "responseBytes": {
+          "count": 10,
+          "min": 5324,
+          "p50": 5329,
+          "p95": 5334,
+          "max": 5334
+        }
+      },
+      {
+        "group": "capture",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 48.4903749999994,
+          "p50": 58.115750000000844,
+          "p95": 62.34791700000005,
+          "max": 62.34791700000005
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 48.21416599999975,
+          "p50": 57.82695799999965,
+          "p95": 62.063458999999966,
+          "max": 62.063458999999966
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 2800,
+          "p50": 2800,
+          "p95": 2800,
+          "max": 2800
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "id": "observe-full",
+        "group": "observe",
+        "description": "Warm whole-document AX observation",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 6.659624999999323,
+          "p50": 7.989666999999827,
+          "p95": 8.562832999999955,
+          "max": 8.562832999999955
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 6.634750000000167,
+          "p50": 7.969125000001441,
+          "p95": 8.541375000000698,
+          "max": 8.541375000000698
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5068,
+          "p50": 5068,
+          "p95": 5068,
+          "max": 5068
+        }
+      },
+      {
+        "id": "observe-delta",
+        "group": "observe",
+        "description": "Unchanged exact-base delta",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 7.041208999999981,
+          "p50": 7.898416999998517,
+          "p95": 8.281957999999577,
+          "max": 8.281957999999577
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 7.00933299999997,
+          "p50": 7.8729590000002645,
+          "p95": 8.251541999999972,
+          "max": 8.251541999999972
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 1006,
+          "p50": 1006,
+          "p95": 1006,
+          "max": 1006
+        }
+      },
+      {
+        "id": "observe-text-delta",
+        "group": "observe",
+        "description": "One changed text fragment",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 8.909416999998939,
+          "p50": 9.190542000000278,
+          "p95": 11.545667000000321,
+          "max": 11.545667000000321
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 8.891542000001209,
+          "p50": 9.176707999999053,
+          "p95": 11.531332999999904,
+          "max": 11.531332999999904
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 1160,
+          "p50": 1160,
+          "p95": 1160,
+          "max": 1160
+        }
+      },
+      {
+        "id": "observe-subtree",
+        "group": "observe",
+        "description": "Explicit known form subtree",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 4.913290999999845,
+          "p50": 5.276583999999275,
+          "p95": 6.15612499999952,
+          "max": 6.15612499999952
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 4.889458999999988,
+          "p50": 5.253208000000086,
+          "p95": 6.127791999999317,
+          "max": 6.127791999999317
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 2284,
+          "p50": 2284,
+          "p95": 2284,
+          "max": 2284
+        }
+      },
+      {
+        "id": "query-exact",
+        "group": "observe",
+        "description": "Exact source-filtered target discovery",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 2.221332999999504,
+          "p50": 2.3232499999994616,
+          "p95": 3.9321670000008453,
+          "max": 3.9321670000008453
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 2.2037499999996726,
+          "p50": 2.3085829999999987,
+          "p95": 3.895250000001397,
+          "max": 3.895250000001397
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 1198,
+          "p50": 1198,
+          "p95": 1198,
+          "max": 1198
+        }
+      },
+      {
+        "id": "query-ambiguous",
+        "group": "safety",
+        "description": "Duplicate names remain separate candidates",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 3.130000000000109,
+          "p50": 3.8412920000009763,
+          "p95": 5.9739169999993464,
+          "max": 5.9739169999993464
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 2.3399579999995694,
+          "p50": 2.8099999999994907,
+          "p95": 5.176625000000058,
+          "max": 5.176625000000058
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 1380,
+          "p50": 1380,
+          "p95": 1380,
+          "max": 1380
+        }
+      },
+      {
+        "id": "fill-native",
+        "group": "action",
+        "description": "Chinese native input with final value verification",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 79.35199999999895,
+          "p50": 83.84829200000058,
+          "p95": 87.86641599999894,
+          "max": 87.86641599999894
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 70.96999999999935,
+          "p50": 74.73204200000055,
+          "p95": 76.33112500000061,
+          "max": 76.33112500000061
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5356,
+          "p50": 5358,
+          "p95": 5358,
+          "max": 5358
+        }
+      },
+      {
+        "id": "append-textarea",
+        "group": "action",
+        "description": "Append without refilling existing textarea content",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 84.40887499999917,
+          "p50": 85.76566700000058,
+          "p95": 87.27012500000092,
+          "max": 87.27012500000092
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 75.8200420000012,
+          "p50": 77.01508299999932,
+          "p95": 78.42774999999892,
+          "max": 78.42774999999892
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5336,
+          "p50": 5338,
+          "p95": 5338,
+          "max": 5338
+        }
+      },
+      {
+        "id": "check-native",
+        "group": "action",
+        "description": "Set native checkbox state",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 83.9403340000008,
+          "p50": 85.49466699999903,
+          "p95": 88.31179200000042,
+          "max": 88.31179200000042
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 75.37474999999904,
+          "p50": 76.7202500000003,
+          "p95": 79.4018329999999,
+          "max": 79.4018329999999
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5314,
+          "p50": 5316,
+          "p95": 5316,
+          "max": 5316
+        }
+      },
+      {
+        "id": "radio-native",
+        "group": "action",
+        "description": "Choose another native radio",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 86.68029100000058,
+          "p50": 87.49287499999991,
+          "p95": 91.46687500000007,
+          "max": 91.46687500000007
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 77.76579200000015,
+          "p50": 78.41216600000007,
+          "p95": 81.20737499999996,
+          "max": 81.20737499999996
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5316,
+          "p50": 5318,
+          "p95": 5318,
+          "max": 5318
+        }
+      },
+      {
+        "id": "fill-editor",
+        "group": "action",
+        "description": "Multiline contenteditable replacement",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 83.2060419999998,
+          "p50": 84.29358300000058,
+          "p95": 88.43995800000084,
+          "max": 88.43995800000084
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 74.07991599999878,
+          "p50": 75.71024999999918,
+          "p95": 79.94783300000017,
+          "max": 79.94783300000017
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5344,
+          "p50": 5344,
+          "p95": 5346,
+          "max": 5346
+        }
+      },
+      {
+        "id": "fill-shadow",
+        "group": "action",
+        "description": "Open-shadow native input",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 79.01654199999939,
+          "p50": 82.80133299999943,
+          "p95": 86.7541250000013,
+          "max": 86.7541250000013
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 70.29679100000067,
+          "p50": 73.33195800000067,
+          "p95": 77.66424999999981,
+          "max": 77.66424999999981
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5336,
+          "p50": 5336,
+          "p95": 5338,
+          "max": 5338
+        }
+      },
+      {
+        "id": "keyboard-submit",
+        "group": "action",
+        "description": "Trusted Enter and verified form completion",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 73.43158399999993,
+          "p50": 76.87337499999921,
+          "p95": 81.67666699999972,
+          "max": 81.67666699999972
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 72.1762920000001,
+          "p50": 75.67041699999936,
+          "p95": 80.47124999999869,
+          "max": 80.47124999999869
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5334,
+          "p50": 5336,
+          "p95": 5336,
+          "max": 5336
+        }
+      },
+      {
+        "id": "delayed-click",
+        "group": "waiting",
+        "description": "Click with 80ms delayed page feedback",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 181.83858300000065,
+          "p50": 188.14337500000056,
+          "p95": 189.17575000000033,
+          "max": 189.17575000000033
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 180.1354999999985,
+          "p50": 186.5694170000006,
+          "p95": 187.5154160000002,
+          "max": 187.5154160000002
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5332,
+          "p50": 5332,
+          "p95": 5334,
+          "max": 5334
+        }
+      },
+      {
+        "id": "overlay-click",
+        "group": "waiting",
+        "description": "Wait for a temporary 120ms modal overlay",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 206.9352089999993,
+          "p50": 210.5827079999999,
+          "p95": 211.2875419999982,
+          "max": 211.2875419999982
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 204.7808329999998,
+          "p50": 208.34391700000015,
+          "p95": 208.99233300000014,
+          "max": 208.99233300000014
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5324,
+          "p50": 5326,
+          "p95": 5326,
+          "max": 5326
+        }
+      },
+      {
+        "id": "scroll-region",
+        "group": "action",
+        "description": "Known overflow container and verified loaded text",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 86.9781669999993,
+          "p50": 133.13808299999982,
+          "p95": 134.87387500000023,
+          "max": 134.87387500000023
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 71.34024999999929,
+          "p50": 114.40483300000051,
+          "p95": 116.89216699999997,
+          "max": 116.89216699999997
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 6026,
+          "p50": 6026,
+          "p95": 6028,
+          "max": 6028
+        }
+      },
+      {
+        "id": "wheel-handler",
+        "group": "action",
+        "description": "One trusted wheel sample to a custom handler",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 78.04604199999994,
+          "p50": 81.33270900000025,
+          "p95": 82.41449999999986,
+          "max": 82.41449999999986
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 76.76950000000033,
+          "p50": 80.12404099999912,
+          "p95": 81.1958340000001,
+          "max": 81.1958340000001
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 5334,
+          "p50": 5336,
+          "p95": 5336,
+          "max": 5336
+        }
+      },
+      {
+        "id": "stale-rejection",
+        "group": "safety",
+        "description": "Same-name replacement receives no input",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 10.444292000000132,
+          "p50": 11.514165999999022,
+          "p95": 12.056209000000308,
+          "max": 12.056209000000308
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 9.42254099999991,
+          "p50": 10.329625000000306,
+          "p95": 10.89575000000059,
+          "max": 10.89575000000059
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 340,
+          "p50": 340,
+          "p95": 340,
+          "max": 340
+        }
+      },
+      {
+        "id": "origin-rejection",
+        "group": "safety",
+        "description": "Cross-origin navigation is refused before dispatch",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 7.8570420000014565,
+          "p50": 8.910334000000148,
+          "p95": 10.331000000000131,
+          "max": 10.331000000000131
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 7.831415999999081,
+          "p50": 8.883875000001353,
+          "p95": 10.308415999999852,
+          "max": 10.308415999999852
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 342,
+          "p50": 342,
+          "p95": 344,
+          "max": 344
+        }
+      },
+      {
+        "id": "capture-host",
+        "group": "capture",
+        "description": "Canonical DSH screenshot attachment and byte hash",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "notRun": 0,
+        "oraclePassRate": 1,
+        "failureCategories": {},
+        "taskMs": {
+          "count": 5,
+          "min": 48.4903749999994,
+          "p50": 58.115750000000844,
+          "p95": 62.34791700000005,
+          "max": 62.34791700000005
+        },
+        "toolMs": {
+          "count": 5,
+          "min": 48.21416599999975,
+          "p50": 57.82695799999965,
+          "p95": 62.063458999999966,
+          "max": 62.063458999999966
+        },
+        "responseBytes": {
+          "count": 5,
+          "min": 2800,
+          "p50": 2800,
+          "p95": 2800,
+          "max": 2800
+        }
+      }
+    ]
+  },
+  "finishedAt": "2026-09-11T17:00:06.683Z"
+}

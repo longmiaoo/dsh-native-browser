@@ -1,4 +1,5 @@
 import type { Action, ActionResult } from './index.js';
+export type JournalKind = Action['kind'] | 'batch';
 
 /** No page contents, input values, URLs, tokens, or observations cross this seam. */
 export interface RecoveryRecord {
@@ -10,7 +11,7 @@ export interface RecoveryRecord {
 export interface ActionJournal {
   lookup(key: string, payloadHash: string): RecoveryRecord | undefined;
   /** Resolve true only after a new conservative intent has reached durable storage. */
-  reserve(key: string, payloadHash: string, kind: Action['kind']): Promise<boolean>;
+  reserve(key: string, payloadHash: string, kind: JournalKind): Promise<boolean>;
   settle(key: string, result: Pick<ActionResult, 'outcome' | 'dispatch'>): Promise<void>;
 }
 export function recoveredAction(requestId: string, record: RecoveryRecord): ActionResult {

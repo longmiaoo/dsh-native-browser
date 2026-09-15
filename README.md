@@ -39,6 +39,21 @@ The long-term direction is **DSH-native orchestration with first-party Chrome ca
 
 The current alpha ships only the native Chromium path. An adapter for `chrome-devtools-mcp` is a planned provider, not an implemented feature. It must pass attachment-conflict, lifecycle, privacy and latency gates before it can share or replace any part of an active browser session. See the upstream discussions on [visual cursor support](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2401) and [silent input false positives](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2199) for two examples of why the DSH control plane remains useful.
 
+## Product benchmark: Codex
+
+The experience benchmark is the browser integration in OpenAI Codex: browser work should feel like one continuous, observable collaboration rather than a chain of disconnected remote calls. The goal is experience parity where it can be measured, not protocol compatibility, visual imitation or use of private OpenAI implementation details.
+
+`dsh-native-browser` specifically benchmarks the following behaviors:
+
+- **Use the browser the user is already in:** preserve signed-in state, open tabs and normal Chrome extensions instead of making routine work start in a disposable automation profile.
+- **Keep the fast path semantic:** inspect compact accessible state and stable element references first; use screenshots and vision only when pixels contain necessary information.
+- **Make actions both visible and trustworthy:** show a virtual pointer for human observability, revalidate the hit target immediately before input, and verify the resulting page state instead of treating input dispatch as success.
+- **Let the human remain in charge:** Stop, direct user interaction, handoff, lease expiry and switching the visible DSH conversation revoke control without transferring authority to another conversation.
+- **Preserve continuity without leaking ownership:** keep browser connections and observations alive across tool calls while binding every tab, reference and continuation to its owner, document epoch and connection epoch.
+- **Leave the workspace clean:** distinguish claimed user tabs from agent-created tabs, close ephemeral work and retain only explicit deliverables or handoffs.
+
+Parity claims require evidence. Release gates should track end-to-end action latency, observation size, stale-target rate, verified-action success, duplicate-action rate, interruption latency, conversation-switch revocation and tab-cleanup correctness on real Chrome workflows. Until those gates pass broadly, this README describes Codex as the benchmark—not as a completed equivalence claim.
+
 ## Project status
 
 **Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. Chrome setup is still manual, the extension is loaded unpacked, and broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.

@@ -78,6 +78,18 @@ const until = async check => {
   assert.fail('Condition did not settle');
 };
 
+test('child page public schema carries exact frame/root/token through the Broker and turn lifecycle',async t=>{
+ const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),frame={frameId:'child',documentEpoch:'child-doc'};
+ f.provider.frames=async l=>({tab:l.tab,documentEpoch:'doc',truncated:false,frames:[
+  {id:'root',isMain:true,origin:l.origin,documentEpoch:'doc',contextStatus:'known'},
+  {id:'child',parentId:'root',isMain:false,origin:l.origin,documentEpoch:'child-doc',contextStatus:'known'}]});
+ f.provider.readFramePage=async(l,o,s)=>{assert.deepEqual(o,{frame,rootRef:'region',continuation:'token'});return {...await f.provider.observe(l,s),
+  documentEpoch:frame.documentEpoch,scope:{kind:'subtree',frameId:frame.frameId,rootRef:o.rootRef},page:{index:1,incomplete:false}};};
+ const args={leaseId:lease.id,frame,rootRef:'region',continuation:'token'},validate=new Ajv({strict:false}).compile(f.definitions.get('browser_read_page').parameters);
+ assert.equal(validate(args),true);for(const extra of [{sessionId:'raw'},{documentEpoch:''}])assert.equal(validate({...args,frame:{...frame,...extra}}),false);
+ const call=f.prepare('browser_read_page',args);assert.equal(call.decision.kind,'allow');assert.equal((await call.run()).page.index,1);
+ const late=f.prepare('browser_read_page',args);await f.end();await assert.rejects(late.run(),{code:'LEASE_REVOKED'});
+});
 test('page tool validates its independent window schema and keeps the owning turn', async t => {
   const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),seen=[];
   f.provider.readPage=async(l,options,signal)=>{seen.push(options);return {...await f.provider.observe(l,signal),page:{index:0,incomplete:false}};};

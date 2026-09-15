@@ -38,8 +38,8 @@ export function frameTarget(value: unknown): import('./index.js').FrameTarget {
 }
 export function pageReadOptions(value: unknown): import('./index.js').PageReadOptions {
   const v = record(value);
-  if (Object.keys(v).some(key => !['rootRef', 'continuation'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Unsupported page read option');
-  return { ...(v.rootRef === undefined ? {} : { rootRef: string(v.rootRef, 128) }),
+  if (Object.keys(v).some(key => !['frame', 'rootRef', 'continuation'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Unsupported page read option');
+  return { ...(v.frame === undefined ? {} : { frame: frameTarget(v.frame) }), ...(v.rootRef === undefined ? {} : { rootRef: string(v.rootRef, 128) }),
     ...(v.continuation === undefined ? {} : { continuation: string(v.continuation, 128) }) };
 }
 export function observationScope(value: unknown): ObservationScope {

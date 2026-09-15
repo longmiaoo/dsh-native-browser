@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FrameSessions } from '../dist/packages/provider-chromium/src/frame-sessions.js';
 import { findFrameAX, frameFindRequest } from '../dist/packages/provider-chromium/src/frame-query.js';
+import { hasFrameText, frameTextRequest } from '../dist/packages/provider-chromium/src/frame-text.js';
 import { frameQueryDocumentFunction, frameQueryNodeFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 import { frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 import { frameNodeRoot } from '../dist/packages/provider-chromium/src/frame-node-scope.js';
@@ -35,6 +36,28 @@ test('child query uses a bound document root and filters candidate document owne
   assert.ok(f.calls.filter(c=>c.method.startsWith('Accessibility.')).every(c=>c.session===(remote?'child-session':'')));
   assert.equal(f.calls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);f.graph.dispose();
  }
+});
+test('child text evidence is a document-bound boolean and supports normalized substring matching',async()=>{
+ for(const remote of [false,true]){
+  const f=await fixture(remote);f.nodes=[{backendDOMNodeId:17,role:{value:'StaticText'},name:{value:'Status: Child   completed'},value:{value:'private'}},
+    {backendDOMNodeId:99,role:{value:'StaticText'},name:{value:'Child completed'}}];
+  const result=await hasFrameText(f.graph,{binding,text:'Child completed'},origin,signal());assert.deepEqual(result,{present:true});
+  assert.doesNotMatch(JSON.stringify(result),/Status|private|object|session/);
+  assert.deepEqual(f.calls.find(c=>c.method==='Accessibility.queryAXTree').p,{backendNodeId:1,accessibleName:'Child completed'});
+  assert.equal(f.calls.filter(c=>c.method==='DOM.resolveNode').length,3);assert.equal(f.calls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);
+  f.graph.dispose();
+ }
+ const control=await fixture();control.nodes=[{backendDOMNodeId:17,role:{value:'button'},name:{value:'Child completed'}}];
+ assert.deepEqual(await hasFrameText(control.graph,{binding,text:'Child completed'},origin,signal()),{present:false});control.graph.dispose();
+});
+test('child text evidence is bounded, rejects raw authority and fails closed on document change',async()=>{
+ const f=await fixture();f.nodes=Array.from({length:1000},(_,i)=>({backendDOMNodeId:1000+i,role:{value:'StaticText'},name:{value:'Absent'}}));
+ const result=await hasFrameText(f.graph,{binding,text:'Expected'},origin,signal());assert.deepEqual(result,{present:false});
+ assert.equal(f.calls.filter(c=>c.method==='DOM.resolveNode').length,129);f.graph.dispose();
+ for(const invalid of [{binding,text:' '},{binding,text:'x',sessionId:'raw'},{binding,text:'x'.repeat(1001)}])
+  assert.throws(()=>frameTextRequest(invalid),{code:'INVALID_REQUEST'});
+ const changed=await fixture();changed.override=method=>{if(method==='Accessibility.queryAXTree')changed.graph.event('','Page.frameNavigated',{frame:{id:'child'}});};
+ await assert.rejects(hasFrameText(changed.graph,{binding,text:'Expected'},origin,signal()),{code:'STALE_TARGET'});changed.graph.dispose();
 });
 test('frame query cannot widen stale/foreign document authority or accept a wrong document root',async()=>{
  for(const mode of ['foreign','old-loader','wrong-root','wrong-object']){

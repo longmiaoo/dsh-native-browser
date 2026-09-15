@@ -5,8 +5,26 @@ import { FakeProvider } from './helpers/fake-provider.mjs';
 import { pageReadOptions } from '../dist/packages/contracts/src/validation.js';
 import { clientRequirements, providerCapabilities } from '../dist/packages/contracts/src/wire.js';
 const signal=()=>new AbortController().signal;
+const frame={frameId:'child',documentEpoch:'child-doc'};
 async function fixture(t){const runtime=new BrowserRuntime(async()=>true),provider=new FakeProvider();runtime.register(provider);t.after(()=>runtime.dispose());
   const lease=await runtime.claim('owner','fake-1','tab-1',signal());return {runtime,provider,lease};}
+test('child page uses a distinct optional seam, exact frame/root scope and both authority fences',async t=>{
+ const f=await fixture(t);let foreign=false,reads=0;
+ f.provider.readPage=async()=>{throw Error('no root fallback');};
+ f.provider.frames=async l=>({tab:l.tab,documentEpoch:'root-doc',truncated:false,frames:[
+  {id:'root',isMain:true,origin:l.origin,documentEpoch:'root-doc',contextStatus:'known'},
+  {id:'child',parentId:'root',isMain:false,origin:foreign?'https://foreign.test':l.origin,documentEpoch:'child-doc',contextStatus:'known'}]});
+ await assert.rejects(f.runtime.readPage('owner',f.lease.id,{frame},signal()),{code:'UNSUPPORTED_CAPABILITY'});
+ for(const mode of ['valid','scope','epoch','origin']){
+  foreign=false;f.provider.readFramePage=async(l,o,s)=>{reads++;assert.deepEqual(o.frame,frame);if(mode==='origin')foreign=true;
+   return {...await f.provider.observe(l,s),documentEpoch:mode==='epoch'?'other':'child-doc',
+    scope:mode==='scope'?{kind:'subtree',rootRef:'region'}:{kind:'subtree',frameId:'child',rootRef:'region'},page:{index:0,incomplete:false}};};
+  const p=f.runtime.readPage('owner',f.lease.id,{frame,rootRef:'region'},signal());
+  if(mode==='valid'){const result=await p;assert.equal(result.cursor,undefined);assert.equal(result.scope.frameId,'child');}else await assert.rejects(p);
+ }
+ const before=reads;await assert.rejects(f.runtime.readPage('owner',f.lease.id,{frame},signal()),{code:'POLICY_DENIED'});assert.equal(reads,before);
+ assert.ok(clientRequirements.includes('observe.frame-page.v1'));assert.ok(providerCapabilities.includes('ax.frame-page.v1'));
+});
 test('portable page seam requires provider support, strict options and negotiated capabilities',async t=>{
   const f=await fixture(t);await assert.rejects(f.runtime.readPage('owner',f.lease.id,{},signal()),{code:'UNSUPPORTED_CAPABILITY'});
   for(const options of [{cursor:'not-a-page'},{continuation:''},{rootRef:'x',query:{name:'x'}}])assert.throws(()=>pageReadOptions(options),{code:'INVALID_REQUEST'});

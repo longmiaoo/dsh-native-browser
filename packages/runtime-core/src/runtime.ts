@@ -219,13 +219,25 @@ export class BrowserRuntime {
 
   async readPage(owner: string, leaseId: string, raw: import('../../contracts/src/index.js').PageReadOptions, signal: AbortSignal) {
     const options = pageReadOptions(raw), entry = this.entry(owner, leaseId);
-    const scope = options.rootRef === undefined ? { kind: 'document' as const } : { kind: 'subtree' as const, rootRef: options.rootRef };
+    const frame = options.frame;
+    const scope = options.rootRef === undefined ? frame ? { kind: 'frame' as const, frameId: frame.frameId } : { kind: 'document' as const }
+      : { kind: 'subtree' as const, rootRef: options.rootRef, ...(frame ? { frameId: frame.frameId } : {}) };
     const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
     return this.serialized(entry, linked, async () => {
-      await this.authorized(entry, 'observe', linked);
-      if (!entry.provider.readPage) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support page windows');
-      const result = await entry.provider.readPage(entry.lease, options, linked);
+      await this.authorized(entry, 'observe', linked, undefined, frame);
+      if (frame) {
+        if (!entry.provider.frames || !entry.provider.readFramePage) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support child page windows');
+        sameOriginFrame(frameInventory(await entry.provider.frames(entry.lease, linked), entry.lease), frame, entry.lease);
+        checkAbort(linked); this.entry(owner, leaseId);
+      } else if (!entry.provider.readPage) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support page windows');
+      const result = frame ? await entry.provider.readFramePage!(entry.lease, { ...options, frame }, linked)
+        : await entry.provider.readPage!(entry.lease, options, linked);
       checkAbort(linked); this.entry(owner, leaseId);
+      if (frame) {
+        if (result.documentEpoch !== frame.documentEpoch) throw new BrowserError('STALE_TARGET', 'Provider returned another frame page document');
+        sameOriginFrame(frameInventory(await entry.provider.frames!(entry.lease, linked), entry.lease), frame, entry.lease);
+        checkAbort(linked); this.entry(owner, leaseId);
+      }
       if (result.tab !== entry.lease.tab || originOf(result.url) !== entry.lease.origin) throw new BrowserError('POLICY_DENIED', 'Page window moved outside its lease');
       if (!sameScope(observationScope(result.scope), scope) || !result.page || !Number.isSafeInteger(result.page.index)
         || result.page.index < 0 || typeof result.page.incomplete !== 'boolean'

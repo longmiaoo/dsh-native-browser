@@ -68,7 +68,7 @@ export interface Observation {
 }
 export interface FrameTarget { frameId: string; documentEpoch: string }
 export interface ObserveOptions { cursor?: string; rootRef?: string; query?: SemanticQuery; frame?: FrameTarget }
-export interface PageReadOptions { rootRef?: string; continuation?: string }
+export interface PageReadOptions { frame?: FrameTarget; rootRef?: string; continuation?: string }
 /** Live traversal window, not an incremental snapshot or atomic whole-page read. */
 export interface ObservationPage extends Observation {
   page: { index: number; incomplete: boolean; continuation?: string };
@@ -188,6 +188,7 @@ export interface BrowserProvider {
   observeSubtree?(lease: Lease, rootRef: string, signal: AbortSignal): Promise<Observation>;
   find?(lease: Lease, query: SemanticQuery, signal: AbortSignal, rootRef?: string): Promise<Observation>;
   readPage?(lease: Lease, options: PageReadOptions, signal: AbortSignal): Promise<ObservationPage>;
+  readFramePage?(lease: Lease, options: PageReadOptions & { frame: FrameTarget }, signal: AbortSignal): Promise<ObservationPage>;
   frames?(lease: Lease, signal: AbortSignal): Promise<FrameInventory>;
   observeFrame?(lease: Lease, frame: FrameTarget, signal: AbortSignal): Promise<Observation>;
   findFrame?(lease: Lease, frame: FrameTarget, query: SemanticQuery, signal: AbortSignal, rootRef?: string): Promise<Observation>;

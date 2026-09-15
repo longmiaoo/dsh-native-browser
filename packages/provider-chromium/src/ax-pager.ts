@@ -35,12 +35,15 @@ export class AXPager {
   constructor(private readonly now = Date.now, private readonly token = () => crypto.randomUUID()) {}
   private prune() { for (const [token, walk] of this.walks) if (walk.expiresAt <= this.now()) this.walks.delete(token); }
   get size() { this.prune(); return this.walks.size; }
+  has(token: string) { this.prune(); return this.walks.has(token); }
+  discard(token: string | undefined) { if (token !== undefined) this.walks.delete(token); }
   clear() { this.walks.clear(); for (const operation of this.operations) operation.cancelled = true; }
   revoke(bindingPrefix: string) {
     for (const [token, walk] of this.walks) if (walk.binding.startsWith(bindingPrefix)) this.walks.delete(token);
     for (const operation of this.operations) if (operation.binding.startsWith(bindingPrefix)) operation.cancelled = true;
   }
-  async read(raw: AXPageRequest, binding: string, send: (method: string, params: Dict) => Promise<Dict>, signal: AbortSignal) {
+  async read(raw: AXPageRequest, binding: string, send: (method: string, params: Dict) => Promise<Dict>, signal: AbortSignal,
+    validate?: (nodes: Dict[]) => Promise<{ nodes: Dict[]; truncated: boolean }>) {
     const request = axPageRequest(raw), { continuation, ...rootRequest } = request;
     checkAbort(signal); this.prune();
     let walk = continuation === undefined ? undefined : this.walks.get(continuation);
@@ -148,6 +151,10 @@ export class AXPager {
         if (walk.seen.size >= axPageLimits.visited) throw new BrowserError('QUEUE_FULL', 'AX traversal node budget reached; narrow the region');
         const next = await child(top, nextId); top.offset++; walk.seen.add(nextId); walk.stack.push(frame(next));
       }
+      // Ownership/semantic verification happens before continuation publication.
+      // Omission remains sticky across all later windows in this traversal.
+      const verified = validate ? await validate(nodes) : { nodes, truncated: false };
+      walk.incomplete ||= verified.truncated;
       check();
       if (walk.expiresAt <= this.now()) throw new BrowserError('STALE_TARGET', 'AX continuation expired during read');
       const more = walk.stack.length > 0;
@@ -157,7 +164,7 @@ export class AXPager {
           throw new BrowserError('QUEUE_FULL', 'AX continuation state budget reached; narrow the region');
         nextToken = this.token(); this.walks.set(nextToken, walk);
       }
-      return { nodes, truncated: more || walk.incomplete, page: { index: walk.page++, incomplete: walk.incomplete,
+      return { nodes: verified.nodes, truncated: more || walk.incomplete, page: { index: walk.page++, incomplete: walk.incomplete,
         ...(nextToken ? { continuation: nextToken } : {}) }, acquisition: { calls, bytes: outputBytes, visited: walk.seen.size } };
     } finally { this.active--; this.operations.delete(operation); }
   }

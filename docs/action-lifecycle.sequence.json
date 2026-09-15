@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Verified Browser Action Lifecycle",
+    "output": "action-lifecycle.sequence.html",
+    "viewBox": [1500, 660],
+    "column_fit": "spread",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "approval-and-ownership",
+        "label": "Approval and ownership",
+        "focus": ["agent", "adapter", "broker", "runtime"],
+        "note": "A mutating action enters only after user approval, owner isolation and lease validation."
+      },
+      {
+        "id": "resolve-and-dispatch",
+        "label": "Resolve and dispatch",
+        "focus": ["runtime", "provider", "extension", "chrome", "page"],
+        "note": "The provider re-resolves the ref, validates geometry, journals intent and dispatches input once."
+      },
+      {
+        "id": "verify-and-settle",
+        "label": "Verify and settle",
+        "focus": ["page", "provider", "runtime", "broker", "adapter", "agent"],
+        "note": "The result is observed against a postcondition before the journal settles and metadata returns."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "DSH Agent"
+    },
+    {
+      "id": "adapter",
+      "type": "frontend",
+      "label": "DSH Adapter"
+    },
+    {
+      "id": "broker",
+      "type": "security",
+      "label": "Broker"
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Runtime Core"
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Chrome Provider"
+    },
+    {
+      "id": "extension",
+      "type": "security",
+      "label": "MV3 Extension"
+    },
+    {
+      "id": "chrome",
+      "type": "cloud",
+      "label": "Chrome / CDP"
+    },
+    {
+      "id": "page",
+      "type": "external",
+      "label": "Live Page"
+    }
+  ],
+  "segments": [
+    {
+      "from": 152,
+      "to": 258,
+      "label": "Authorize"
+    },
+    {
+      "from": 260,
+      "to": 482,
+      "label": "Resolve and dispatch exactly once"
+    },
+    {
+      "from": 484,
+      "to": 576,
+      "label": "Observe and settle"
+    }
+  ],
+  "messages": [
+    {
+      "id": "tool-call",
+      "from": "agent",
+      "to": "adapter",
+      "y": 160,
+      "label": "browser_act(requestId, ref, action)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "user-approval",
+      "from": "adapter",
+      "to": "agent",
+      "y": 189,
+      "label": "mutation approval accepted",
+      "variant": "security"
+    },
+    {
+      "id": "rpc-request",
+      "from": "adapter",
+      "to": "broker",
+      "y": 218,
+      "label": "local RPC + owner token",
+      "variant": "security"
+    },
+    {
+      "id": "lease-journal-check",
+      "from": "broker",
+      "to": "runtime",
+      "y": 247,
+      "label": "validate lease; check replay journal",
+      "variant": "security"
+    },
+    {
+      "id": "serialize-tab",
+      "from": "runtime",
+      "to": "provider",
+      "y": 276,
+      "label": "serialize tab; resolve current ref",
+      "variant": "default"
+    },
+    {
+      "id": "read-ax",
+      "from": "provider",
+      "to": "extension",
+      "y": 305,
+      "label": "bounded AX read + geometry",
+      "variant": "default"
+    },
+    {
+      "id": "cdp-inspect",
+      "from": "extension",
+      "to": "chrome",
+      "y": 334,
+      "label": "allowlisted debugger commands",
+      "variant": "security"
+    },
+    {
+      "id": "page-shape",
+      "from": "chrome",
+      "to": "provider",
+      "y": 363,
+      "label": "semantic identity + stable hit target",
+      "variant": "return"
+    },
+    {
+      "id": "journal-intent",
+      "from": "provider",
+      "to": "broker",
+      "y": 392,
+      "label": "persist dispatch intent",
+      "variant": "security"
+    },
+    {
+      "id": "input-dispatch",
+      "from": "provider",
+      "to": "extension",
+      "y": 421,
+      "label": "dispatch input once",
+      "variant": "emphasis"
+    },
+    {
+      "id": "trusted-event",
+      "from": "extension",
+      "to": "chrome",
+      "y": 450,
+      "label": "Input.dispatch* -> trusted page event",
+      "variant": "emphasis"
+    },
+    {
+      "id": "verify-result",
+      "from": "provider",
+      "to": "page",
+      "y": 479,
+      "label": "bounded observe + postcondition",
+      "variant": "default"
+    },
+    {
+      "id": "observed-state",
+      "from": "page",
+      "to": "provider",
+      "y": 508,
+      "label": "verified state or unknown",
+      "variant": "return"
+    },
+    {
+      "id": "settle-journal",
+      "from": "provider",
+      "to": "broker",
+      "y": 537,
+      "label": "settle success / failure / unknown",
+      "variant": "security"
+    },
+    {
+      "id": "return-result",
+      "from": "broker",
+      "to": "agent",
+      "y": 566,
+      "label": "result + provenance + retry metadata",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "adapter",
+      "from": 156,
+      "to": 224,
+      "type": "frontend"
+    },
+    {
+      "participant": "broker",
+      "from": 214,
+      "to": 573,
+      "type": "security"
+    },
+    {
+      "participant": "runtime",
+      "from": 243,
+      "to": 572,
+      "type": "backend"
+    },
+    {
+      "participant": "provider",
+      "from": 272,
+      "to": 570,
+      "type": "backend"
+    },
+    {
+      "participant": "extension",
+      "from": 301,
+      "to": 485,
+      "type": "security"
+    },
+    {
+      "participant": "chrome",
+      "from": 330,
+      "to": 489,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Accuracy",
+      "items": [
+        "Refs are re-resolved against the current document epoch",
+        "Geometry and hit target are checked immediately before input",
+        "Success requires an observed postcondition"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Exactly-once bias",
+      "items": [
+        "Dispatch intent is durable before the first input event",
+        "Duplicate IDs return history; uncertain dispatch is not retried"
+      ]
+    }
+  ]
+}

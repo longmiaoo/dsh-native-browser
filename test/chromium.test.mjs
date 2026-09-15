@@ -17,7 +17,7 @@ function fixture() {
   const pulse = () => { for (const listener of listeners) listener('page.changed', { tab: lease.tab, leaseId: lease.id }); };
   const channel = { onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); }, async call(method, params) {
     if (method === 'tabs.list') return [{ id: 'tab', instanceId: instance.id, url: state.url, title: 'Test' }];
-    if (method === 'ax.find' || method === 'ax.page' || method === 'frames.list' || method === 'ax.frame' || method === 'ax.frame.find' || method === 'ax.frame.subtree' || method === 'frame.click.prepare' || method === 'frame.click') { state.commands.push(method); return await state.onCommand?.(method, params.binding ?? params.request) ?? { nodes: [] }; }
+    if (method === 'ax.find' || method === 'ax.page' || method === 'frames.list' || method === 'ax.frame' || method === 'ax.frame.find' || method === 'ax.frame.subtree' || method === 'ax.frame.page' || method === 'ax.frame.text' || method === 'frame.click.prepare' || method === 'frame.click') { state.commands.push(method); return await state.onCommand?.(method, params.binding ?? params.request) ?? { nodes: [] }; }
     // This fixture stubs source acquisition, not its traversal; ax-reader tests exercise the real algorithm.
     if (method === 'ax.read') { method = 'cdp'; params = { method: params.request.backendNodeId === undefined
       ? 'Accessibility.getFullAXTree' : 'Accessibility.queryAXTree', params: params.request.backendNodeId === undefined
@@ -76,6 +76,7 @@ async function childClickFixture(){
     if(method==='frames.list')return raw;
     if(method==='ax.frame')return {nodes:[{backendDOMNodeId:17,role:{value:'button'},name:{value:'Child button'}},
       {role:{value:'StaticText'},name:{value:f.childText}}],truncated:false};
+    if(method==='ax.frame.text')return {present:f.childText.replace(/\s+/g,' ').includes(p.text.replace(/\s+/g,' '))};
     if(method==='frame.click.prepare'||method==='frame.click'){
       f.bindings.push(structuredClone(p));if(method==='frame.click')f.childText='Child completed';
       return {acknowledged:method==='frame.click'};
@@ -92,6 +93,20 @@ test('child provider binds observed source identity for preparation and dispatch
   assert.equal(f.bindings.length,2);assert.deepEqual(f.bindings[0],f.bindings[1]);
   assert.deepEqual(f.bindings[0],{binding:{frameId:'child',loaderId:'child-loader',contextUniqueId:'child-context',rootFrameId:'frame',rootLoaderId:'loader-1'},backendNodeId:17,role:'button',name:'Child button'});
   assert.equal(f.state.commands.some(c=>c.startsWith('Input.')||c==='Accessibility.getFullAXTree'),false);
+});
+test('child click confirms text beyond the bounded frame observation without changing its returned scope',async()=>{
+  const f=await childClickFixture();
+  f.override=(method,p)=>{
+    if(method==='ax.frame')return {nodes:[{backendDOMNodeId:17,role:{value:'button'},name:{value:'Child button'}},
+      {role:{value:'StaticText'},name:{value:'Waiting'}}],truncated:true};
+    if(method==='ax.frame.text'){
+      assert.deepEqual(p,{binding:{frameId:'child',loaderId:'child-loader',contextUniqueId:'child-context',rootFrameId:'frame',rootLoaderId:'loader-1'},text:'Child completed'});
+    }
+  };
+  const result=await f.provider.actFrame(lease,f.request,f.execution);
+  assert.equal(result.postcondition,'passed');assert.deepEqual(result.observation.scope,{kind:'frame',frameId:f.frame.frameId});
+  assert.deepEqual(result.observation.text,['Waiting']);assert.equal(result.observation.truncated,true);
+  assert.equal(f.state.commands.filter(method=>method==='frame.click').length,1);assert.equal(f.state.commands.filter(method=>method==='ax.frame.text').length,1);
 });
 test('child query uses the explicit source binding, retains child refs and never widens to root discovery',async()=>{
   const f=await childClickFixture(),query={name:'Child button',role:'button'};
@@ -118,6 +133,18 @@ test('child subtree/context query sends a cached semantic root without using roo
  assert.equal(f.state.commands.includes('Accessibility.getPartialAXTree'),false);
  const root=(await f.provider.observe(lease,f.execution.signal)).nodes[0].id;
  await assert.rejects(f.provider.observeFrameSubtree(lease,f.frame,root,f.execution.signal),{code:'STALE_TARGET'});
+});
+test('child page provider routes cached root semantics and token without root fallback or pruning prior window refs',async()=>{
+ const f=await childClickFixture(),rootRef=f.request.action.ref;
+ f.override=(method,p)=>{if(method==='ax.frame.page'){
+  assert.deepEqual(p.root,{backendNodeId:17,role:'button',name:'Child button',editable:false});assert.equal(p.continuation,'next');assert.equal(p.binding.contextUniqueId,'child-context');
+  return {nodes:[{backendDOMNodeId:18,role:{value:'button'},name:{value:'Later'}}],truncated:false,page:{index:1,incomplete:false}};
+ }};
+ const page=await f.provider.readPage(lease,{frame:f.frame,rootRef,continuation:'next'},f.execution.signal);
+ assert.deepEqual(page.scope,{kind:'subtree',frameId:f.frame.frameId,rootRef});assert.equal(page.documentEpoch,f.frame.documentEpoch);
+ assert.equal((await f.provider.actFrame(lease,f.request,f.execution)).postcondition,'passed');
+ assert.equal(f.state.commands.includes('ax.page'),false);assert.equal(f.state.commands.includes('Accessibility.getPartialAXTree'),false);
+ await assert.rejects(f.provider.readFramePage(lease,{frame:f.frame,rootRef:'unknown'},f.execution.signal),{code:'STALE_TARGET'});
 });
 test('child preparation refuses stale refs, changed origins and invalid acknowledgement before dispatch',async()=>{
   for(const mode of ['root-ref','preflight','changed-context','foreign','reply']){

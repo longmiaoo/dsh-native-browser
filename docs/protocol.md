@@ -41,7 +41,7 @@ Client hello payload (placeholder token):
 {
   "bootstrap":1,"versions":[1],"role":"client","token":"<private IPC token>",
   "journalKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1"]
+  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
 }
 ```
 
@@ -50,7 +50,7 @@ Provider hello payload before token injection:
 ```json
 {
   "bootstrap":1,"versions":[1],"role":"provider",
-  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1"],
+  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1","ax.frame-page.v1","ax.frame-text.v1"],
   "requiredCapabilities":["runtime.v1","provider.ax-read.v1","provider.ax-find.v1"],
   "instance":{"id":"opaque-instance","family":"chromium","brand":"chrome","version":"browser user agent","profileLabel":"User-authorized profile"}
 }
@@ -61,7 +61,7 @@ Welcome payload:
 ```json
 {
   "version":1,"connectionEpoch":"opaque-new-connection",
-  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1"]
+  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
 }
 ```
 
@@ -85,12 +85,14 @@ Internal `ax.frame.find` accepts exact `{lease,request:{binding,query}}`, not ca
 
 Internal `frame.click.prepare` and `frame.click` accept exact `{lease,request:{binding,backendNodeId,role,name}}`. `binding` is the five-field `ax.frame` document/context binding; role/name come from the observed cached target, not a new search. Neither command accepts raw coordinates, object/session IDs or scripts. Preparation is read-only and returns `{acknowledged:false}`; click reacquires and revalidates the binding/semantic identity/geometry, sends one fenced pointer pair, cleans up and returns `{acknowledged:true}`. Provider dispatch intent is recorded before sending the latter command; missing/invalid replies or post-dispatch document changes remain uncertain and cannot trigger automatic replay. The child-only postcondition read is separate from that acknowledgement. See [workflow, recovery and limitations](development.md#explicit-same-origin-child-clicks).
 
+For a nonblank child text expectation of at most 1,000 UTF-16 units, internal `ax.frame.text` accepts only `{lease,request:{binding,text}}` and returns exactly `{present:boolean}`. It queries the bound child document, then verifies up to 128 candidates' current document ownership and AX identity through the same private-object/revision fence as child queries. No candidate text, backend ID, session, object or script crosses the provider boundary. A negative result falls back to the ordinary bounded child observation so existing substring semantics remain available; longer/blank expectations use only that fallback. A positive predicate permits success while the returned action observation remains the exact frame scope required by the runtime cache—it is not relabeled as a query result.
+
 | Direction | Methods | Authority / payload boundary |
 |---|---|---|
 | Client → Broker | `browser.instances` | Authenticated client |
 | Client → Broker | `browser.tabs`, `browser.claim` | Connection-bound session, instance/tab identity, origin policy and popup approval |
 | Client → Broker | `browser.observe`, `browser.capture`, `browser.act` | Owning session and live lease; actions additionally carry request ID and document epoch |
-| Client → Broker | `browser.readPage` | `{sessionId,leaseId,options:{rootRef?,continuation?}}`; owning live lease/read policy; fresh bounded window, never a delta baseline |
+| Client → Broker | `browser.readPage` | `{sessionId,leaseId,options:{frame?,rootRef?,continuation?}}`; owning live lease/read policy; fresh bounded root or same-origin-child window, never a delta baseline |
 | Client → Broker | `browser.frames` | `{sessionId,leaseId}`; same owner/read policy and tab queue; validated frame metadata, not child-content permission |
 | Client → Broker | `browser.batch` | Same owner/lease/action boundaries; `{sessionId,request,approvalId}` with 1–8 explicit steps, shared deadline and whole-plan durable fence |
 | Broker → Client request | `browser.approveBatchStep` | Exact `{approvalId,index}`; private active callback context, same connection/turn and strict next index; public DSH per-step approval, only `{allowed:true}` permits continuation |
@@ -101,6 +103,8 @@ Internal `frame.click.prepare` and `frame.click` accept exact `{lease,request:{b
 | Broker → extension | `ax.read`, `ax.find`, `ax.page`, `cdp` | Live lease/Stop gate; fixed AX requests or allowlisted CDP methods/parameter checks |
 | Broker → extension | `frames.list` | Exact `{lease}`; lazy recursive iframe attachment, root-document fencing, source frame/session/context metadata only |
 | Broker → extension | `ax.frame` | `{lease,binding:{frameId,loaderId,contextUniqueId,rootFrameId,rootLoaderId}}`; same-origin ancestor-chain policy and exact document/context revision fence, fixed bounded AX traversal only |
+| Broker → extension | `ax.frame.page` | `{lease,request:{binding,root?,continuation?}}`; bound child document/semantic root, single-use scoped live-window state and normal traversal limits |
+| Broker → extension | `ax.frame.text` | `{lease,request:{binding,text}}`; bounded child-only postcondition predicate returning `{present:boolean}` after candidate ownership/identity checks |
 | Broker → extension (internal read seam) | `frame.geometry` | `{lease,request:{binding,backendNodeId}}`; same five-field binding as `ax.frame`, same-origin/same-process source-bound geometry only; returns `{point,local,depth}` after object cleanup, not an input ticket or public action; no caller session, object, script or point |
 
 Providers cannot invoke client runtime methods. The Native Host relays messages; it is not a second runtime. Internal `cdp` is not a public DSH tool or arbitrary model-selected CDP interface. Public tools are documented in [development.md](development.md).
@@ -110,6 +114,8 @@ Providers cannot invoke client runtime methods. The Native Host relays messages;
 `runtime.batch.v1` adds runtime-level orchestration, not an extension input API. An outer batch occupies one tab queue slot and reserves durable intent before its first child; each child retains its own intent and action verification. Public `batch:` request IDs are reserved for internal deterministic child fences. Any non-success/unverified result or non-final document change ends the plan. Whole-plan recovery never resumes skipped children. The adapter binds callbacks to the validated local plan rather than trusting a remote-supplied action description; the reverse callback carries no form text or page content. Capacity, approval-policy integration, partial-result semantics and recovery/downgrade limits are specified in [bounded action batches](development.md#bounded-action-batches).
 
 `runtime.page.v1` and provider `ax.page.v1` add explicit live traversal windows. Internal `ax.page` accepts `{lease,request:{frameId,backendNodeId?,continuation?}}`; the extension checks the currently leased root frame/loader before and after source acquisition. Opaque single-use continuations are scoped to lease token/document/root and retain identities/offsets only, not page text. They are distinct from transport IDs, action IDs and observation-delta cursors. Reuse, expiry, changed scope/document or active traversal-path changes fail rather than resyncing to a broader read. Stop/release/disconnect/navigation invalidate state. See [live page windows](development.md#live-page-windows) for budgets, incomplete coverage, current-node rereads and the explicit non-atomic consistency model.
+
+`observe.frame-page.v1` and provider `ax.frame-page.v1` extend the same public `browser.readPage` request with an exact `frame:{frameId,documentEpoch}`. The optional portable seam is `readFramePage`. Internal continuations additionally bind the five-field child document/context identity and optional provider-cached semantic root. Runtime requires the returned child epoch and exact frame/subtree scope, and neither source nor runtime falls back to the root document. See [bounded child windows](development.md#bounded-same-origin-child-page-windows).
 
 ## Identity, cancellation and replay
 

@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-09-15T03:30:19.878Z",
+  "brand": "edge",
+  "browserVersion": "153.0.4234.32",
+  "dshVersion": "0.1.5-rc.1",
+  "controls": 4000,
+  "windows": 81,
+  "maxBytes": 5942,
+  "passed": [
+    "Public frame-page schema and exact child/root scopes preserve query baselines and reject root/foreign token widening",
+    "All 4000 child-region controls are read in order without duplicate refs across bounded live windows, retaining the region beyond the 2048-ref LRU",
+    "The visible final-page child ref is usable for an authorized trusted click with text verification and no replay; no automatic scrolling is claimed",
+    "Subsequent windows refresh unvisited content; consumed tokens and reordered active child lists fail closed",
+    "Same-name root replacement and adoption into a same-origin sibling document invalidate existing region continuations",
+    "Whole-child windows keep their own scope and mark nested-frame omissions as incomplete",
+    "Child navigation, actual popup Stop and reconsent cannot revive old documents, refs or page tokens"
+  ],
+  "cleanup": { "complete": true, "failed": [] },
+  "hashes": {
+    "scripts/smoke-frame-page-native.mjs": "e33e7af3be64587677aa32f71af9946553d64ee8379d695fc5598707edeef8da",
+    "packages/provider-chromium/src/ax-pager.ts": "e68163c19b819a17517e048a58464d40275351ce4cf6bea91f2ff3b9d87c304f",
+    "packages/provider-chromium/src/frame-page.ts": "aadb02274bbf206ee81f9c0e6488b7cd15ffc817509d8b2da428b765bb07856a",
+    "packages/provider-chromium/src/frame-node-scope.ts": "d9cfd92b8db1c8c7ff71ade716506946027edc008603cf51c32422d1aefd33de",
+    "packages/provider-chromium/src/frame-sessions.ts": "aa60af1f3b8d7e42fcab127fc167f41bf15426b3462b6328b3e93f9b9ab03584",
+    "packages/provider-chromium/src/frame-text.ts": "4c4e290036abad5e5f326f8b86f0f52df6cc710fc34e7dc01211dd9f91e0382c",
+    "packages/provider-chromium/src/provider.ts": "27e8d3803808b3c27a189d1efc3da404d306b3268f54a8c028ea97d44e741a7e",
+    "packages/extension-core/src/background.ts": "6488a295b80f27f2e6295ea5f3519b57f3beb221f1c3e19324612ecb4b4e577c",
+    "packages/runtime-core/src/runtime.ts": "b9d105891281ca7ee20b6561f6e475191c74dd1d211826e011b6091ae2196d63",
+    "packages/contracts/src/validation.ts": "1861603edd967d6351e89025c8e4bda3a9b2a665980a96119ea97427c9a607d8",
+    "packages/contracts/src/wire.ts": "5377b092a7edf9ec44938cb2c6cc6627cacf67c80a8cd10fe80927576a5f2518",
+    "packages/dsh-adapter/src/index.ts": "23ecbc748767ee251a0076208781dbb363aeefe5b8c39388c53ed05eb04176dc",
+    "dist/extension/edge/background.js": "8e7e4b21cd89bb76dd3b922e8e2278beeb6cde4a0c925dafa20a9ba2f702ba38"
+  },
+  "scope": "Actual DSH/Broker/Native Host/MV3 with owned loopback fixtures, fresh profiles and controlled approvals. No daily accounts, LLM, visual fallback, child autoscroll, cross-origin authorization or Codex parity claim."
+}

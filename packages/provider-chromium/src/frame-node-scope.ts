@@ -71,7 +71,8 @@ export async function withFrameNodeScope<T>(graph: FrameSessions, binding: Frame
         for (const node of nodes.slice(0, limit)) {
           if (!Number.isSafeInteger(node.backendDOMNodeId) || node.backendDOMNodeId <= 0) { truncated = true; continue; }
           const object = await resolve(node.backendDOMNodeId);
-          if (!await check(object, root ? frameWithinRootFunction : frameQueryNodeFunction, root ? rootObject : undefined)) { truncated = true; continue; }
+          const isDocument = !root && node.backendDOMNodeId === documentRoot.backendDOMNodeId;
+          if (!await check(object, isDocument ? frameQueryDocumentFunction : root ? frameWithinRootFunction : frameQueryNodeFunction, root ? rootObject : undefined)) { truncated = true; continue; }
           await identity(object, node.backendDOMNodeId, node.role.value, node.name.value);
           kept.push(node);
         }

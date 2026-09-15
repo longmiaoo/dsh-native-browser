@@ -175,8 +175,15 @@ export class ChromiumProvider implements BrowserProvider {
 
   async readPage(lease: Lease, raw: PageReadOptions, signal: AbortSignal): Promise<ObservationPage> {
     const options = pageReadOptions(raw);
+    if (options.frame) return this.readFramePage(lease, { ...options, frame: options.frame }, signal);
     return await this.readObservation(lease, signal, options.rootRef === undefined ? { kind: 'document' }
       : { kind: 'subtree', rootRef: options.rootRef }, options) as ObservationPage;
+  }
+
+  async readFramePage(lease: Lease, raw: PageReadOptions & { frame: FrameTarget }, signal: AbortSignal): Promise<ObservationPage> {
+    const options = pageReadOptions(raw), frame = frameTarget(options.frame);
+    return await this.readObservation(lease, signal, options.rootRef === undefined ? { kind: 'frame', frameId: frame.frameId }
+      : { kind: 'subtree', frameId: frame.frameId, rootRef: options.rootRef }, options, frame) as ObservationPage;
   }
 
   private async readObservation(lease: Lease, signal: AbortSignal, scope: ObservationScope, pageOptions?: PageReadOptions, childTarget?: FrameTarget): Promise<Observation> {
@@ -203,7 +210,8 @@ export class ChromiumProvider implements BrowserProvider {
     if (root && pageOptions) { state.byRef.delete(root.ref); state.byRef.set(root.ref, root); }
     // Query the known DOM subtree at source; never silently substitute a whole-page read.
     const childRoot = root ? { root: { backendNodeId: root.backendId, role: root.role, name: root.name, editable: !!root.editable } } : {};
-    const result = await this.channel.call(binding ? scope.kind === 'query' ? 'ax.frame.find' : root ? 'ax.frame.subtree' : 'ax.frame' : pageOptions ? 'ax.page' : scope.kind === 'query' ? 'ax.find' : 'ax.read', binding ? scope.kind === 'query' ? { lease, request: { binding, query: scope.query, ...childRoot } } : root ? { lease, request: { binding, ...childRoot } } : { lease, binding } : { lease, request: { frameId: frame.id,
+    const result = await this.channel.call(binding ? pageOptions ? 'ax.frame.page' : scope.kind === 'query' ? 'ax.frame.find' : root ? 'ax.frame.subtree' : 'ax.frame' : pageOptions ? 'ax.page' : scope.kind === 'query' ? 'ax.find' : 'ax.read', binding ? pageOptions ? { lease, request: { binding, ...childRoot,
+      ...(pageOptions.continuation === undefined ? {} : { continuation: pageOptions.continuation }) } } : scope.kind === 'query' ? { lease, request: { binding, query: scope.query, ...childRoot } } : root ? { lease, request: { binding, ...childRoot } } : { lease, binding } : { lease, request: { frameId: frame.id,
       ...(scope.kind === 'query' ? { query: scope.query } : {}), ...(root ? { backendNodeId: root.backendId } : {}),
       ...(pageOptions?.continuation === undefined ? {} : { continuation: pageOptions.continuation }) } }, signal) as Dict;
     if (pageOptions && (!result.page || !Number.isSafeInteger(result.page.index) || result.page.index < 0
@@ -595,6 +603,14 @@ export class ChromiumProvider implements BrowserProvider {
       if(reply?.acknowledged!==true)throw new BrowserError('INVALID_REQUEST','Child click acknowledgement unavailable');
       const expected=action.expected;
       const observation=await waitUntil(async()=>{
+        if(expected?.kind==='text'&&expected.text.length<=1000&&expected.text.trim()){
+          const evidence=await this.channel.call('ax.frame.text',{lease,request:{binding:bound.binding,text:expected.text}},signal) as Dict;
+          if(!evidence||Object.keys(evidence).some(key=>key!=='present')||typeof evidence.present!=='boolean')
+            throw new BrowserError('INVALID_REQUEST','Invalid child text evidence');
+          // Keep the returned observation frame-scoped for runtime cache
+          // correctness; the exact source predicate is independent evidence.
+          if(evidence.present)return await this.observeFrame(lease,frame,signal);
+        }
         const observed=await this.observeFrame(lease,frame,signal);
         if(expected?.kind==='text'&&!observed.text.join(' ').replace(/\s+/g,' ').includes(expected.text.replace(/\s+/g,' ')))return undefined;
         return observed;

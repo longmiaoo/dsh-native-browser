@@ -21,7 +21,7 @@ function instanceOf(raw: unknown): BrowserInstance {
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
   return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
     profileLabel: string(v.profileLabel), capabilities: { ax: true, axSubtree: true, dom: true, screenshot: true,
-      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, oopif: false } };
+      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
 type BrokerOptions = { directory: string; allowedOrigins: string[]; maxConnections?: number };

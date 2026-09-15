@@ -200,6 +200,21 @@ test('extension frame query has exact lease/schema gates, fixed document-root ac
   assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);assert.equal(f.geometryCalls.some(c=>c.method.startsWith('Input.')),false);
   await f.ui('stop');assert.equal((await f.call('ax.frame.find',params)).code,'LEASE_REVOKED');
 });
+test('extension child text evidence returns only a bounded boolean under the same source fence',async()=>{
+  const f=await geometryFixture(),params={lease:f.lease,request:{binding:f.request.binding,text:'Child completed'}};
+  assert.equal((await f.call('ax.frame.text',params)).code,'LEASE_REVOKED');await f.call('lease.grant',{lease:f.lease});
+  assert.equal((await f.call('ax.frame.text',{...params,request:{...params.request,objectId:'raw'}})).code,'INVALID_REQUEST');
+  f.geometryOverride=(method,p)=>{
+    if(method==='Accessibility.getRootAXNode')return {node:{frameId:'child',backendDOMNodeId:1}};
+    if(method==='Accessibility.queryAXTree')return {nodes:[{backendDOMNodeId:19,role:{value:'StaticText'},name:{value:'Status: Child completed'}}]};
+    if(method==='Accessibility.getPartialAXTree')return {nodes:[{backendDOMNodeId:19,role:{value:'StaticText'},name:{value:'Status: Child completed'}}]};
+    if(p.functionDeclaration===frameQueryDocumentFunction)return {result:{value:p.objectId==='obj-1-c2'}};
+    if(p.functionDeclaration===frameQueryNodeFunction)return {result:{value:p.objectId==='obj-19-c2'}};
+  };
+  const result=await f.call('ax.frame.text',params);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.value.present,true);assert.deepEqual(Object.keys(result.value),['present']);
+  assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,1);assert.equal(f.geometryCalls.some(c=>c.method.startsWith('Input.')),false);
+  await f.ui('stop');assert.equal((await f.call('ax.frame.text',params)).code,'LEASE_REVOKED');
+});
 test('extension child subtree reads only its semantically bound root under the source lease and fixed function gate',async()=>{
  const f=await geometryFixture(),params={lease:f.lease,request:{binding:f.request.binding,root:{backendNodeId:17,role:'button',name:'Child button',editable:false}}};
  assert.equal((await f.call('ax.frame.subtree',params)).code,'LEASE_REVOKED');await f.call('lease.grant',{lease:f.lease});

@@ -8,7 +8,9 @@ import { AXPager, axPageRequest } from '../../provider-chromium/src/ax-pager.js'
 import { FrameSessions } from '../../provider-chromium/src/frame-sessions.js';
 import { frameReadBinding, readFrameAX } from '../../provider-chromium/src/frame-read.js';
 import { frameFindRequest, findFrameAX } from '../../provider-chromium/src/frame-query.js';
+import { frameTextRequest, hasFrameText } from '../../provider-chromium/src/frame-text.js';
 import { frameSubtreeRequest, readFrameSubtree } from '../../provider-chromium/src/frame-subtree.js';
+import { framePageRequest, readFramePage } from '../../provider-chromium/src/frame-page.js';
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { wireMessage, acceptWelcome, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
@@ -171,6 +173,25 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     return enqueue(id, async () => {
       const { graph } = await frameGraph(lease, signal);
       const result = await readFrameAX(graph, binding, lease.origin, signal);
+      await ensure(lease, signal); return result;
+    });
+  }
+  if (method === 'ax.frame.page') {
+    if (Object.keys(p).some(key => !['lease', 'request'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Invalid child page');
+    const request = framePageRequest(p.request);
+    return enqueue(id, async () => {
+      const { graph } = await frameGraph(lease, signal);
+      const result = await readFramePage(graph, request, lease.origin, signal, pager, lease.token);
+      try { await ensure(lease, signal); return result; }
+      catch (error) { pager.discard(result.page.continuation); throw error; }
+    });
+  }
+  if (method === 'ax.frame.text') {
+    if (Object.keys(p).some(key => !['lease', 'request'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Invalid child text check');
+    const request = frameTextRequest(p.request);
+    return enqueue(id, async () => {
+      const { graph } = await frameGraph(lease, signal);
+      const result = await hasFrameText(graph, request, lease.origin, signal);
       await ensure(lease, signal); return result;
     });
   }

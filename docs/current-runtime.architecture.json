@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-native-browser Current Chrome Runtime",
+    "output": "current-runtime.architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "agent-to-page",
+        "label": "Agent to page",
+        "focus": ["dsh", "adapter", "broker", "runtime", "provider", "native-host", "mv3", "chrome", "page"],
+        "note": "Follow one bounded browser operation from DSH to the live Chrome page."
+      },
+      {
+        "id": "control-plane",
+        "label": "Ownership and safety",
+        "focus": ["adapter", "broker", "runtime", "mv3"],
+        "note": "Approval, owner isolation, leases, replay fences, policy and the last-mile Stop gate form the control plane."
+      },
+      {
+        "id": "chrome-plane",
+        "label": "Chrome execution plane",
+        "focus": ["provider", "native-host", "mv3", "chrome", "page"],
+        "note": "Chromium-specific projection, Native Messaging and chrome.debugger/CDP stay behind portable contracts."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "dsh",
+      "type": "external",
+      "label": "DSH Agent",
+      "sublabel": "ToolRuntime",
+      "pos": [20, 220],
+      "size": [120, 64]
+    },
+    {
+      "id": "adapter",
+      "type": "frontend",
+      "label": "DSH Adapter",
+      "sublabel": "browser_* tools",
+      "pos": [170, 220],
+      "size": [135, 64],
+      "tag": "approval"
+    },
+    {
+      "id": "broker",
+      "type": "security",
+      "label": "Local Broker",
+      "sublabel": "RPC + leases",
+      "pos": [335, 220],
+      "size": [140, 64],
+      "tag": "owner isolation"
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Runtime Core",
+      "sublabel": "portable policy",
+      "pos": [505, 220],
+      "size": [140, 64],
+      "tag": "per-tab serial"
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Chromium Provider",
+      "sublabel": "AX refs + actions",
+      "pos": [675, 220],
+      "size": [150, 64],
+      "tag": "Chrome adapter"
+    },
+    {
+      "id": "native-host",
+      "type": "backend",
+      "label": "Native Host",
+      "sublabel": "Native Messaging",
+      "pos": [855, 220],
+      "size": [145, 64]
+    },
+    {
+      "id": "mv3",
+      "type": "security",
+      "label": "MV3 Extension",
+      "sublabel": "last-mile gate",
+      "pos": [855, 420],
+      "size": [145, 64],
+      "tag": "Stop + allowlist"
+    },
+    {
+      "id": "chrome",
+      "type": "cloud",
+      "label": "Chrome",
+      "sublabel": "chrome.debugger / CDP",
+      "pos": [675, 420],
+      "size": [155, 64]
+    },
+    {
+      "id": "page",
+      "type": "external",
+      "label": "Live Web Page",
+      "sublabel": "DOM + AX tree",
+      "pos": [505, 420],
+      "size": [140, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Node.js local process boundary",
+      "wraps": ["adapter", "broker", "runtime", "provider", "native-host"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Chrome extension trust boundary",
+      "wraps": ["mv3", "chrome"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "invoke-tools",
+      "from": "dsh",
+      "to": "adapter",
+      "label": "tool call",
+      "variant": "emphasis",
+      "labelAt": [160, 310]
+    },
+    {
+      "id": "local-rpc",
+      "from": "adapter",
+      "to": "broker",
+      "label": "local RPC",
+      "variant": "security",
+      "labelAt": [322, 300]
+    },
+    {
+      "id": "broker-dispatch",
+      "from": "broker",
+      "to": "runtime",
+      "label": "lease + journal",
+      "labelAt": [492, 206]
+    },
+    {
+      "id": "provider-contract",
+      "from": "runtime",
+      "to": "provider",
+      "label": "BrowserProvider",
+      "labelAt": [662, 300]
+    },
+    {
+      "id": "wire-request",
+      "from": "provider",
+      "to": "native-host",
+      "label": "bounded wire",
+      "labelAt": [842, 206]
+    },
+    {
+      "id": "native-messaging",
+      "from": "native-host",
+      "to": "mv3",
+      "label": "native message",
+      "variant": "security",
+      "labelAt": [1035, 352]
+    },
+    {
+      "id": "debugger-command",
+      "from": "mv3",
+      "to": "chrome",
+      "label": "allowlisted CDP",
+      "variant": "emphasis",
+      "labelAt": [842, 510]
+    },
+    {
+      "id": "browser-effect",
+      "from": "chrome",
+      "to": "page",
+      "label": "observe / input",
+      "labelAt": [662, 520]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Portable core",
+      "items": [
+        "Contracts, broker and runtime do not depend on Chrome APIs",
+        "A future Edge provider can reuse ownership, leases and action semantics"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Accuracy path",
+      "items": [
+        "AX nodes become opaque document-scoped refs",
+        "Actions re-resolve semantic identity and run stable hit testing",
+        "Bounded observations and single-use cursors keep reads predictable"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fail-closed path",
+      "items": [
+        "Mutations require approval and a live owner lease",
+        "Dispatch intent is journaled before input",
+        "An uncertain post-dispatch result is never replayed automatically"
+      ]
+    }
+  ]
+}

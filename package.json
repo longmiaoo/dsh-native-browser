@@ -37,6 +37,7 @@
     "test:frame-click-native": "pnpm build && node scripts/smoke-frame-click-native.mjs",
     "test:frame-query-native": "pnpm build && node scripts/smoke-frame-query-native.mjs",
     "test:frame-subtree-native": "pnpm build && node scripts/smoke-frame-subtree-native.mjs",
+    "test:frame-page-native": "pnpm build && node scripts/smoke-frame-page-native.mjs",
     "test:frame-geometry": "pnpm build && node scripts/smoke-frame-geometry.mjs",
     "test:frame-geometry-source": "pnpm build && node scripts/smoke-frame-geometry.mjs --source",
     "bench:native": "pnpm build && node scripts/benchmark-native.mjs",

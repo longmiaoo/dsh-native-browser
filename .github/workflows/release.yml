@@ -73,11 +73,19 @@ jobs:
             exit 1
           fi
 
-          if [[ "${package_version}" == *-* ]]; then
-            echo "dist_tag=next" >> "${GITHUB_OUTPUT}"
-          else
-            echo "dist_tag=latest" >> "${GITHUB_OUTPUT}"
+          dist_tag=latest
+          if [[ "${package_version}" == *-* ]] && npm view "${package_name}" versions --json | node -e '
+            let input = ""
+            process.stdin.setEncoding("utf8")
+            process.stdin.on("data", chunk => { input += chunk })
+            process.stdin.on("end", () => {
+              const versions = JSON.parse(input)
+              process.exit(versions.some(version => !version.includes("-")) ? 0 : 1)
+            })
+          '; then
+            dist_tag=next
           fi
+          echo "dist_tag=${dist_tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish with npm Trusted Publishing
         run: npm publish --access public --provenance --tag "${{ steps.release.outputs.dist_tag }}"

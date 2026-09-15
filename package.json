@@ -1,6 +1,6 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Chrome-first native browser runtime for DeepSeek Harness with semantic observation, reliable CDP actions, and human-agent handoff",
   "type": "module",
   "main": "index.js",

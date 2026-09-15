@@ -1,0 +1,83 @@
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Set up pinned package managers
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.1.1 --activate
+          npm install --global npm@11.19.1
+
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source, tests, and packed consumer install
+        run: |
+          pnpm check
+          pnpm typecheck
+          pnpm test
+          pnpm test:package-install
+          git diff --exit-code
+
+      - name: Verify tag and choose npm channel
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name=$(node -p "require('./package.json').name")
+          package_version=$(node -p "require('./package.json').version")
+          expected_tag="v${package_version}"
+
+          if [[ "${GITHUB_REF_TYPE}" != "tag" || "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Git tag ${GITHUB_REF_NAME} does not match package version ${package_version}." >&2
+            exit 1
+          fi
+
+          tag_commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+          if [[ "$(git rev-parse HEAD)" != "${tag_commit}" ]]; then
+            echo "Checked-out commit does not match ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+            echo "${package_name}@${package_version} is already published." >&2
+            exit 1
+          fi
+
+          if [[ "${package_version}" == *-* ]]; then
+            echo "dist_tag=next" >> "${GITHUB_OUTPUT}"
+          else
+            echo "dist_tag=latest" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Publish with npm Trusted Publishing
+        run: npm publish --access public --provenance --tag "${{ steps.release.outputs.dist_tag }}"

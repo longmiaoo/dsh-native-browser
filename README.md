@@ -81,7 +81,7 @@ The package is structured as a DSH bundle and includes the discovery terms used 
 Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.0
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.1
 dsh plugin --profile web exec dsh-native-browser extension-path --browser=chrome
 ```
 

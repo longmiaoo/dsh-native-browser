@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { projectStatus, name, apply } from '../index.js'
@@ -41,4 +41,10 @@ test('CLI prints the packaged extension directory for Chrome setup', async () =>
   const expected = fileURLToPath(new URL('../dist/extension/chrome', import.meta.url))
   const { stdout } = await execFileAsync(process.execPath, [bin, 'extension-path', '--browser=chrome'])
   assert.equal(stdout.trim(), expected)
+})
+
+test('CLI entrypoint remains executable for pnpm symlink installs', async () => {
+  const bin = fileURLToPath(new URL('../bin/dsh-native-browser.mjs', import.meta.url))
+  const metadata = await stat(bin)
+  assert.notEqual(metadata.mode & 0o111, 0, 'bin/dsh-native-browser.mjs must retain an executable mode')
 })

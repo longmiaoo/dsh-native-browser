@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.0-alpha.1 - 2026-09-15
+
+- Preserve the CLI entrypoint's executable mode so pnpm-linked DSH profile installs can run `dsh-native-browser`.
+- Verify the exact packed npm artifact in an isolated pnpm consumer before release.
+
 ## 0.1.0-alpha.0 - 2026-09-15
 
 - Add DSH bundle and npm discovery metadata.

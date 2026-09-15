@@ -154,6 +154,22 @@ test('broker denies unapproved origins before listing or claiming', async t => {
   await assert.rejects(client.call('browser.claim', { sessionId: 's', instanceId: 'fake-1', tab: 'tab-1' }), e => e.code === 'POLICY_DENIED');
 });
 
+test('personal Broker exposes only provider-consented tabs and issues a tab-scoped cross-origin lease', async t => {
+  const { broker, client } = await environment(t, [], { accessMode: 'personal' });
+  const provider = new FakeProvider(); provider.tab.url = 'https://unlisted.test/start'; broker.runtime.register(provider);
+  assert.equal((await client.call('browser.tabs', { sessionId: 's', instanceId: 'fake-1' }))[0].url, provider.tab.url);
+  const lease = await client.call('browser.claim', { sessionId: 's', instanceId: 'fake-1', tab: 'tab-1' });
+  assert.equal(lease.scope, 'tab');
+  provider.tab.url = 'https://another.test/next'; provider.epoch = 'doc-2';
+  assert.equal((await client.call('browser.observe', { sessionId: 's', leaseId: lease.id })).url, provider.tab.url);
+});
+
+test('personal Broker configuration rejects mixed allowlists and unknown modes', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'dsh-br-invalid-')); t.after(() => rm(directory, { recursive: true }));
+  await assert.rejects(startBroker({ directory, allowedOrigins: ['https://example.test'], accessMode: 'personal' }), { code: 'INVALID_REQUEST' });
+  await assert.rejects(startBroker({ directory, allowedOrigins: [], accessMode: 'unknown' }), { code: 'INVALID_REQUEST' });
+});
+
 test('handshake rejects missing authentication and incompatible versions', async t => {
   const { directory, broker } = await environment(t);
   const socket = net.createConnection(broker.socket); await once(socket, 'connect');

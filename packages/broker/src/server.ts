@@ -10,7 +10,7 @@ import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { localState } from './local-state.js';
 import { FileActionJournal } from './action-journal.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
-import { negotiateHello, brokerCapabilities, wireVersion } from '../../contracts/src/wire.js';
+import { negotiateHello, brokerCapabilities, personalBrokerCapability, wireVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
   if (typeof supplied !== 'string' || supplied.length !== actual.length ||
@@ -21,12 +21,18 @@ function instanceOf(raw: unknown): BrowserInstance {
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
   return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
     profileLabel: string(v.profileLabel), capabilities: { ax: true, axSubtree: true, dom: true, screenshot: true,
-      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
+      keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, tabScopedNavigation: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
-type BrokerOptions = { directory: string; allowedOrigins: string[]; maxConnections?: number };
+type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number };
 export async function startBroker(options: BrokerOptions) {
   options = { ...options, directory: path.resolve(options.directory) };
+  if (options.accessMode !== undefined && options.accessMode !== 'restricted' && options.accessMode !== 'personal') {
+    throw new BrowserError('INVALID_REQUEST', 'Invalid Broker access mode');
+  }
+  if (options.accessMode === 'personal' && options.allowedOrigins.length !== 0) {
+    throw new BrowserError('INVALID_REQUEST', 'Personal access mode cannot be combined with exact origin allowlists');
+  }
   const maxConnections = options.maxConnections ?? 64;
   if (!Number.isSafeInteger(maxConnections) || maxConnections < 1 || maxConnections > 256) {
     throw new BrowserError('INVALID_REQUEST', 'Invalid connection limit');
@@ -38,6 +44,7 @@ export async function startBroker(options: BrokerOptions) {
 }
 
 async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ownership: BrokerOwnership) {
+  const personal = options.accessMode === 'personal';
   const state = await localState(options.directory, true);
   const recoveredSocket = await ownership.prepareSocket(state.socket);
   let runtime: BrowserRuntime;
@@ -95,14 +102,15 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
           }
           else throw new BrowserError('INVALID_REQUEST', 'Invalid peer role');
           clearTimeout(helloTimer);
-          return { version: wireVersion, connectionEpoch: connection, capabilities: [...brokerCapabilities] };
+          return { version: wireVersion, connectionEpoch: connection,
+            capabilities: [...brokerCapabilities, ...(personal ? [personalBrokerCapability] : [])] };
         } finally { negotiating = false; }
       }
       if (role !== 'client') throw new BrowserError('POLICY_DENIED', 'Provider cannot issue runtime commands');
       if (method === 'browser.instances') return runtime.instances();
       const owner = JSON.stringify([connection, string(p.sessionId)]);
       if (method === 'browser.tabs') return (await runtime.listTabs(string(p.instanceId), signal))
-        .filter(tab => { try { return allowed.has(originOf(tab.url)); } catch { return false; } });
+        .filter(tab => { try { return personal || allowed.has(originOf(tab.url)); } catch { return false; } });
       if (method === 'browser.claim') {
         return runtime.claim(owner, string(p.instanceId), string(p.tab), signal, connection);
       }
@@ -141,7 +149,8 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
     await chmod(state.socket, 0o600);
     // Both process-lifetime ownership and a bound socket precede journal recovery or writes.
     journal = await FileActionJournal.open(options.directory, state.token);
-    runtime = new BrowserRuntime(async request => allowed.has(originOf(request.tab.url)), undefined, journal);
+    runtime = new BrowserRuntime(async request => personal || allowed.has(originOf(request.tab.url)), undefined, journal,
+      { leaseScope: personal ? 'tab' : 'origin' });
     markReady();
   } catch (error) {
     for (const peer of peers) peer.close();

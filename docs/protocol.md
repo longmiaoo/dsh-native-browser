@@ -41,7 +41,7 @@ Client hello payload (placeholder token):
 {
   "bootstrap":1,"versions":[1],"role":"client","token":"<private IPC token>",
   "journalKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "requiredCapabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
+  "requiredCapabilities":["runtime.v1","runtime.personal-tab-scope.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
 }
 ```
 
@@ -50,7 +50,7 @@ Provider hello payload before token injection:
 ```json
 {
   "bootstrap":1,"versions":[1],"role":"provider",
-  "capabilities":["lease.fencing.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1","ax.frame-page.v1","ax.frame-text.v1"],
+  "capabilities":["lease.fencing.v1","lease.tab-scope.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1","ax.frame-page.v1","ax.frame-text.v1"],
   "requiredCapabilities":["runtime.v1","provider.ax-read.v1","provider.ax-find.v1"],
   "instance":{"id":"opaque-instance","family":"chromium","brand":"chrome","version":"browser user agent","profileLabel":"User-authorized profile"}
 }
@@ -61,7 +61,7 @@ Welcome payload:
 ```json
 {
   "version":1,"connectionEpoch":"opaque-new-connection",
-  "capabilities":["runtime.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
+  "capabilities":["runtime.v1","runtime.personal-tab-scope.v1","observe.query.v1","journal.recovery.v1","provider.ax-read.v1","provider.ax-find.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1"]
 }
 ```
 
@@ -69,7 +69,7 @@ The Broker authenticates first, then validates and negotiates before registering
 
 Both roles may declare `requiredCapabilities`; the Broker must support every requested capability. This Broker additionally requires all provider capabilities above. Old providers lacking bounded AX reads/search or fencing fail before registration. Unknown optional advertisements are tolerated; unknown requirements fail with `PROTOCOL_MISMATCH`. Current clients and extensions validate the welcome before use. Missing requirements are not silently downgraded to a less safe action path.
 
-A legacy client may omit requirements and `journalKey`; it then has only connection-local recovery isolation. Current clients send both. Schema-valid hello rejection returns a code; the Broker permits another hello only within its original three-second handshake window, with no runtime access after a failed hello. The extension closes on rejection, malformed welcome or its three-second welcome timeout, and accepts no operation before welcome. Reconnection requires explicit popup intent.
+A legacy client may omit requirements and `journalKey`; it then has only connection-local recovery isolation. Current clients send both. Schema-valid hello rejection returns a code; the Broker permits another hello only within its original three-second handshake window, with no runtime access after a failed hello. The extension closes on rejection, malformed welcome or its three-second welcome timeout, and accepts no operation before welcome. It connects at worker startup, but that connection grants no tab authority in restricted mode. Only a Broker started with `--access-mode=personal` adds the optional `broker.personal-mode.v1` welcome capability; the extension then permits prompt-free discovery and tab-scoped claims of ordinary HTTP(S) tabs.
 
 ## Roles and implemented methods
 
@@ -90,7 +90,7 @@ For a nonblank child text expectation of at most 1,000 UTF-16 units, internal `a
 | Direction | Methods | Authority / payload boundary |
 |---|---|---|
 | Client → Broker | `browser.instances` | Authenticated client |
-| Client → Broker | `browser.tabs`, `browser.claim` | Connection-bound session, instance/tab identity, origin policy and popup approval |
+| Client → Broker | `browser.tabs`, `browser.claim` | Connection-bound session and instance/tab identity; restricted mode requires popup approval and returns an exact-origin lease, explicit personal mode uses the negotiated Broker capability and returns a same-tab HTTP(S) lease |
 | Client → Broker | `browser.observe`, `browser.capture`, `browser.act` | Owning session and live lease; actions additionally carry request ID and document epoch |
 | Client → Broker | `browser.readPage` | `{sessionId,leaseId,options:{frame?,rootRef?,continuation?}}`; owning live lease/read policy; fresh bounded root or same-origin-child window, never a delta baseline |
 | Client → Broker | `browser.frames` | `{sessionId,leaseId}`; same owner/read policy and tab queue; validated frame metadata, not child-content permission |
@@ -99,7 +99,7 @@ For a nonblank child text expectation of at most 1,000 UTF-16 units, internal `a
 | Client → Broker | `browser.validateLease` | Owning session/live lease, current tab/origin and read policy; returns only `{valid:true}`, never renews a lease or reads page content |
 | Client → Broker | `browser.release`, `browser.releaseSession` | Calling connection's owner scope |
 | Broker → Client event | `browser.lease-revoked` | Exact `{sessionId,leaseId}` on the owning connection only; no token, tab, origin or page data; advisory early cancellation, not an authority grant |
-| Broker → extension | `tabs.list`, `lease.grant`, `lease.revoke` | Current instance, approved tab/origin and fencing token |
+| Broker → extension | `tabs.list`, `lease.grant`, `lease.revoke` | Current instance, approved tab, explicit `origin`/`tab` lease scope and fencing token |
 | Broker → extension | `ax.read`, `ax.find`, `ax.page`, `cdp` | Live lease/Stop gate; fixed AX requests or allowlisted CDP methods/parameter checks |
 | Broker → extension | `frames.list` | Exact `{lease}`; lazy recursive iframe attachment, root-document fencing, source frame/session/context metadata only |
 | Broker → extension | `ax.frame` | `{lease,binding:{frameId,loaderId,contextUniqueId,rootFrameId,rootLoaderId}}`; same-origin ancestor-chain policy and exact document/context revision fence, fixed bounded AX traversal only |

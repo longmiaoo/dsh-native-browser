@@ -8,7 +8,11 @@ All notable changes will be documented here. The project follows semantic versio
 - Add nine DSH browser tools over an authenticated local Broker, Native Messaging host and Manifest V3 Chromium extension.
 - Add bounded AX observations, live page windows, semantic queries, screenshots, verified browser actions, batches, Stop and handoff.
 - Add same-origin frame discovery, reads, paging and verified click foundations; cross-origin input remains denied.
-- Add `per-action`, `per-lease` and exact-origin `trusted` approval modes.
+- Add `per-action`, `per-lease`, exact-origin `trusted` and explicit tab-scoped `personal` approval modes.
+- Add personal Broker access for an extension-consented tab across HTTP(S) root navigations, with foreground switching, expiry, handoff and Stop revocation.
+- Declare HTTP/HTTPS host access in the development extension manifest so personal mode and the virtual pointer remain available after cross-site navigation.
+- Add a DSH Web client bridge that releases background browser scopes when the visible conversation changes; authority is revoked rather than transferred.
+- Add a presentation-only virtual pointer and click/wheel pulse after verified input dispatch.
 - Hide internal lease capabilities from tool results and expose one explicit public `leaseId`.
 - Add host install/uninstall/doctor commands and an `extension-path` command for packaged Chrome setup.
 - Add deterministic security/lifecycle tests, real isolated-browser gates, npm tarball installation verification and benchmark evidence.

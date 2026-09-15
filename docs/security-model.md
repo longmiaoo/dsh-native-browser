@@ -11,9 +11,9 @@ The control path is DSH tool adapter → authenticated Unix-domain Broker → Ch
 ## Authorization invariants
 
 - The user must load the extension, register the host for its exact extension ID and approve each controlled tab in the extension UI.
-- The Broker allowlists exact origins, including scheme and port. A navigation or frame-origin change is rechecked before data or input is returned.
-- A DSH turn receives a short-lived exclusive lease. Turn end, handoff, expiry, disconnect or the extension Stop action revokes it.
-- The default `per-action` mode asks through DSH for claim, action and screenshot operations. `per-lease` asks once when claiming. `trusted` is accepted only with a non-empty exact-origin list and does not bypass extension consent, leases, Stop or origin checks.
+- Restricted Broker mode allowlists exact origins, including scheme and port. The explicit personal mode instead exposes only extension-consented tabs and binds authority to that tab across HTTP(S) root navigations; frame-origin checks remain exact.
+- A DSH Session receives a short-lived exclusive lease. Handoff, expiry, disconnect, foreground-conversation replacement or the extension Stop action revokes it. Restricted modes also revoke at turn end; personal mode may retain it across turns in the same conversation.
+- The default `per-action` mode asks through DSH for claim, action and screenshot operations. `per-lease` asks once when claiming. `trusted` is accepted only with a non-empty exact-origin list. `personal` is prompt-free only when paired with an explicit personal Broker. None bypass extension tab consent, exclusive leases or Stop.
 - Model-facing tools expose typed actions and opaque refs, never raw CDP sessions, JavaScript evaluation or internal lease tokens.
 - Mutating actions re-resolve identity, actionability, geometry and hit targets immediately before input. Results are checked against explicit postconditions when available.
 - Durable request IDs fence replay. Unknown outcomes are not retried automatically, including after Broker failure.
@@ -23,8 +23,8 @@ The control path is DSH tool adapter → authenticated Unix-domain Broker → Ch
 
 | Threat | Implemented mitigation | Residual risk |
 |---|---|---|
-| Prompt injection from a page | Page content is returned as untrusted data; it cannot grant permissions or alter policy. Actions remain typed and approval-gated. | A model may still make a poor decision after reading hostile content; human review remains necessary. |
-| Control of the wrong tab/site | Explicit extension tab consent, exact-origin Broker allowlist, instance/tab lease and document/origin rechecks. | Misconfigured allowlists or approving the wrong tab remain user errors. |
+| Prompt injection from a page | Page content is returned as untrusted data; it cannot grant permissions or alter policy. Actions remain typed and runtime-gated. | Personal mode deliberately removes DSH prompts for ordinary actions, so a model may still make a poor decision after reading hostile content; human review remains necessary. |
+| Control of the wrong tab/site | Explicit extension tab consent, instance/tab lease and document/origin rechecks; restricted mode adds an exact-origin Broker allowlist. | Personal mode follows an approved tab across HTTP(S) origins; approving the wrong tab or unsafe navigation remains a user/model risk. |
 | Stale or replaced element click | Document epochs, semantic identity, backend-node binding, actionability, geometry stability and hit testing immediately before dispatch. | Highly dynamic or adversarial renderer behavior can still create races; outcomes may be reported unknown. |
 | Duplicate input after timeout/crash | Durable request/payload fencing, intent journal and no blind replay of unknown outcomes. | The system cannot undo already-dispatched browser input. |
 | Cross-origin frame data/input leak | Bounded frame metadata, same-origin ancestor checks, conservative screenshot coverage checks and denied cross-origin input. | Browser/renderer bugs and unsupported frame topologies are outside the guarantee. |
@@ -36,7 +36,7 @@ The control path is DSH tool adapter → authenticated Unix-domain Broker → Ch
 
 ## Unsupported high-risk use
 
-The alpha is not approved for payments, account deletion, irreversible business changes, password entry, file upload, CAPTCHA bypass, unattended operation or arbitrary cross-origin automation. It does not claim protection against a malicious same-user process, compromised DSH/plugin installation, compromised browser, operating-system compromise, Chrome zero-days, hostile enterprise policy or a malicious dependency installed outside this package.
+The alpha is not approved for payments, account deletion, irreversible business changes, password entry, file upload, CAPTCHA bypass, unattended operation or cross-origin frame automation. Personal mode supports root-page cross-origin browsing and prompt-free ordinary-tab discovery after the Broker/extension negotiate explicit personal mode, but does not yet implement a reliable sensitive-action confirmation layer. The development extension also requests broad HTTP(S) host access to render its pointer across sites; leases and the debugger gate, not that manifest permission, remain the action boundary. It does not claim protection against a malicious same-user process, compromised DSH/plugin installation, compromised browser, operating-system compromise, Chrome zero-days, hostile enterprise policy or a malicious dependency installed outside this package.
 
 ## Release and incident expectations
 

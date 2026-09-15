@@ -651,14 +651,27 @@ export class ChromiumProvider implements BrowserProvider {
       }
       const down = action.kind === 'press' ? keyEvent(action.key, action.shift ?? false, 'keyDown') : undefined;
       if (action.kind === 'navigate') {
-        if (originOf(action.url) !== lease.origin) throw new BrowserError('POLICY_DENIED', 'Navigation requires a lease for its exact origin');
+        const targetOrigin = originOf(action.url);
+        if ((lease.scope ?? 'origin') === 'origin' && targetOrigin !== lease.origin) {
+          throw new BrowserError('POLICY_DENIED', 'Navigation requires a lease for its exact origin');
+        }
         const url = new URL(action.url).href;
         if (action.expected?.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Navigation cannot verify an input value');
         if ((await this.document(lease, signal)).state.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Document changed before navigation');
         execution.onDispatch();
-        const navigation = await this.cdp(lease, 'Page.navigate', { url }, signal);
+        const navigationLease = targetOrigin === lease.origin ? lease : { ...lease, origin: targetOrigin };
+        const navigation = await this.cdp(navigationLease, 'Page.navigate', { url }, signal);
         if (navigation.errorText || navigation.isDownload) throw new BrowserError('NAVIGATION_FAILED', 'Navigation failed or became a download');
-        return await this.result(lease, action.expected ?? { kind: 'url', url }, undefined, signal, clock, navigation.loaderId);
+        if (navigationLease !== lease) {
+          // Page.navigate may acknowledge before chrome.tabs reports the new
+          // root origin. Do not ask the extension to read the destination under
+          // its new binding until tab metadata confirms that transition.
+          await waitUntil(async () => {
+            const tab = (await this.listTabs(signal)).find(item => item.id === lease.tab);
+            return tab && originOf(tab.url) === targetOrigin ? true : undefined;
+          }, { signal, clock });
+        }
+        return await this.result(navigationLease, action.expected ?? { kind: 'url', url }, undefined, signal, clock, navigation.loaderId);
       }
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');

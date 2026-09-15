@@ -10,6 +10,7 @@
       "types": "./dist/packages/dsh-adapter/src/index.d.ts",
       "import": "./index.js"
     },
+    "./client": "./client.js",
     "./observations": {
       "types": "./dist/packages/contracts/src/observations.d.ts",
       "import": "./dist/packages/contracts/src/observations.js"
@@ -18,6 +19,7 @@
   },
   "files": [
     "index.js",
+    "client.js",
     "bin",
     "dist",
     "cordis.patch.yml",
@@ -97,6 +99,13 @@
     "typescript": "5.9.3"
   },
   "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

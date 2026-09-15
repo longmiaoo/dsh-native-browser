@@ -23,6 +23,7 @@ type LeaseRevocation = Readonly<{ owner: string; scope: string; leaseId: string 
 const defaultLimits = { leaseMs: 120_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
   providers: 16, leases: 64, claims: 32, resultEntries: 128, resultBytes: 8 * 1024 * 1024, resultMs: 120_000 };
 type RuntimeLimits = typeof defaultLimits;
+type RuntimePolicy = Readonly<{ leaseScope?: 'origin' | 'tab' }>;
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -47,13 +48,17 @@ export class BrowserRuntime {
   private readonly limits: Readonly<RuntimeLimits>;
   private closed = false;
 
-  constructor(private readonly authorize: Authorize, limits: Partial<RuntimeLimits> = {}, private readonly durable?: ActionJournal) {
+  constructor(private readonly authorize: Authorize, limits: Partial<RuntimeLimits> = {}, private readonly durable?: ActionJournal,
+    private readonly policy: RuntimePolicy = {}) {
     this.limits = Object.freeze({ ...defaultLimits, ...limits });
     if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 1)
       || this.limits.providers > 64 || this.limits.leases > 256 || this.limits.claims > 128) {
       throw new BrowserError('INVALID_REQUEST', 'Invalid runtime resource limits');
     }
     this.results = new ActionResultCache({ maxEntries: this.limits.resultEntries, maxBytes: this.limits.resultBytes, ttlMs: this.limits.resultMs });
+    if (policy.leaseScope !== undefined && policy.leaseScope !== 'origin' && policy.leaseScope !== 'tab') {
+      throw new BrowserError('INVALID_REQUEST', 'Invalid browser lease scope');
+    }
   }
 
   resourceUsage() { return { providers: this.providers.size, leases: this.leases.size, claims: this.claims.size }; }
@@ -117,7 +122,7 @@ export class BrowserRuntime {
     if (this.tabs.has(tabKey)) throw new BrowserError('LEASE_BUSY', 'Another task controls this tab');
     if (this.leases.size >= this.limits.leases) throw new BrowserError('QUEUE_FULL', 'Active lease limit reached');
     const lease: Lease = Object.freeze({ id: randomUUID(), token: randomUUID(), owner,
-      tab: tabId, instanceId, origin, expiresAt: Date.now() + this.limits.leaseMs });
+      tab: tabId, instanceId, origin, scope: this.policy.leaseScope ?? 'origin', expiresAt: Date.now() + this.limits.leaseMs });
     const controller = new AbortController();
     const timer = setTimeout(() => { void this.release(owner, lease.id).catch(() => {}); }, this.limits.leaseMs);
     timer.unref();
@@ -153,7 +158,9 @@ export class BrowserRuntime {
     checkAbort(signal);
     this.entry(entry.lease.owner, entry.lease.id);
     const tab = (await entry.provider.listTabs(signal)).find(t => t.id === entry.lease.tab);
-    if (!tab || originOf(tab.url) !== entry.lease.origin) {
+    if (!tab) throw new BrowserError('POLICY_DENIED', 'The authorized tab is no longer available');
+    const currentOrigin = originOf(tab.url);
+    if ((entry.lease.scope ?? 'origin') === 'origin' && currentOrigin !== entry.lease.origin) {
       throw new BrowserError('POLICY_DENIED', 'Tab moved outside its authorized origin');
     }
     const request = { owner: entry.lease.owner, tab, operation, ...(action ? { action: structuredClone(action) } : {}),
@@ -161,6 +168,12 @@ export class BrowserRuntime {
     if (!await this.authorize(request, signal)) throw new BrowserError('POLICY_DENIED', 'Operation denied');
     checkAbort(signal);
     this.entry(entry.lease.owner, entry.lease.id);
+    if ((entry.lease.scope ?? 'origin') === 'tab' && currentOrigin !== entry.lease.origin) {
+      // Keep the same unguessable lease/token while rebinding every operation to
+      // the tab's current root origin. Providers still enforce same-origin frame
+      // and result checks relative to this fresh operation origin.
+      entry.lease = Object.freeze({ ...entry.lease, origin: currentOrigin });
+    }
   }
 
   private async serialized<T>(entry: Entry, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
@@ -474,8 +487,14 @@ export class BrowserRuntime {
           sameOriginFrame(frameInventory(await entry.provider.frames!(entry.lease,signal),entry.lease),request.frame,entry.lease);
           checkAbort(signal);this.entry(entry.lease.owner,entry.lease.id);
         }
-        if (result.observation.tab !== entry.lease.tab || originOf(result.observation.url) !== entry.lease.origin) {
+        const resultOrigin = originOf(result.observation.url);
+        const expectedOrigin = request.action.kind === 'navigate' && (entry.lease.scope ?? 'origin') === 'tab'
+          ? originOf(request.action.url) : entry.lease.origin;
+        if (result.observation.tab !== entry.lease.tab || resultOrigin !== expectedOrigin) {
           throw new BrowserError('POLICY_DENIED', 'Result moved outside its authorized origin');
+        }
+        if ((entry.lease.scope ?? 'origin') === 'tab' && resultOrigin !== entry.lease.origin) {
+          entry.lease = Object.freeze({ ...entry.lease, origin: resultOrigin });
         }
         const scroll = request.action.kind === 'scroll' ? validateScrollEvidence(result.scroll, request.action) : undefined;
         if (scroll && result.postcondition === 'passed' && !scrollMovedAsRequested(scroll)) {

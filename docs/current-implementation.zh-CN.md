@@ -70,13 +70,14 @@ flowchart LR
 
 | 层 | 当前职责 | 主要代码 |
 |---|---|---|
+| DSH Web Client | 监听 Session Controller 的标准当前会话状态；仅在页面可见时通过受信 Connection RPC 上报 opaque session ID；不接触 lease、截图或页面数据 | <code>client.js</code> |
 | DSH Adapter | 注册 9 个 <code>browser_*</code> 工具；把 DSH session 映射成隔离 owner；在变更动作前接入 ApprovalService；把截图发布为 DSH 可用附件 | <code>packages/dsh-adapter/src/index.ts</code> |
 | Local Broker | Unix socket 本地 RPC、token 握手、连接角色隔离、owner/lease 生命周期、持久化 action journal、Provider 注册 | <code>packages/broker/src/server.ts</code>、<code>ownership.ts</code>、<code>action-journal.ts</code> |
 | Runtime Core | 每标签页串行执行；二次校验 lease/策略；管理批处理、观察、动作、帧与结果状态；统一 fail-closed 语义 | <code>packages/runtime-core/src/runtime.ts</code> |
 | Portable Contracts | 浏览器无关的请求、结果、错误码、能力协商、帧模型、wire 版本和输入校验 | <code>packages/contracts/src/</code> |
 | Chromium Provider | AX 投影、节点 ref 缓存、文档 epoch、精确语义查询、几何和稳定命中、CDP 输入、结果确认、截图 | <code>packages/provider-chromium/src/</code> |
 | Native Host | Chrome Native Messaging 的 framing 和 RPC 桥接 | <code>packages/transport-native/src/host.ts</code>、<code>framing.ts</code>、<code>rpc.ts</code> |
-| MV3 Extension | 用户 Allow/Stop；只连接当前获准标签页；<code>chrome.debugger</code> attach；CDP 方法/参数白名单；最后一道 lease 与 tab 检查 | <code>packages/extension-core/src/background.ts</code>、<code>popup.ts</code> |
+| MV3 Extension | 启动时握手；受限模式保留 Allow/Stop，显式个人模式可发现普通 HTTP(S) 标签页；<code>chrome.debugger</code> attach；CDP 方法/参数白名单；最后一道 lease 与 tab 检查 | <code>packages/extension-core/src/background.ts</code>、<code>popup.ts</code> |
 | Installer | 安装/诊断/卸载 Native Host manifest 和扩展产物；检查目录所有权与权限 | <code>packages/installer/src/</code> |
 | Vision Adapter | 截图几何、候选 grounding、截图附件生命周期；为 <code>dsh-vision-router</code> 等视觉能力提供输入 | <code>packages/vision-adapter/src/</code> |
 
@@ -129,7 +130,7 @@ flowchart TD
 
 Broker 不直接相信模型传来的 session 字符串。它把“当前 Broker 连接 epoch”和 Adapter 生成的 wire session ID 组合成 owner。不同连接、不同 DSH 会话无法互相使用 lease 或恢复元数据。
 
-<code>browser_claim</code> 只对扩展已经允许、且 origin 在本地策略允许范围内的 tab 发放独占 lease。后续每次观察、截图和动作都重新验证 owner、tab、origin、lease 状态与 Stop 状态。
+<code>browser_claim</code> 只对扩展已经允许的 tab 发放独占 lease。默认 restricted/trusted 路径还要求 origin 在精确 allowlist 中，并发放 <code>scope=origin</code>；显式 personal Broker 则发放 <code>scope=tab</code>，允许同一个已授权 tab 的根页面在 HTTP(S) origin 之间切换。后续每次观察、截图和动作仍重新验证 owner、tab、当前根 origin、lease 状态与 Stop 状态；子帧继续按当前根 origin 做同源祖先链检查。
 
 ### 3.2 Document epoch 与 opaque ref
 
@@ -417,7 +418,7 @@ flowchart TD
 - 本地 socket 在准备后设为 <code>0600</code>；连接先 token 握手，再分 client/provider 角色；
 - Native Messaging 目录必须由当前用户所有，且不能被其他用户写；
 - 只有扩展中用户允许的 tab 才能出现在可 claim 列表；
-- lease 固定 owner、tab 与 root origin；
+- lease 始终固定 owner 与 tab；restricted/trusted 固定 root origin，personal 只对同一 tab 的每次操作重新绑定当前 HTTP(S) root origin；
 - Extension 在最靠近 Chrome 的位置再次检查 Stop、lease、tab 和命令白名单；
 - AX/DOM/CDP 原始大对象不直接交给模型，只返回预算化投影；
 - cross-origin/opaque child frame 内容默认拒绝；
@@ -458,7 +459,8 @@ flowchart TD
 
 | 验证 | 结果 | 说明 |
 |---|---:|---|
-| <code>pnpm check && pnpm typecheck && pnpm test</code> | 502 passed / 0 failed | 静态边界、类型、单元与行为测试 |
+| <code>pnpm check && pnpm typecheck && pnpm test</code> | 513 passed / 0 failed | 静态边界、类型、单元与行为测试；包含前台会话桥接、乱序拒绝、切换撤权与 session dispose 回归 |
+| browser-lab Web 装载 | 通过 | 本地 link 产物已进入 DSH client module 清单；重启后可在真实 UI 中切换两条既有会话，完整“运行中 lease 被切换撤销”仍保留为人工验收项 |
 | <code>pnpm test:chrome</code> | 90 passed | Chrome Stable 152.0.7977.84，真实 Provider/CDP 语义 |
 | <code>pnpm test:extension</code> | 15 passed | Chrome for Testing 151.0.7922.10，真实 MV3 + chrome.debugger |
 | <code>pnpm test:native &lt;dsh-path&gt;</code> | 105 passed | DSH ToolRuntime → Broker → Native Host → MV3 → 页面 |
@@ -472,7 +474,7 @@ flowchart TD
 - <code>output/playwright/chrome-frame-page-native-smoke.json</code>
 - <code>output/playwright/edge-frame-page-native-smoke.json</code>
 
-需要注意：上述 native 测试使用隔离的 Chrome profile 和可控审批服务。当前日常 DSH Web profile 中，旧浏览器插件已卸载，<code>dsh-native-browser</code> 还没有正式安装进去；所以“项目完整测试链路可运行”不等于“日常 DSH 已经可以直接调用”。
+需要注意：上述 native 测试使用隔离的 Chrome profile 和可控审批服务。当前本机另有专用 <code>browser-lab</code> DSH profile 通过本地 link 挂载本项目，用于现有 Chrome profile 的人工验收；这不等于日常 profile 或其他机器已经自动安装，也不构成生产兼容性声明。
 
 ## 12. 代码导航
 

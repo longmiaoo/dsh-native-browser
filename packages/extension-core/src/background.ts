@@ -13,10 +13,11 @@ import { frameSubtreeRequest, readFrameSubtree } from '../../provider-chromium/s
 import { framePageRequest, readFramePage } from '../../provider-chromium/src/frame-page.js';
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
-import { wireMessage, acceptWelcome, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
+import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
-const allowed = new Map<number, string>();
+type TabConsent = Readonly<{ origin: string; scope: 'tab' }>;
+const allowed = new Map<number, TabConsent>();
 const gates = new Map<number, Lease>();
 const pager = new AXPager();
 const frameSessions = new Map<number, FrameSessions>();
@@ -27,6 +28,7 @@ const changeSequences = new Map<number, number>();
 let port: chrome.runtime.Port | undefined;
 let instanceId = crypto.randomUUID();
 let status = 'Disconnected';
+let brokerPersonal = false;
 const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocument',
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
@@ -44,8 +46,10 @@ function leaseOf(value: unknown): Lease {
   if (!Number.isSafeInteger(v.expiresAt) || Number(v.expiresAt) > Date.now() + 5 * 60_000) {
     throw new BrowserError('INVALID_REQUEST', 'Invalid lease deadline');
   }
+  const scope = v.scope === undefined ? 'origin' : v.scope;
+  if (scope !== 'origin' && scope !== 'tab') throw new BrowserError('INVALID_REQUEST', 'Invalid lease scope');
   return { id: string(v.id), owner: string(v.owner, 1024), tab: string(v.tab), instanceId: string(v.instanceId),
-    token: string(v.token), origin: originOf(string(v.origin)), expiresAt: Number(v.expiresAt) };
+    token: string(v.token), origin: originOf(string(v.origin)), scope, expiresAt: Number(v.expiresAt) };
 }
 function enqueue<T>(id: number, operation: () => Promise<T>): Promise<T> {
   const result = (queues.get(id) ?? Promise.resolve()).catch(() => {}).then(operation);
@@ -56,7 +60,10 @@ function enqueue<T>(id: number, operation: () => Promise<T>): Promise<T> {
 function checkGate(lease: Lease, signal: AbortSignal): number {
   checkAbort(signal);
   const id = tabIdOf(lease);
-  if (gates.get(id)?.token !== lease.token || allowed.get(id) !== lease.origin || lease.expiresAt <= Date.now()) {
+  const gate = gates.get(id), consent = allowed.get(id), scope = lease.scope ?? 'origin';
+  const personalGrant = brokerPersonal && scope === 'tab';
+  if (gate?.token !== lease.token || (gate.scope ?? 'origin') !== scope || !personalGrant && !consent
+    || !personalGrant && scope === 'origin' && consent!.origin !== lease.origin || lease.expiresAt <= Date.now()) {
     throw new BrowserError('LEASE_REVOKED', 'Local control gate is closed');
   }
   return id;
@@ -69,63 +76,16 @@ function showVirtualPointer(id: number, params: Record<string, unknown>): void {
   const x = Number(params.x), y = Number(params.y);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   const phase: PointerPhase = type === 'mouseReleased' ? 'click' : type === 'mouseWheel' ? 'wheel' : 'move';
-  // This isolated-world overlay is deliberately presentation-only. Browser input
-  // has already been dispatched from semantically verified geometry; failure to
-  // draw the pointer must never delay, authorize, retarget or replay an action.
-  void chrome.scripting.executeScript({
-    target: { tabId: id }, world: 'ISOLATED', args: [{ x, y, phase }],
-    func: (payload: { x: number; y: number; phase: PointerPhase }) => {
-      const world = globalThis as typeof globalThis & { __dshPointerV1?: {
-        host: HTMLDivElement; arrow: SVGElement; ring: HTMLDivElement; fade?: ReturnType<typeof setTimeout>;
-      } };
-      let state = world.__dshPointerV1;
-      if (!state?.host.isConnected) {
-        const host = document.createElement('div');
-        host.setAttribute('aria-hidden', 'true');
-        host.setAttribute('inert', '');
-        Object.assign(host.style, { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px', overflow: 'visible',
-          zIndex: '2147483647', pointerEvents: 'none', userSelect: 'none', contain: 'layout style', isolation: 'isolate',
-          opacity: '0', transition: 'opacity 120ms ease' });
-        const root = host.attachShadow({ mode: 'closed' });
-        root.innerHTML = `<style>
-          :host{all:initial}.arrow{position:absolute;left:-3px;top:-3px;width:25px;height:31px;overflow:visible;
-            filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));transform-origin:3px 3px}
-          .ring{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border:3px solid #37a6ff;border-radius:999px;
-            box-sizing:border-box;opacity:0;transform:scale(.35)}
-          .ring.click{animation:dsh-click 420ms cubic-bezier(.2,.8,.2,1)}
-          .ring.wheel{border-style:dashed;animation:dsh-wheel 520ms ease-out}
-          @keyframes dsh-click{0%{opacity:.95;transform:scale(.3)}100%{opacity:0;transform:scale(1.55)}}
-          @keyframes dsh-wheel{0%{opacity:.9;transform:scale(.45) rotate(0)}100%{opacity:0;transform:scale(1.3) rotate(90deg)}}
-        </style>
-        <svg class="arrow" viewBox="0 0 25 31" aria-hidden="true">
-          <path d="M2 1.5v23.2l6.3-5.6 4.1 9.6 4.1-1.8-4.2-9.4 8.5-.4z" fill="#1687ff" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
-        </svg><div class="ring"></div>`;
-        const arrow = root.querySelector('.arrow') as SVGElement;
-        const ring = root.querySelector('.ring') as HTMLDivElement;
-        (document.documentElement || document.body)?.append(host);
-        state = world.__dshPointerV1 = { host, arrow, ring };
-      }
-      const { host, arrow, ring } = state;
-      host.style.transition = host.style.opacity === '0' ? 'opacity 120ms ease' : 'transform 110ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease';
-      host.style.transform = `translate3d(${payload.x}px,${payload.y}px,0)`;
-      host.style.opacity = '1';
-      arrow.style.transform = payload.phase === 'move' ? 'scale(.94)' : 'scale(1)';
-      if (payload.phase !== 'move') {
-        ring.className = 'ring';
-        void ring.getBoundingClientRect();
-        ring.classList.add(payload.phase);
-      }
-      if (state.fade) clearTimeout(state.fade);
-      state.fade = setTimeout(() => { if (host.isConnected) host.style.opacity = '.24'; }, 1400);
-    },
+  // The persistent isolated content script keeps pointer rendering independent
+  // from the action queue. Existing tabs receive it once on demand.
+  const message = { type: 'dsh.pointer.v1', action: 'show', x, y, phase };
+  void chrome.tabs.sendMessage(id, message).catch(async () => {
+    await chrome.scripting.executeScript({ target: { tabId: id }, files: ['pointer.js'] });
+    await chrome.tabs.sendMessage(id, message);
   }).catch(() => {});
 }
 function removeVirtualPointer(id: number): void {
-  void chrome.scripting.executeScript({ target: { tabId: id }, world: 'ISOLATED', func: () => {
-    const world = globalThis as typeof globalThis & { __dshPointerV1?: { host: HTMLDivElement; fade?: ReturnType<typeof setTimeout> } };
-    if (world.__dshPointerV1?.fade) clearTimeout(world.__dshPointerV1.fade);
-    world.__dshPointerV1?.host.remove(); delete world.__dshPointerV1;
-  } }).catch(() => {});
+  void chrome.tabs.sendMessage(id, { type: 'dsh.pointer.v1', action: 'remove' }).catch(() => {});
 }
 async function ensure(lease: Lease, signal: AbortSignal): Promise<number> {
   const id = checkGate(lease, signal);
@@ -176,16 +136,26 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
   const p = record(raw);
   if (method === 'tabs.list') {
     const result = [];
-    for (const [id, origin] of allowed) {
-      const tab = await chrome.tabs.get(id).catch(() => undefined);
-      if (tab?.url && originOf(tab.url) === origin) result.push({ id: `${instanceId}:${id}`, instanceId, url: tab.url, title: tab.title ?? '' });
+    const candidates = brokerPersonal
+      ? (await chrome.tabs.query({})).map(tab => [tab.id, tab] as const)
+      : [...allowed].map(([id]) => [id, undefined] as const);
+    for (const [id, known] of candidates) {
+      if (id === undefined) continue;
+      const tab = known ?? await chrome.tabs.get(id).catch(() => undefined);
+      try {
+        if (tab?.url) { originOf(tab.url); result.push({ id: `${instanceId}:${id}`, instanceId, url: tab.url, title: tab.title ?? '' }); }
+      } catch { /* Internal or unsupported pages never enter the control inventory. */ }
     }
     return result;
   }
   const lease = leaseOf(p.lease), id = tabIdOf(lease);
   if (method === 'lease.grant') {
     if (gates.has(id)) throw new BrowserError('LEASE_BUSY', 'Tab already controlled');
-    if (allowed.get(id) !== lease.origin) throw new BrowserError('POLICY_DENIED', 'Allow this tab from the extension popup first');
+    const consent = allowed.get(id);
+    const personalGrant = brokerPersonal && (lease.scope ?? 'origin') === 'tab';
+    if (!personalGrant && (!consent || (lease.scope ?? 'origin') === 'origin' && consent.origin !== lease.origin)) {
+      throw new BrowserError('POLICY_DENIED', 'Allow this tab from the extension popup first');
+    }
     gates.set(id, lease);
     try {
       return await enqueue(id, async () => {
@@ -310,15 +280,23 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     if (command === 'Input.dispatchMouseEvent' && !allowedMouseEvent(params)) {
       throw new BrowserError('POLICY_DENIED', 'Only canonical left-click and unmodified wheel events are exposed');
     }
-    if (command === 'Page.navigate' && originOf(string(params.url, 8192)) !== lease.origin) {
-      throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease origin');
+    if (command === 'Page.navigate') {
+      const targetOrigin = originOf(string(params.url, 8192));
+      if (targetOrigin !== lease.origin || (lease.scope ?? 'origin') === 'origin' && targetOrigin !== allowed.get(id)?.origin) {
+        throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease scope');
+      }
     }
     if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
       || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {
       throw new BrowserError('POLICY_DENIED', 'Only the fixed document-readiness query is exposed');
     }
     return enqueue(id, async () => {
-      await ensure(lease, signal);
+      if (command === 'Page.navigate' && (lease.scope ?? 'origin') === 'tab') {
+        checkGate(lease, signal);
+        const current = await chrome.tabs.get(id);
+        originOf(current.url ?? '');
+        checkGate(lease, signal);
+      } else await ensure(lease, signal);
       if (command === 'Page.captureScreenshot') {
         // Root Page.getFrameTree omits attached OOPIFs. Inspect all sessions at
         // the last mile, including captures made before explicit frame discovery.
@@ -359,7 +337,7 @@ function connect(): void {
     for (const controller of pending.values()) controller.abort();
     pending.clear(); seen.clear();
     if (port === current) {
-      pager.clear();
+      pager.clear(); brokerPersonal = false;
       port = undefined; status = message;
       for (const id of gates.keys()) void stop(id, false);
     }
@@ -377,8 +355,9 @@ function connect(): void {
       if (m.type === 'response' && m.id === helloId) {
         if (accepted) throw new BrowserError('PROTOCOL_MISMATCH', 'Repeated handshake reply');
         if (!m.ok) { disconnect(`Handshake rejected: ${m.code}`); return; }
-        acceptWelcome(m.value, providerRequirements);
-        clearTimeout(helloTimer); accepted = true; status = 'Connected';
+        const welcome = acceptWelcome(m.value, providerRequirements);
+        brokerPersonal = welcome.capabilities.includes(personalBrokerCapability);
+        clearTimeout(helloTimer); accepted = true; status = brokerPersonal ? 'Connected · Personal' : 'Connected';
         return;
       }
       if (!accepted || m.type === 'event' || m.type === 'response') throw new BrowserError('PROTOCOL_MISMATCH', 'Unexpected message before or after handshake');
@@ -420,7 +399,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (message.command === 'connect') connect();
     if (message.command === 'allow' && tab?.id !== undefined) {
-      allowed.set(tab.id, originOf(tab.url ?? '')); connect();
+      allowed.set(tab.id, { origin: originOf(tab.url ?? ''), scope: 'tab' }); connect();
     }
     if (message.command === 'stop' && tab?.id !== undefined) await stop(tab.id);
     return { status, tabAllowed: tab?.id !== undefined && allowed.has(tab.id), controlled: tab?.id !== undefined && gates.has(tab.id) };
@@ -430,7 +409,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 chrome.tabs.onRemoved.addListener(id => { void stop(id); });
 chrome.tabs.onUpdated.addListener((id, change) => {
   if (change.url && allowed.has(id)) {
-    try { if (originOf(change.url) !== allowed.get(id)) void stop(id); } catch { void stop(id); }
+    try {
+      const origin = originOf(change.url), gate = gates.get(id);
+      if (gate && (gate.scope ?? 'origin') === 'origin' && origin !== gate.origin) void stop(id, false);
+    } catch { void stop(id); }
   }
 });
 chrome.debugger.onDetach.addListener(source => {
@@ -456,5 +438,8 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     try { port?.postMessage({ type: 'event', event: 'page.changed', value: { tab: lease.tab, leaseId: lease.id, sequence } }); } catch {}
   }, 20));
 });
-// MV3 restarts deliberately restore no leases and do not reconnect without user intent.
+// Connecting is not authorization in restricted mode. In explicit personal mode,
+// the Broker's negotiated capability is the durable operator intent; leases still
+// fence every action and are cleared on disconnect, handoff and expiry.
+connect();
 declare const __BROWSER_BRAND__: string;

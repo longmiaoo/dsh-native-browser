@@ -15,13 +15,14 @@ The target is not another thin `click(x, y)` wrapper. The design is a stateful b
 - accessibility-tree-first observation with compact incremental updates;
 - stable element references plus actionability and hit-target checks;
 - explicit ownership for existing tabs, agent-created tabs and end-of-turn cleanup;
+- automatic control release when the visible DSH UI switches to another conversation;
 - immediate human interruption and resumable handoff;
 - a presentation-only virtual pointer and click/wheel pulse after verified browser input;
 - screenshots as a visual fallback, not the default source of page structure.
 
 ## Project status
 
-**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. Chrome setup is still manual, the extension is loaded unpacked, and broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
+**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. Chrome setup is still manual, the extension is loaded unpacked, and broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
 
 Verified so far: deterministic contract/security tests; exact npm tarball installation into a fresh DSH `0.1.5-rc.1` profile; the assembled local stack in isolated Chrome-for-Testing profiles; and one end-to-end run in an existing local Chrome profile on an owned fixture. The real MV3 extension, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime, AX actions, screenshot attachment and handoff paths were exercised. Live gates also cover delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No sensitive business account workflow or production visual-model accuracy claim has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
 
@@ -50,6 +51,7 @@ Architectural interfaces are cross-browser from day one. Deferred production sup
 
 ```mermaid
 flowchart LR
+    W[Visible DSH conversation] -->|opaque session ID| T
     A[DSH agent] --> T[Browser tool adapter]
     T --> R[Persistent browser runtime]
     R --> H[Local native host]
@@ -97,6 +99,22 @@ dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://e
 
 Open an allowed page in Chrome, click the extension, approve that tab, then restart the DSH profile. `approvalMode` defaults to `per-action`. Advanced testers can choose `per-lease`, or `trusted` with a non-empty exact `trustedOrigins` list, in the `native-browser` row of their profile patch. Trusted mode removes repeated DSH prompts only for those exact origins; extension consent, live lease checks, Stop and origin checks still apply. See the [explicit setup and diagnostic guide](docs/development.md#explicit-chromeprofile-setup) before using a signed-in page.
 
+For a personal Chrome profile, the explicit personal mode makes an allowed tab prompt-free and follows that same tab across credential-free HTTP(S) root navigations:
+
+```bash
+dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
+```
+
+```yaml
+- id: native-browser
+  config:
+    approvalMode: personal
+```
+
+The Broker and adapter settings must both be present or the claim fails closed. The extension negotiates the Broker's explicit personal-mode capability at startup and then exposes ordinary HTTP(S) tabs without a popup click; a claim still selects one tab and every operation remains fenced by its short tab-scoped lease. The development manifest declares HTTP(S) host access, which Chrome presents when the extension is installed, so personal mode and the virtual pointer remain available after cross-site navigation. Foreground-conversation switching, lease expiry, handoff, disconnect and the extension Stop button revoke control. This alpha has no reliable semantic classifier for payments, publishing or destructive actions, so do not use personal mode for those workflows.
+
+When the visible DSH UI changes conversations, the client bridge releases browser scopes owned by other conversations before the newly selected conversation can claim control. A new conversation never inherits the previous lease. Switching away therefore intentionally interrupts an in-flight browser task instead of letting a background chat keep driving Chrome.
+
 ## Development
 
 Prerequisites: Node.js 22.19 or newer and pnpm 11.
@@ -119,8 +137,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Security-sensiti
 2. **Actions verify reality.** Resolve targets fresh, scroll, wait for stability, hit-test, act, then observe the resulting change.
 3. **Browser state has an owner.** Existing user tabs are claimed and released; agent tabs are tracked and cleaned up.
 4. **Human control wins immediately.** User interaction or an extension stop action cancels in-flight work and produces a resumable state.
-5. **Capabilities are explicit.** Sensitive operations are narrow, policy-gated and auditable; raw CDP is an internal transport.
-6. **Performance is measured.** Latency, observation size, stale-reference rate, action success and recovery behavior are benchmark gates.
+5. **Conversation focus is a control boundary.** Switching the visible DSH conversation revokes background browser scopes; authority is released, never transferred.
+6. **Capabilities are explicit.** Sensitive operations are narrow, policy-gated and auditable; raw CDP is an internal transport.
+7. **Performance is measured.** Latency, observation size, stale-reference rate, action success and recovery behavior are benchmark gates.
 
 The virtual pointer improves observability, but is never an input primitive: semantic discovery and last-moment hit testing choose the target first, the browser dispatches the real input, and only then does the extension draw the pointer. A drawing failure cannot authorize, retarget, delay or replay an action.
 

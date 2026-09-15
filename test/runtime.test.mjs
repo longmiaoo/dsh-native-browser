@@ -125,6 +125,31 @@ test('cross-origin navigation invalidates access, even with a live lease', async
   assert.equal(provider.calls.length, 0);
 });
 
+test('tab-scoped personal lease rebinds to the same allowed tab after an external cross-origin navigation', async t => {
+  const provider = new FakeProvider(), runtime = new BrowserRuntime(async () => true, undefined, undefined, { leaseScope: 'tab' });
+  runtime.register(provider); t.after(() => runtime.dispose());
+  const lease = await runtime.claim('session-a', provider.instance.id, provider.tab.id, signal());
+  assert.equal(lease.scope, 'tab');
+  provider.tab.url = 'https://different.test/account'; provider.epoch = 'doc-2';
+  const observation = await runtime.observe('session-a', lease.id, signal());
+  assert.equal(observation.url, provider.tab.url);
+  assert.deepEqual(await runtime.validateLease('session-a', lease.id, signal()), { valid: true });
+});
+
+test('tab-scoped navigation publishes and retains only the declared destination origin', async t => {
+  const provider = new FakeProvider(), runtime = new BrowserRuntime(async () => true, undefined, undefined, { leaseScope: 'tab' });
+  runtime.register(provider); t.after(() => runtime.dispose());
+  const lease = await runtime.claim('session-a', provider.instance.id, provider.tab.id, signal());
+  provider.act = async (current, request, execution) => {
+    execution.onDispatch(); provider.tab.url = request.action.url; provider.epoch = 'doc-2';
+    return { observation: await provider.observe({ ...current, origin: new URL(request.action.url).origin }, execution.signal), postcondition: 'passed' };
+  };
+  const result = await runtime.act('session-a', { requestId: 'personal-nav', leaseId: lease.id, documentEpoch: 'doc-1',
+    action: { kind: 'navigate', url: 'https://different.test/path' } }, signal());
+  assert.equal(result.outcome, 'succeeded'); assert.equal(result.observation.url, provider.tab.url);
+  assert.deepEqual(await runtime.validateLease('session-a', lease.id, signal()), { valid: true });
+});
+
 test('navigation replaces document refs but unrelated observation does not', async t => {
   const { runtime, provider, lease, request } = await fixture(t);
   await runtime.observe('session-a', lease.id, signal());

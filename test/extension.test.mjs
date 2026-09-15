@@ -5,20 +5,22 @@ import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { keyEvent } from '../dist/packages/provider-chromium/src/keyboard.js';
 import { wheelEvent } from '../dist/packages/provider-chromium/src/mouse.js';
-import { brokerCapabilities } from '../dist/packages/contracts/src/wire.js';
+import { brokerCapabilities, personalBrokerCapability } from '../dist/packages/contracts/src/wire.js';
 import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetricsFunction } from '../dist/packages/provider-chromium/src/frame-geometry-functions.js';
 import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
-test('built extension declares only the additional presentation scripting capability', async () => {
+test('built extension declares presentation scripting on HTTP(S) pages for the cross-site virtual pointer', async () => {
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.ok(manifest.permissions.includes('scripting'));
-  assert.equal(manifest.host_permissions, undefined);
+  assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
+  assert.equal(manifest.optional_host_permissions, undefined);
+  assert.deepEqual(manifest.content_scripts, [{ matches: ['http://*/*', 'https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);
 });
 
 async function fixture({ handshake = true, timers = { setTimeout, clearTimeout } } = {}) {
-  const responses = new Map(), sent = [], commands = [], scripts = [];
+  const responses = new Map(), sent = [], commands = [], scripts = [], tabMessages = [];
   const tab = { id: 7, url: 'https://example.test/form', title: 'Fixture' };
   const ports = [];
   const makePort = () => {
@@ -29,7 +31,8 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     ports.push(p); return p;
   };
   const chrome = { runtime: { id: 'a'.repeat(32), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
-    tabs: { query: async () => [tab], get: async () => ({ ...tab }), onRemoved: event(), onUpdated: event() },
+    tabs: { query: async () => [tab], get: async () => ({ ...tab }),
+      sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     debugger: { attach: async () => {}, detach: async source => { chrome.debugger.onDetach.emit(source); },
       sendCommand: async (_target, method, params) => { commands.push({ method, params }); return {}; }, onDetach: event(), onEvent: event() } };
@@ -51,8 +54,18 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     const id = `r-${++counter}`; responses.set(id, resolve);
     ports.at(-1).onMessage.emit({ type: 'request', id, method, params });
   });
-  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tab, sent };
+  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, tab, sent };
 }
+
+test('personal Broker handshake discovers ordinary tabs and grants tab leases without popup consent', async () => {
+  const f = await fixture({ handshake: false });
+  f.welcome(f.port, { version: 1, connectionEpoch: 'personal',
+    capabilities: [...brokerCapabilities, personalBrokerCapability] });
+  const tabs = await f.call('tabs.list', {});
+  assert.equal(tabs.ok, true); assert.equal(tabs.value[0].title, 'Fixture');
+  const lease = { ...f.lease, scope: 'tab' };
+  assert.equal((await f.call('lease.grant', { lease })).ok, true);
+});
 
 test('page traversal is lease-gated and navigation revokes retained continuations', async () => {
   const f=await fixture();
@@ -191,7 +204,10 @@ test('extension child-click commands bind semantic target, refuse coordinate inj
   const input=f.geometryCalls.filter(c=>c.method.startsWith('Input.'));assert.deepEqual(input.map(c=>c.p.type),['mousePressed','mouseReleased']);
   assert.ok(input.every(c=>c.target.sessionId===undefined&&Math.abs(c.p.x-220)<1e-6&&Math.abs(c.p.y-130)<1e-6));
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(JSON.stringify(f.scripts.map(s=>s.args[0])),JSON.stringify([{x:220,y:130,phase:'move'},{x:220,y:130,phase:'click'}]));
+  assert.equal(JSON.stringify(f.tabMessages), JSON.stringify([
+    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'move'},
+    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'click'},
+  ]));
   assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,2);
   await f.ui('stop');assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');
 });
@@ -372,6 +388,31 @@ test('new origin, unsupported CDP and expired lease all fail closed', async () =
   assert.equal(f.commands.some(c => c.method === 'Input.insertText'), false);
 });
 
+test('explicit tab-scoped consent survives HTTP(S) origin changes while exact-origin leases still close', async () => {
+  const f = await fixture();
+  const personal = { ...f.lease, scope: 'tab' };
+  assert.equal((await f.call('lease.grant', { lease: personal })).ok, true);
+  f.tab.url = 'https://different.test/next';
+  f.chrome.tabs.onUpdated.emit(7, { url: f.tab.url });
+  const rebound = { ...personal, origin: 'https://different.test' };
+  assert.equal((await f.call('cdp', { lease: rebound, method: 'Page.getFrameTree', params: {} })).ok, true);
+  assert.equal((await f.ui('status')).controlled, true);
+  await f.ui('stop');
+
+  const exact = await fixture(); await exact.call('lease.grant', { lease: exact.lease });
+  exact.tab.url = 'https://different.test/'; exact.chrome.tabs.onUpdated.emit(7, { url: exact.tab.url });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await exact.call('cdp', { lease: exact.lease, method: 'Page.getFrameTree', params: {} })).code, 'LEASE_REVOKED');
+});
+
+test('tab-scoped navigation binds the command to its declared target origin', async () => {
+  const f = await fixture(); const personal = { ...f.lease, scope: 'tab' };
+  await f.call('lease.grant', { lease: personal });
+  const target = { ...personal, origin: 'https://different.test' };
+  assert.equal((await f.call('cdp', { lease: target, method: 'Page.navigate', params: { url: 'https://different.test/path' } })).ok, true);
+  assert.equal((await f.call('cdp', { lease: target, method: 'Page.navigate', params: { url: 'https://third.test/' } })).code, 'POLICY_DENIED');
+});
+
 test('native disconnect prevents old-token dispatch and does not reconnect', async () => {
   const f = await fixture();
   await f.call('lease.grant', { lease: f.lease });
@@ -447,14 +488,13 @@ test('mouse gate accepts one canonical wheel sample but rejects modifiers and bl
   for(const patch of [{modifiers:2},{deltaY:10001},{buttons:1},{type:'mouseMoved'},{deltaX:0,deltaY:0}]) {
     assert.equal((await send({...event,...patch})).code,'POLICY_DENIED');
   }
-  assert.equal(f.scripts.length,0);
+  assert.equal(f.tabMessages.length,0);
   assert.equal((await send(event)).ok,true);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.scripts.length,1);assert.equal(JSON.stringify(f.scripts[0].target),JSON.stringify({tabId:7}));assert.equal(f.scripts[0].world,'ISOLATED');
-  assert.equal(JSON.stringify(f.scripts[0].args),JSON.stringify([{x:20,y:30,phase:'wheel'}]));
+  assert.equal(JSON.stringify(f.tabMessages),JSON.stringify([{type:'dsh.pointer.v1',action:'show',x:20,y:30,phase:'wheel'}]));
   await f.ui('stop'); assert.equal((await send(event)).code,'LEASE_REVOKED');
-  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(f.scripts.length,2);
-  assert.equal(f.scripts[1].args,undefined);
+  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(f.tabMessages.length,2);
+  assert.equal(JSON.stringify(f.tabMessages[1]),JSON.stringify({type:'dsh.pointer.v1',action:'remove'}));
 });
 
 test('scroll document discovery only permits a shallow non-piercing root handle', async () => {

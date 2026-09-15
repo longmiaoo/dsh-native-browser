@@ -79,8 +79,12 @@ test('shared validator agrees with independent Ajv 2020 on wire and handshake mu
 });
 
 test('capability negotiation rejects unsupported requirements, tolerates optional advertisements', () => {
+  assert.ok(providerCapabilities.includes('lease.tab-scope.v1'));
+  assert.ok(clientRequirements.includes('runtime.personal-tab-scope.v1'));
   assert.equal(negotiateHello(client).role, 'client');
   assert.equal(negotiateHello({ ...provider, capabilities: [...providerCapabilities, 'future.optional.v1'] }).role, 'provider');
+  assert.throws(() => negotiateHello({ ...provider,
+    capabilities: providerCapabilities.filter(capability => capability !== 'lease.tab-scope.v1') }), { code: 'PROTOCOL_MISMATCH' });
   for (const value of [{ ...client, versions: [2] }, { ...client, requiredCapabilities: ['future.required.v1'] },
     { ...provider, capabilities: providerCapabilities.slice(1) }, { ...provider, capabilities: [...providerCapabilities, providerCapabilities[0]] }]) {
     assert.throws(() => negotiateHello(value), { code: 'PROTOCOL_MISMATCH' });

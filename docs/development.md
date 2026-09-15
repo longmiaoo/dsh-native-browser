@@ -239,6 +239,8 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
    With no allowed origins, the Broker denies page access. Origin ports matter. It does not auto-approve newly reached websites. Multiple `--allow-origin=` arguments are supported; this preview's list is fixed for the Broker lifetime.
 
+   For an explicitly opted-in personal profile, use `--access-mode=personal` instead of any `--allow-origin` argument. The modes are mutually exclusive. Personal mode lists only extension-consented tabs, but issues a tab-scoped lease that can be rebound to that same tab's current HTTP(S) root origin.
+
 4. In another terminal run `node scripts/dev-fixtures.mjs`, then open `http://127.0.0.1:18765/` in the selected Chrome profile. Open the extension popup and choose “允许当前标签页并连接”.
 5. Run `node bin/dsh-native-browser.mjs doctor --browser=chrome --extension-id=<id>`. It reports installation and connection checks with actionable findings, as described below. Use `status` separately if you deliberately want raw connected-instance details.
 6. Mount this local bundle in a dedicated DSH development profile using that DSH version's documented local-plugin mechanism. The plugin requires the `tools` service; `browser_screenshot` also requires `attachments`. Do not replace the user's production profile as part of a test.
@@ -247,7 +249,7 @@ All CLI commands accept `--runtime-dir=/absolute/private/directory`. When using 
 
 ### Approval modes
 
-The adapter defaults to `approvalMode: per-action`: claim, each ordinary action and each screenshot ask through DSH, while every batch step receives its own approval. `per-lease` asks once when a tab is claimed, then allows actions, screenshots and batch steps for that short-lived lease. The Broker, exact tab/origin lease, extension popup consent, expiry, turn ownership and Stop button remain enforced in every mode.
+The adapter defaults to `approvalMode: per-action`: claim, each ordinary action and each screenshot ask through DSH, while every batch step receives its own approval. `per-lease` asks once when a tab is claimed, then allows actions, screenshots and batch steps for that short-lived lease. The Broker, exact tab lease, extension popup consent, expiry and Stop button remain enforced in every mode; restricted modes additionally retain the exact root-origin boundary.
 
 `trusted` is the prompt-free development mode. It requires one or more exact origins; paths are normalized away, ports remain significant, and wildcards are rejected. Before and after claim, the adapter verifies that the selected tab is still on a configured origin. Keep this list narrow and match it to the Broker allowlist:
 
@@ -261,7 +263,25 @@ The adapter defaults to `approvalMode: per-action`: claim, each ordinary action 
 
 Do not use `trusted` as a global “all websites” switch. Changing DSH's general filesystem permission does not override this browser-specific policy; configure the adapter explicitly. For signed-in or consequential sites, start with `per-lease` or `per-action`.
 
-The Chrome extension also draws a short-lived virtual pointer after a verified click or wheel event is dispatched. It runs in an isolated world, is inert and accessibility-hidden, and does not add host permissions. The overlay is human feedback only: it cannot supply coordinates, influence target selection, grant authority or cause retries. Its separate `scripting` extension permission means an existing unpacked installation must be reloaded after upgrading.
+`personal` is the opt-in prompt-free mode for ordinary browsing in a personal Chrome profile. It requires the Broker to be started separately with `--access-mode=personal`, rejects `trustedOrigins`, follows only the same extension-consented tab across credential-free HTTP(S) root navigations, and keeps its short-lived lease across turns in the same DSH conversation. Switching the foreground conversation, disposing the Session, lease expiry, explicit handoff, disconnect or Stop still revokes it. A newly selected existing Chrome tab still needs its own popup consent.
+
+```yaml
+- id: native-browser
+  config:
+    approvalMode: personal
+```
+
+The alpha cannot reliably infer whether an arbitrary click submits a payment, publishes content or performs another irreversible business operation. Personal mode therefore does not implement the future sensitive-action confirmation layer and must not be used for those workflows.
+
+The Chrome extension also draws a short-lived virtual pointer after a verified click or wheel event is dispatched. It runs in an isolated world, is inert and accessibility-hidden. HTTP/HTTPS injection is declared as an optional host permission and requested from Chrome only when the user clicks the popup's tab-consent button; this lets the pointer survive cross-site navigation in personal mode. The overlay is human feedback only: it cannot supply coordinates, influence target selection, grant browser control or cause retries. An existing unpacked installation must be reloaded after upgrading, then the optional permission must be accepted once.
+
+### Foreground conversation handoff
+
+The package includes a DSH Web client module in `client.js`. It subscribes to the Session Controller's canonical `sessions.list.current` value rather than scraping the URL, sidebar or DOM. A visible DSH document reports only an opaque client ID, monotonic revision, timestamp and selected session ID over DSH Connection's existing RPC transport. The Host registers that route with `trusted-host` authority, bounds every field, rejects stale/out-of-order updates and retains at most 64 client revision entries. Browser leases, screenshots and page content never cross into this UI bridge.
+
+An accepted selection change synchronously aborts all browser scopes owned by other DSH sessions, revokes pending screenshot publication and starts asynchronous Broker cleanup. The selected conversation does not inherit a lease or wire owner; its next browser tool call creates a fresh owner and must claim the tab under the configured approval mode. In local `trusted` mode that reclaim is prompt-free only for an exact configured origin. In `personal` mode a lease may survive turn boundaries inside the same conversation, but foreground switching and `session/disposed` still revoke it; other modes also release on `turn/end`.
+
+Hidden DSH documents do not publish selection changes. Becoming visible or reconnecting reasserts the current selection, and per-page serialized revisions prevent an older queued selection from overtaking a newer one. If multiple DSH windows are simultaneously visible, the newest valid report wins. Switching conversations while a browser tool is running intentionally returns a lease-revoked/cancelled path to the old task; already-dispatched browser input cannot be undone.
 
 ### Read-only installation diagnosis
 
@@ -299,7 +319,7 @@ This implementation is for cooperative Brokers on local Unix filesystems; it is 
 
 The lease lasts up to two minutes in this preview. On expiry/release/disconnect, old commands cannot resume with the old token. The extension Stop button closes its local gate before contacting the Broker. Already-dispatched inputs cannot be undone.
 
-The DSH adapter binds each execution to its owning turn **before** waiting for approval. `turn/end` synchronously cancels that turn's pending approvals/connection work and in-flight operations, then releases its Broker owner. Each new turn gets a new opaque wire owner, so delayed cleanup from an earlier turn cannot release its successor. A screenshot already being stored locally may finish storage, but is not returned to an ended execution. This is not a claim that the plugin can override a malicious same-process plugin or undo already-dispatched browser input.
+The DSH adapter binds each execution to its owning turn **before** waiting for approval. `turn/end`, session disposal, and an accepted foreground-conversation change synchronously cancel the affected session's pending approvals/connection work and in-flight operations, then release its Broker owner. Each new turn gets a new opaque wire owner, so delayed cleanup from an earlier turn cannot release its successor. A screenshot already being stored locally may finish storage, but is not returned to an ended execution. This is not a claim that the plugin can override a malicious same-process plugin or undo already-dispatched browser input.
 
 A click or key press without a verifiable expected result returns `unknown`, not fabricated success. Fill supports visible text inputs/textarea and bounded contenteditable editing hosts as described below, not password entry, file inputs or arbitrary framework editors. `Input.insertText` has been checked with Chinese text; that is not the same as full IME-event support.
 
@@ -423,7 +443,7 @@ If page handlers steal focus, subsequent key/text input is rejected. Focusing or
 
 The real Chrome and real DSH/native fixtures verify trusted Enter form submission with deduplication, left/right caret motion, Tab/Shift+Tab focus, Space activation, and focus-stealing rejection for both press and fill. The full key table also has deterministic encoding/gate tests. This is not evidence that every key, keyboard layout, complex editor or IME works across every site/platform. The initial implementation still requires a visible, hittable control; it is not a global browser/OS shortcut API.
 
-For `navigate`, use a credential-free absolute HTTP(S) URL on the lease's exact origin. The result waits for the navigation's returned document loader (if any), document readiness and the expected result. Cross-origin navigation must not be attempted with this action; a redirected page outside scope is denied, though already-started navigation cannot be undone. All old-document node references become invalid. An unexpected timeout after dispatch returns `unknown`, so callers should observe the page instead of issuing a fresh duplicate action.
+For `navigate`, use a credential-free absolute HTTP(S) URL. Restricted leases require the exact current origin. A `scope=tab` lease issued only by the personal Broker may navigate the same consented tab to another HTTP(S) origin; the runtime then rebinds later operations to the tab's freshly observed root origin. The result waits for the returned document loader (if any), document readiness and the expected result. Redirects or navigation races outside the declared destination are denied, though already-started navigation cannot be undone. All old-document node references become invalid. An unexpected timeout after dispatch returns `unknown`, so callers should observe the page instead of issuing a fresh duplicate action.
 
 Observations include at most 120 controls plus 24 named regions (shared 40 KiB budget) and 240 AX text fragments (32 KiB budget). `truncated: true` means the observation is not complete. AX `StaticText` is reading content, not a complete rendered-page transcription. Only stale, read-only screenshots are retried within a deadline; policy failures are not retried.
 

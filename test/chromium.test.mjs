@@ -763,6 +763,26 @@ test('navigation rejects cross-origin and malformed URLs before dispatch', async
   assert.equal(f.state.dispatches, 0);
 });
 
+test('tab-scoped navigation crosses HTTP(S) origins and observes only the declared destination', async () => {
+  const f = fixture(), personal = { ...lease, scope: 'tab' };
+  const o = await f.provider.observe(personal, f.execution.signal);
+  const result = await f.provider.act(personal, request(o, { kind: 'navigate', url: 'https://different.test/path' }), f.execution);
+  assert.equal(result.postcondition, 'passed'); assert.equal(result.observation.url, 'https://different.test/path');
+  assert.equal(f.state.dispatches, 1);
+});
+
+test('tab-scoped navigation waits for Chrome tab metadata to reach the destination origin', async () => {
+  const f = fixture(), personal = { ...lease, scope: 'tab' };
+  const o = await f.provider.observe(personal, f.execution.signal);
+  f.state.onCommand = async (method, params) => {
+    if (method !== 'Page.navigate') return undefined;
+    setTimeout(() => { f.state.url = params.url; f.state.loader = 'loader-next'; f.pulse(); }, 5);
+    return { loaderId: 'loader-next' };
+  };
+  const result = await f.provider.act(personal, request(o, { kind: 'navigate', url: 'https://different.test/slow' }), f.execution);
+  assert.equal(result.postcondition, 'passed'); assert.equal(result.observation.url, 'https://different.test/slow');
+});
+
 test('navigation waits for returned loader and document readiness, not old matching text', async () => {
   const f = fixture(); const o = await f.provider.observe(lease, f.execution.signal);
   let navigating = false, checks = 0;

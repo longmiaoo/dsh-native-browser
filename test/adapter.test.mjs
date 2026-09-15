@@ -9,15 +9,22 @@ import { FakeProvider } from './helpers/fake-provider.mjs';
 import { createHash } from 'node:crypto';
 import Ajv from 'ajv';
 
-async function fixture(t, config = {}) {
+async function fixture(t, config = {}, brokerOptions = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
-  const broker = await startBroker({ directory, allowedOrigins: ['https://example.test'] });
+  const broker = await startBroker({ directory, allowedOrigins: brokerOptions.accessMode === 'personal' ? [] : ['https://example.test'], ...brokerOptions });
   const provider = new FakeProvider(); broker.runtime.register(provider);
   const definitions = new Map(), hooks = new Map(), effects = [], services = new Map();
+  let foregroundHandler;
+  services.set('connection', { rpc: { handle: (channel, handler, options) => {
+    assert.equal(channel, '/dsh-native-browser');
+    assert.deepEqual(options, { authority: 'trusted-host' });
+    foregroundHandler = handler;
+    return async () => { foregroundHandler = undefined; };
+  } } });
   const ctx = { tools: { register: tool => definitions.set(tool.name, tool) },
     on: (event, handler) => hooks.set(event, handler), effect: callback => effects.push(callback()), get: name => services.get(name) };
   apply(ctx, { runtimeDirectory: directory, ...config });
-  t.after(async () => { for (const dispose of effects) dispose(); await broker.close(); await rm(directory, { recursive: true }); });
+  t.after(async () => { for (const dispose of effects) await dispose(); await broker.close(); await rm(directory, { recursive: true }); });
   let count = 0;
   const prepare = (name, args, sessionId = 'session') => {
     const exec = { name, callId: `call-${++count}`, signal: AbortSignal.timeout(3000), agent: { session: { id: sessionId } } };
@@ -25,7 +32,9 @@ async function fixture(t, config = {}) {
     return { exec, decision, run: () => definitions.get(name).execute(args, exec) };
   };
   return { provider, broker, prepare, definitions, services,
+    foreground: (payload, signal = AbortSignal.timeout(3000)) => foregroundHandler('foreground', payload, signal),
     end: (id = 'session') => hooks.get('session/event')({ id }, { type: 'turn/end' }),
+    disposeSession: id => hooks.get('session/disposed')({ id }),
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
@@ -66,6 +75,45 @@ test('trusted mode rejects missing, wildcard and malformed origin configuration'
   assert.throws(() => apply(ctx, { approvalMode: 'trusted' }), { code: 'INVALID_REQUEST' });
   assert.throws(() => apply(ctx, { approvalMode: 'trusted', trustedOrigins: ['*'] }));
   assert.throws(() => apply(ctx, { approvalMode: 'everything', trustedOrigins: ['https://example.test'] }), { code: 'INVALID_REQUEST' });
+});
+test('personal mode is prompt-free, requires a personal Broker and retains control across turns', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const claim = f.prepare('browser_claim', claimArgs, 'chat-a'); assert.equal(claim.decision.kind, 'allow');
+  const lease = await claim.run(); assert.equal(lease.scope, 'tab');
+  f.end('chat-a');
+  assert.equal((await f.prepare('browser_observe', { leaseId: lease.id }, 'chat-a').run()).tab, 'tab-1');
+  f.provider.tab.url = 'https://different.test/next'; f.provider.epoch = 'doc-2';
+  assert.equal((await f.prepare('browser_observe', { leaseId: lease.id }, 'chat-a').run()).url, f.provider.tab.url);
+});
+test('personal adapter fails closed when the Broker is not in personal access mode', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' });
+  await assert.rejects(f.prepare('browser_claim', claimArgs).run(), { code: 'POLICY_DENIED' });
+  assert.equal(f.provider.grants.size, 0);
+});
+test('foreground conversation change revokes the old owner before the new session can claim', async t => {
+  const f = await fixture(t), first = await f.prepare('browser_claim', claimArgs, 'chat-a').run(), now = Date.now();
+  const keep = await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 1, issuedAt: now, sessionId: 'chat-a' });
+  assert.deepEqual(keep, { ok: true, value: { accepted: true, released: 0 } });
+  const moved = await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 2, issuedAt: now + 1, sessionId: 'chat-b' });
+  assert.deepEqual(moved, { ok: true, value: { accepted: true, released: 1 } });
+  await assert.rejects(f.prepare('browser_observe', { leaseId: first.id }, 'chat-a').run(), { code: 'LEASE_REVOKED' });
+  await until(() => f.provider.grants.size === 0);
+  const second = await f.prepare('browser_claim', claimArgs, 'chat-b').run();
+  assert.equal((await f.prepare('browser_observe', { leaseId: second.id }, 'chat-b').run()).tab, 'tab-1');
+});
+test('foreground bridge rejects malformed and stale updates without revoking the current owner', async t => {
+  const f = await fixture(t), lease = await f.prepare('browser_claim', claimArgs, 'chat-a').run(), now = Date.now();
+  const clientId = '22222222-2222-4222-8222-222222222222';
+  assert.equal((await f.foreground({ clientId, revision: 2, issuedAt: now + 2, sessionId: 'chat-a' })).value.accepted, true);
+  assert.equal((await f.foreground({ clientId, revision: 1, issuedAt: now + 1, sessionId: 'chat-b' })).value.accepted, false);
+  assert.equal((await f.foreground({ clientId: 'forged', revision: 3, issuedAt: now + 3, sessionId: 'chat-b' })).ok, false);
+  assert.equal((await f.foreground({ clientId: '22222222-2222-4222-8222-22222222222-', revision: 3, issuedAt: now + 3, sessionId: 'chat-b' })).ok, false);
+  assert.equal((await f.prepare('browser_observe', { leaseId: lease.id }, 'chat-a').run()).tab, 'tab-1');
+});
+test('disposing a DSH conversation releases all of its browser control', async t => {
+  const f = await fixture(t), lease = await f.prepare('browser_claim', claimArgs, 'chat-a').run();
+  f.disposeSession('chat-a'); await until(() => f.provider.grants.size === 0);
+  await assert.rejects(f.prepare('browser_observe', { leaseId: lease.id }, 'chat-a').run(), { code: 'LEASE_REVOKED' });
 });
 test('explicit frame click keeps public approval, exact scope schema and Broker deduplication',async t=>{
   const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),frame={frameId:'child',documentEpoch:'child-doc'};let calls=0;

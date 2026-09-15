@@ -25,7 +25,8 @@ test('exports a loadable development-preview Cordis plugin', () => {
     toolsRegistered: true,
   })
   const tools = []
-  assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {} }))
+  const connection = { rpc: { handle: () => () => {} } }
+  assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {}, get: name => name === 'connection' ? connection : undefined }))
   assert.equal(tools.length, 9)
 })
 

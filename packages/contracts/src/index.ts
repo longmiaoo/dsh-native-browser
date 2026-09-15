@@ -36,6 +36,8 @@ export interface Lease {
   instanceId: string;
   token: string;
   origin: string;
+  /** `tab` is an explicit personal-mode capability; omission means exact-origin. */
+  scope?: 'origin' | 'tab';
   expiresAt: number;
 }
 export interface NodeRef {

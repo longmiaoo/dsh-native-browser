@@ -13,6 +13,7 @@ import { frameSubtreeRequest, readFrameSubtree } from '../../provider-chromium/s
 import { framePageRequest, readFramePage } from '../../provider-chromium/src/frame-page.js';
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
+import { redactScreenshotJpeg } from './screenshot-redaction.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
@@ -301,16 +302,21 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
         // Root Page.getFrameTree omits attached OOPIFs. Inspect all sessions at
         // the last mile, including captures made before explicit frame discovery.
         const { graph, send } = await frameGraph(lease, signal);
-        const before = await graph.snapshot(signal);
-        if (before.truncated || before.frames.some(frame => frame.origin !== lease.origin))
-          throw new BrowserError('POLICY_DENIED', 'Screenshot frame authority is incomplete');
+        const plan = await graph.screenshotRedactionPlan(lease.origin, signal);
         const image = await send('', command, params, signal);
         const after = await graph.snapshot(signal);
-        if (after.truncated || after.frames.some(frame => frame.origin !== lease.origin))
-          throw new BrowserError('POLICY_DENIED', 'Screenshot contains an unapproved frame');
-        if (before.revision !== after.revision || JSON.stringify(before.frames) !== JSON.stringify(after.frames))
+        if (after.truncated || plan.revision !== after.revision || JSON.stringify(plan.frames) !== JSON.stringify(after.frames))
           throw new BrowserError('STALE_TARGET', 'Frame documents changed during capture');
-        return image;
+        const clip = params.clip as Record<string, unknown> | undefined;
+        if (plan.quads.length && (!clip || !['x', 'y', 'width', 'height'].every(key => typeof clip[key] === 'number'))) {
+          throw new BrowserError('INVALID_REQUEST', 'Secure screenshot redaction requires an explicit viewport clip');
+        }
+        const redactionClip = clip ? { x: clip.x as number, y: clip.y as number,
+          width: clip.width as number, height: clip.height as number } : { x: 0, y: 0, width: 1, height: 1 };
+        const redacted = await redactScreenshotJpeg(image.data, redactionClip, plan.quads,
+          typeof params.quality === 'number' ? params.quality : 70);
+        return { ...image, data: redacted.data,
+          redaction: { policy: 'cross-origin-frames', frames: plan.frameCount, regions: redacted.regions } };
       }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);

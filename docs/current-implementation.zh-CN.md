@@ -358,11 +358,12 @@ sequenceDiagram
 <code>browser_screenshot</code> 不是绕过权限的备用通道。当前实现会：
 
 1. 验证 lease 与当前 document；
-2. 读取 frame tree；只要截图中存在未经批准的跨域 frame 就拒绝；
-3. 读取 visual viewport；
+2. 读取完整 frame graph，定位包含跨域或 opaque descendant 的最上层 iframe；
+3. 读取这些 iframe 的 root-page 几何并读取 visual viewport；证据不完整时仍然拒绝；
 4. 通过 <code>Page.captureScreenshot</code> 采集 JPEG（quality 70、只截 viewport、宽度上限按 1200 缩放）；
-5. 再次验证 document、frame tree 和 viewport 没有变化；
-6. 限制传输体积，随后由 Adapter 的 ScreenshotRegistry 绑定 owner/lease 并发布附件。
+5. 再次验证 document、frame graph 和 viewport 没有变化；
+6. 在 MV3 Service Worker 内对可见未授权 frame 像素做保守矩形遮罩，再让图片跨过 Native Messaging；
+7. 限制传输体积并返回 <code>redaction</code> 证据，随后由 Adapter 的 ScreenshotRegistry 绑定 owner/lease 并发布附件。
 
 因此视觉模型负责“理解像素”，本插件负责“安全、稳定地得到与当前 tab/epoch 对得上的像素”。<code>dsh-vision-router</code> 可以作为上层视觉路由，但它不应该替代 ref、lease、postcondition 和 journal 这些控制语义。
 
@@ -422,7 +423,7 @@ flowchart TD
 - Extension 在最靠近 Chrome 的位置再次检查 Stop、lease、tab 和命令白名单；
 - AX/DOM/CDP 原始大对象不直接交给模型，只返回预算化投影；
 - cross-origin/opaque child frame 内容默认拒绝；
-- screenshot 对 frame tree 使用更严格的全同源策略；
+- screenshot 在 MV3 内遮罩包含跨域/opaque descendant 的最上层 iframe；拓扑或几何证据不完整时 fail closed；
 - 所有 wire 输入做严格 schema/长度/数值检查；
 - post-dispatch 不确定性不会被自动重放。
 
@@ -462,7 +463,7 @@ flowchart TD
 | <code>pnpm check && pnpm typecheck && pnpm test</code> | 513 passed / 0 failed | 静态边界、类型、单元与行为测试；包含前台会话桥接、乱序拒绝、切换撤权与 session dispose 回归 |
 | browser-lab Web 装载 | 通过 | 本地 link 产物已进入 DSH client module 清单；重启后可在真实 UI 中切换两条既有会话，完整“运行中 lease 被切换撤销”仍保留为人工验收项 |
 | <code>pnpm test:chrome</code> | 90 passed | Chrome Stable 152.0.7977.84，真实 Provider/CDP 语义 |
-| <code>pnpm test:extension</code> | 15 passed | Chrome for Testing 151.0.7922.10，真实 MV3 + chrome.debugger |
+| <code>pnpm test:extension</code> | 16 passed | Chrome for Testing 151.0.7922.10，真实 MV3 + chrome.debugger（含跨域 iframe 扩展内遮罩） |
 | <code>pnpm test:native &lt;dsh-path&gt;</code> | 105 passed | DSH ToolRuntime → Broker → Native Host → MV3 → 页面 |
 | <code>pnpm test:frame-page-native</code> | Chrome/Edge 均通过 | 各 7 组：4000 控件、81 窗口、尾页 trusted click、离窗反馈确认、失效与清理 |
 

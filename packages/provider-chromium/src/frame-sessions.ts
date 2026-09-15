@@ -7,6 +7,7 @@ type Context = { id: number; uniqueId?: string };
 type Session = { id: string; parent?: string; contexts: Map<string, Context> };
 export interface SourceFrame { frameId: string; parentId?: string; loaderId?: string; origin?: string;
   sessionId?: string; context?: Context }
+export interface ScreenshotRedactionPlan { revision: number; frames: SourceFrame[]; quads: Array<readonly [number, number, number, number, number, number, number, number]>; frameCount: number }
 export const frameSessionLimits = Object.freeze({ sessions: 32, frames: 256, depth: 32, contexts: 256, bytes: 128 * 1024 });
 const validId = (value: unknown): value is string => typeof value === 'string' && !!value && value.length <= 128;
 const autoAttach = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true,
@@ -111,6 +112,54 @@ export class FrameSessions {
     if (!['Accessibility.enable', 'Accessibility.getRootAXNode', 'Accessibility.getChildAXNodes'].includes(method))
       throw new BrowserError('POLICY_DENIED', 'Frame command is not a bounded AX read');
     const result = await this.command(sessionId, method, params, signal, check); check(); return result;
+  }
+  /** Compute root-page boxes that safely cover every foreign/opaque frame branch.
+   * Only direct root children are masked, so a foreign descendant cannot escape
+   * through transforms or an out-of-process intermediate frame. */
+  async screenshotRedactionPlan(origin: string, signal: AbortSignal): Promise<ScreenshotRedactionPlan> {
+    const before = await this.snapshot(signal);
+    if (before.truncated) throw new BrowserError('POLICY_DENIED', 'Screenshot frame authority is incomplete');
+    const roots = before.frames.filter(frame => frame.parentId === undefined);
+    if (roots.length !== 1 || roots[0]!.origin !== origin) throw new BrowserError('POLICY_DENIED', 'Screenshot root authority is unavailable');
+    const root = roots[0]!, byId = new Map(before.frames.map(frame => [frame.frameId, frame]));
+    const branches = new Set<string>();
+    for (const frame of before.frames) {
+      if (frame.frameId === root.frameId || frame.origin === origin) continue;
+      let current = frame, depth = 0;
+      while (current.parentId !== root.frameId) {
+        if (!current.parentId || ++depth > frameSessionLimits.depth) {
+          throw new BrowserError('POLICY_DENIED', 'Screenshot frame authority is incomplete');
+        }
+        const parent = byId.get(current.parentId);
+        if (!parent) throw new BrowserError('POLICY_DENIED', 'Screenshot frame authority is incomplete');
+        current = parent;
+      }
+      branches.add(current.frameId);
+    }
+    const quads: ScreenshotRedactionPlan['quads'] = [];
+    try {
+      for (const frameId of branches) {
+        const owner = await this.command('', 'DOM.getFrameOwner', { frameId }, signal);
+        if (!Number.isSafeInteger(owner.backendNodeId) || owner.backendNodeId <= 0) {
+          throw new BrowserError('POLICY_DENIED', 'Cross-origin frame owner is unavailable');
+        }
+        const box = await this.command('', 'DOM.getBoxModel', { backendNodeId: owner.backendNodeId }, signal);
+        const quad = box.model?.border;
+        if (!Array.isArray(quad) || quad.length !== 8 || quad.some((value: unknown) => typeof value !== 'number'
+          || !Number.isFinite(value) || Math.abs(value) > 1e7)) {
+          throw new BrowserError('POLICY_DENIED', 'Cross-origin frame geometry is unavailable');
+        }
+        quads.push(quad as unknown as ScreenshotRedactionPlan['quads'][number]);
+      }
+    } catch (error) {
+      if (error instanceof BrowserError) throw error;
+      throw new BrowserError('POLICY_DENIED', 'Cross-origin frame could not be safely redacted');
+    }
+    const after = await this.snapshot(signal);
+    if (after.revision !== before.revision || JSON.stringify(after.frames) !== JSON.stringify(before.frames)) {
+      throw new BrowserError('STALE_TARGET', 'Frame documents changed during screenshot redaction planning');
+    }
+    return { revision: before.revision, frames: before.frames, quads, frameCount: branches.size };
   }
   dispose() { this.controller.abort(new BrowserError('LEASE_REVOKED', 'Frame session control ended')); this.sessions.clear(); this.version++; }
   private check(signal: AbortSignal) { checkAbort(signal); checkAbort(this.controller.signal); if (this.failed) throw new BrowserError('STALE_TARGET', 'Frame graph failed closed'); }

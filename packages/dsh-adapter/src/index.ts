@@ -316,6 +316,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           bytes: canonical.data,
         });
         return { attachment, tab: shot.tab, documentEpoch: shot.documentEpoch, capturedAt: shot.capturedAt,
+          redaction: shot.redaction,
           viewport: screenshot.viewport, coordinateSpace: screenshot.coordinateSpace,
           imageToViewport: screenshot.imageToViewport, screenshot };
       } finally { captures.delete(capture); }

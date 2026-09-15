@@ -106,6 +106,9 @@ export interface Screenshot {
   mimeType: 'image/jpeg';
   data: string;
   viewport: { width: number; height: number; pageX: number; pageY: number };
+  /** Foreign/opaque frame branches are removed inside the browser extension
+   * before pixels cross Native Messaging. */
+  redaction: { policy: 'cross-origin-frames'; frames: number; regions: number };
 }
 export const elementStates = ['attached', 'detached', 'visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked'] as const;
 export type ElementState = typeof elementStates[number];

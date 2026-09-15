@@ -68,6 +68,13 @@ test('RPC correlates concurrent replies returned out of order', async t => {
   assert.deepEqual(a, { method: 'work', n: 1 }); assert.equal(b.n, 2);
 });
 
+test('RPC renders the remote typed error code instead of an opaque failure', async t => {
+  const { client, server } = pair(t);
+  server.handle(async () => { throw new BrowserError('POLICY_DENIED', 'must stay remote'); });
+  await assert.rejects(client.call('work', {}), error => error.code === 'POLICY_DENIED'
+    && error.message === 'Remote browser operation failed (POLICY_DENIED)' && !error.message.includes('must stay remote'));
+});
+
 test('RPC propagates cancellation to owned server work', async t => {
   const { client, server } = pair(t);
   let signal;

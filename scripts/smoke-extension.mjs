@@ -20,6 +20,12 @@ const html = await readFile(new URL('../test/fixtures/form.html', import.meta.ur
 const server = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(html); });
 server.listen(0, '127.0.0.1'); await once(server, 'listening');
 const origin = `http://127.0.0.1:${server.address().port}`;
+const foreignServer = http.createServer((_req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end('<!doctype html><body style="margin:0;background:#c00;color:#fff">foreign frame must be redacted</body>');
+});
+foreignServer.listen(0, '127.0.0.1'); await once(foreignServer, 'listening');
+const foreignOrigin = `http://127.0.0.1:${foreignServer.address().port}`;
 let context, runtime;
 try {
   const extensionPath = path.resolve(import.meta.dirname, '../dist/extension/chrome');
@@ -106,7 +112,25 @@ try {
   assert.equal((await act('mv3-click', { kind: 'click', ref: delayed.id, expected: { kind: 'text', text: '延迟保存成功' } })).outcome, 'succeeded');
   assert.equal(await page.evaluate(() => window.fixtureClicks.delayed), 1);
   assert.equal((await act('mv3-nav', { kind: 'navigate', url: `${origin}/next` })).outcome, 'succeeded');
+  const cleanScreenshot = await runtime.capture(owner, lease.id, signal); assert.ok(cleanScreenshot.data.length > 100);
+  assert.deepEqual(cleanScreenshot.redaction, { policy: 'cross-origin-frames', frames: 0, regions: 0 });
+  await page.evaluate(src => {
+    const frame = document.createElement('iframe'); frame.src = src; frame.title = 'foreign fixture';
+    frame.style.cssText = 'position:fixed;right:20px;top:20px;z-index:9999;width:240px;height:120px;border:4px solid red'; document.body.append(frame);
+  }, `${foreignOrigin}/frame`);
+  await page.locator('iframe[title="foreign fixture"]').contentFrame().locator('body').waitFor();
   const screenshot = await runtime.capture(owner, lease.id, signal); assert.ok(screenshot.data.length > 100);
+  assert.deepEqual(screenshot.redaction, { policy: 'cross-origin-frames', frames: 1, regions: 1 });
+  await mkdir('output/playwright', { recursive: true });
+  await writeFile('output/playwright/mv3-redacted.jpg', Buffer.from(screenshot.data, 'base64'));
+  await page.locator('iframe[title="foreign fixture"]').evaluate(element => element.remove());
+  let foreignDetached = false;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const inventory = await channel.call('frames.list', { lease }, signal);
+    if (inventory.frames.length === 1) { foreignDetached = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(foreignDetached, true, 'Foreign fixture detached before the same-origin frame geometry check');
   assert.ok(capturedEvents.some(e => e.event === 'page.changed'), 'Real debugger event reached the bridge');
   const frameGeometry=await verifyFrameGeometryExtension({page,worker,channel,lease,origin,signal});
   await popup.evaluate(() => document.querySelector('#stop').click());
@@ -128,7 +152,7 @@ try {
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
-      'Same-origin navigation', 'JPEG capture', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
+      'Same-origin navigation', 'JPEG capture', 'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
       ...frameGeometry.checks,'Popup Stop denies subsequent bound frame geometry'],
     scope: 'Real isolated Chrome MV3 extension and runtime; native port is a test bridge, not Native Messaging or DSH/model end-to-end' };
   await mkdir('output/playwright', { recursive: true });
@@ -138,6 +162,7 @@ try {
 } finally {
   await runtime?.dispose(); await context?.close();
   await new Promise(resolve => server.close(resolve));
+  await new Promise(resolve => foreignServer.close(resolve));
   // Only the profile created by this process, after the owned browser exits.
   await rm(profile, { recursive: true });
 }

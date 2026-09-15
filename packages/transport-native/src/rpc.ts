@@ -79,7 +79,7 @@ export class RpcPeer {
       if (!pending) return; // Late response after cancellation: never resurrect its caller.
       this.pending.delete(m.id); pending.cleanup();
       if (m.ok === true) pending.resolve(m.value);
-      else pending.reject(new BrowserError(m.code, 'Remote operation failed'));
+      else pending.reject(new BrowserError(m.code, `Remote browser operation failed (${m.code})`));
     } else if (m.type === 'cancel') {
       this.executing.get(m.id)?.abort(new BrowserError('CANCELLED', 'Peer cancelled operation'));
     } else if (m.type === 'request') {

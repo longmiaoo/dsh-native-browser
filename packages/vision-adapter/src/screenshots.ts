@@ -16,6 +16,7 @@ export interface ScreenshotRef {
   viewport: Screenshot['viewport'];
   coordinateSpace: 'host-canonical-image-pixels';
   imageToViewport: ImageToViewport;
+  redaction: Screenshot['redaction'];
 }
 type Entry = { owner: string; ref: ScreenshotRef };
 
@@ -34,12 +35,14 @@ export class ScreenshotRegistry {
   }
   register(owner: string, leaseId: string, shot: Screenshot, canonical: CanonicalImage): ScreenshotRef {
     this.prune(); validateSize(canonical);
-    const now = this.now(), viewport = shot.viewport;
+    const now = this.now(), viewport = shot.viewport, redaction = shot.redaction;
     if (!owner || !leaseId || !shot.tab || !shot.documentEpoch || !canonical.bytes.byteLength
       || canonical.bytes.byteLength > 20 * 1024 * 1024 || !Number.isFinite(shot.capturedAt)
       || shot.capturedAt > now + 1000 || shot.capturedAt + this.options.ttlMs <= now
       || ![viewport.width, viewport.height, viewport.pageX, viewport.pageY].every(Number.isFinite)
-      || viewport.width <= 0 || viewport.height <= 0 || viewport.pageX < 0 || viewport.pageY < 0) {
+      || viewport.width <= 0 || viewport.height <= 0 || viewport.pageX < 0 || viewport.pageY < 0
+      || !redaction || redaction.policy !== 'cross-origin-frames' || !Number.isSafeInteger(redaction.frames) || redaction.frames < 0
+      || !Number.isSafeInteger(redaction.regions) || redaction.regions < 0 || redaction.regions > redaction.frames) {
       throw new BrowserError('INVALID_REQUEST', 'Invalid or expired screenshot source');
     }
     const sha256 = createHash('sha256').update(canonical.bytes).digest('hex');
@@ -50,6 +53,7 @@ export class ScreenshotRegistry {
       leaseId, tab: shot.tab, documentEpoch: shot.documentEpoch, capturedAt: shot.capturedAt,
       expiresAt: Math.min(now + this.options.ttlMs, shot.capturedAt + this.options.ttlMs),
       imageSize: { width: canonical.width, height: canonical.height }, viewport: { ...viewport },
+      redaction: { ...redaction },
       coordinateSpace: 'host-canonical-image-pixels',
       imageToViewport: [viewport.width / canonical.width, 0, 0, viewport.height / canonical.height, 0, 0] };
     this.entries.set(ref.id, { owner, ref });

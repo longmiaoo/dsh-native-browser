@@ -308,7 +308,8 @@ test('turn/end during an in-flight provider grant cancels and does not leave con
 test('a screenshot finishing storage after turn/end is not returned to the old execution', async t => {
   const f = await fixture(t); const lease = await f.prepare('browser_claim', claimArgs).run();
   f.provider.capture = async () => ({ data: '/9j/', mimeType: 'image/jpeg', tab: 'tab-1', documentEpoch: 'doc-1',
-    capturedAt: Date.now(), viewport: { width: 100, height: 100, pageX: 0, pageY: 0 } });
+    capturedAt: Date.now(), viewport: { width: 100, height: 100, pageX: 0, pageY: 0 },
+    redaction: { policy: 'cross-origin-frames', frames: 0, regions: 0 } });
   let entered, finish;
   const storing = new Promise(resolve => { entered = resolve; });
   f.services.set('attachments', { saveImage: () => new Promise(resolve => { finish = resolve; entered(); }), readImage: async () => { throw new Error('Ended screenshot must not be read'); } });
@@ -328,7 +329,7 @@ test('handoff during Host image storage prevents late screenshot publication', a
   const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run();
   const data=Buffer.from('canonical fixture'),attachment={attachmentId:`sha256:${createHash('sha256').update(data).digest('hex')}`,width:100,height:100};
   f.provider.capture=async()=>({data:'/9j/',mimeType:'image/jpeg',tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),
-    viewport:{width:100,height:100,pageX:0,pageY:0}});
+    viewport:{width:100,height:100,pageX:0,pageY:0},redaction:{policy:'cross-origin-frames',frames:0,regions:0}});
   let entered,finish;const storing=new Promise(resolve=>{entered=resolve;});
   f.services.set('attachments',{saveImage:()=>new Promise(resolve=>{finish=resolve;entered();}),readImage:async()=>({data})});
   const pending=f.prepare('browser_screenshot',{leaseId:lease.id}).run();
@@ -339,7 +340,8 @@ test('handoff during Host image storage prevents late screenshot publication', a
 
 function captureStore(f,stage='save') {
   const data=Buffer.from('canonical fixture'),attachment={attachmentId:`sha256:${createHash('sha256').update(data).digest('hex')}`,width:100,height:100};
-  f.provider.capture=async()=>({data:'/9j/',mimeType:'image/jpeg',tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),viewport:{width:100,height:100,pageX:0,pageY:0}});
+  f.provider.capture=async()=>({data:'/9j/',mimeType:'image/jpeg',tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),
+    viewport:{width:100,height:100,pageX:0,pageY:0},redaction:{policy:'cross-origin-frames',frames:0,regions:0}});
   let enter,finish,readSignal;const entered=new Promise(resolve=>{enter=resolve;});
   f.services.set('attachments',{
     saveImage:async()=>{if(stage==='save')await new Promise(resolve=>{finish=resolve;enter();});return attachment;},

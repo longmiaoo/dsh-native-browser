@@ -57,7 +57,7 @@ function fixture() {
     if (cdp === 'DOM.scrollIntoViewIfNeeded') state.inViewport = true;
     if (cdp === 'Page.navigate') { state.url = p.url; state.loader = 'loader-next'; return { loaderId: state.loader }; }
     if (cdp === 'Page.getLayoutMetrics') return { cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 } };
-    if (cdp === 'Page.captureScreenshot') return { data: '/9j/' };
+    if (cdp === 'Page.captureScreenshot') return { data: '/9j/', redaction: { policy: 'cross-origin-frames', frames: 0, regions: 0 } };
     return {};
   } };
   const provider = new ChromiumProvider(instance, channel);
@@ -835,11 +835,20 @@ test('screenshot retries only stale captures and returns matching viewport metad
   assert.equal(f.state.dispatches, 0); assert.equal(f.listeners.size, 0);
 });
 
-test('screenshot never retries a cross-origin policy failure', async () => {
+test('screenshot never retries when the leased root document changes origin', async () => {
   const f = fixture(); f.state.url = 'https://elsewhere.test/';
   await assert.rejects(f.provider.capture(lease, f.execution.signal), e => e.code === 'POLICY_DENIED');
   assert.equal(f.state.commands.filter(m => m === 'Page.captureScreenshot').length, 0);
   assert.equal(f.listeners.size, 0);
+});
+
+test('screenshot rejects missing or inconsistent extension redaction evidence', async () => {
+  for (const redaction of [undefined, {policy:'other',frames:0,regions:0},
+    {policy:'cross-origin-frames',frames:0,regions:1}]) {
+    const f=fixture();f.state.onCommand=method=>method==='Page.captureScreenshot'?{data:'/9j/',redaction}:undefined;
+    await assert.rejects(f.provider.capture(lease,f.execution.signal),error=>error.code==='INVALID_REQUEST');
+    assert.equal(f.state.commands.filter(method=>method==='Page.captureScreenshot').length,1);
+  }
 });
 
 function scopedFixture() {

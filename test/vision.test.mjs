@@ -11,7 +11,8 @@ function fixture(options) {
   const bytes = Buffer.from('canonical Host bytes, not original browser JPEG');
   const image = { attachmentId: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, width: 800, height: 600, bytes };
   const shot = { tab: 'tab', documentEpoch: 'doc', capturedAt: now, mimeType: 'image/jpeg', data: Buffer.from('different original bytes').toString('base64'),
-    viewport: { width: 1200, height: 900, pageX: 0, pageY: 2000 } };
+    viewport: { width: 1200, height: 900, pageX: 0, pageY: 2000 },
+    redaction: { policy: 'cross-origin-frames', frames: 0, regions: 0 } };
   const add = (owner = 'turn-a', lease = 'lease-a') => registry.register(owner, lease, shot, image);
   return { registry, image, shot, add, advance: delta => { now += delta; } };
 }
@@ -21,6 +22,7 @@ test('canonical Host bytes determine screenshot hash and dimensions', () => {
   assert.equal(ref.sha256, createHash('sha256').update(f.image.bytes).digest('hex'));
   assert.notEqual(ref.sha256, createHash('sha256').update(Buffer.from(f.shot.data, 'base64')).digest('hex'));
   assert.equal(ref.attachmentId, f.image.attachmentId);
+  assert.deepEqual(ref.redaction, { policy: 'cross-origin-frames', frames: 0, regions: 0 });
   assert.deepEqual(ref.imageToViewport, [1.5, 0, 0, 1.5, 0, 0]);
 });
 
@@ -33,11 +35,12 @@ test('screenshot identity never grants another turn access, even for identical c
 });
 
 test('stored screenshot metadata is not mutable by the caller', () => {
-  const f = fixture(), ref = f.add(); ref.viewport.pageY = 99; ref.imageSize.width = 1; ref.imageToViewport[0] = 99;
+  const f = fixture(), ref = f.add(); ref.viewport.pageY = 99; ref.imageSize.width = 1; ref.imageToViewport[0] = 99; ref.redaction.frames = 99;
   f.shot.viewport.width = 9000; f.image.width = 2;
   const stored = f.registry.get('turn-a', ref.id);
   assert.equal(stored.viewport.width, 1200); assert.equal(stored.viewport.pageY, 2000);
   assert.equal(stored.imageSize.width, 800); assert.equal(stored.imageToViewport[0], 1.5);
+  assert.equal(stored.redaction.frames, 0);
 });
 
 test('TTL, capacity, lease handoff and turn end revoke only the intended references', () => {
@@ -55,6 +58,9 @@ test('registry rejects forged content identity and invalid source metadata', () 
   assert.throws(() => f.registry.register('turn-a', 'lease', f.shot, { ...f.image, attachmentId: `sha256:${'0'.repeat(64)}` }), e => e.code === 'INVALID_REQUEST');
   assert.throws(() => f.registry.register('turn-a', 'lease', f.shot, { ...f.image, width: 0 }), e => e.code === 'INVALID_REQUEST');
   assert.throws(() => f.registry.register('turn-a', 'lease', { ...f.shot, capturedAt: 999999 }, f.image));
+  assert.throws(() => f.registry.register('turn-a', 'lease', { ...f.shot, redaction: undefined }, f.image));
+  assert.throws(() => f.registry.register('turn-a', 'lease', { ...f.shot,
+    redaction: { policy: 'cross-origin-frames', frames: 0, regions: 1 } }, f.image));
   assert.throws(() => new ScreenshotRegistry({ maxEntries: 0, ttlMs: 100 }));
 });
 

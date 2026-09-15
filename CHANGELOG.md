@@ -2,6 +2,12 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Redact visible foreign/opaque iframe branches inside the Chrome extension before screenshot bytes cross Native Messaging, instead of rejecting an otherwise usable viewport.
+- Return bounded redaction evidence with screenshots and include the typed remote error code in user-visible transport failures.
+- Exercise the redaction path against a real cross-origin iframe in the isolated MV3 Chrome smoke.
+
 ## 0.1.0-alpha.2 - 2026-09-15
 
 - Publish releases through a tag-bound GitHub Actions workflow and npm Trusted Publishing instead of a long-lived write token.

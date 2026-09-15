@@ -303,12 +303,6 @@ export class ChromiumProvider implements BrowserProvider {
 
   private async captureOnce(lease: Lease, signal: AbortSignal): Promise<Screenshot> {
     const before = await this.document(lease, signal);
-    const tree = await this.cdp(lease, 'Page.getFrameTree', {}, signal);
-    const checkFrames = (item: Dict): void => {
-      if (originOf(item.frame?.url ?? '') !== lease.origin) throw new BrowserError('POLICY_DENIED', 'Screenshot contains an unapproved frame');
-      for (const child of item.childFrames ?? []) checkFrames(child);
-    };
-    checkFrames(tree.frameTree);
     const metrics = await this.cdp(lease, 'Page.getLayoutMetrics', {}, signal);
     const v = metrics.cssVisualViewport;
     if (!v || v.clientWidth < 1 || v.clientHeight < 1) throw new BrowserError('NOT_ACTIONABLE', 'Viewport unavailable');
@@ -318,12 +312,17 @@ export class ChromiumProvider implements BrowserProvider {
         scale: Math.min(1, 1200 / v.clientWidth) } }, signal);
     if (typeof image.data !== 'string' || image.data.length > 800_000) throw new BrowserError('QUEUE_FULL', 'Screenshot exceeds preview transport budget');
     const after = await this.document(lease, signal);
-    checkFrames((await this.cdp(lease, 'Page.getFrameTree', {}, signal)).frameTree);
     const afterViewport = (await this.cdp(lease, 'Page.getLayoutMetrics', {}, signal)).cssVisualViewport;
     if (before.state.epoch !== after.state.epoch || JSON.stringify(v) !== JSON.stringify(afterViewport)) {
       throw new BrowserError('STALE_TARGET', 'Viewport changed during capture');
     }
-    return { tab: lease.tab, documentEpoch: after.state.epoch, capturedAt: Date.now(), mimeType: 'image/jpeg', data: image.data, viewport };
+    const redaction = image.redaction;
+    if (!redaction || redaction.policy !== 'cross-origin-frames' || !Number.isSafeInteger(redaction.frames) || redaction.frames < 0
+      || !Number.isSafeInteger(redaction.regions) || redaction.regions < 0 || redaction.regions > redaction.frames) {
+      throw new BrowserError('INVALID_REQUEST', 'Screenshot redaction evidence is invalid');
+    }
+    return { tab: lease.tab, documentEpoch: after.state.epoch, capturedAt: Date.now(), mimeType: 'image/jpeg', data: image.data,
+      viewport, redaction: { policy: 'cross-origin-frames', frames: redaction.frames, regions: redaction.regions } };
   }
 
   private async geometry(lease: Lease, objectId: string, signal: AbortSignal, point?: { x: number; y: number }): Promise<Dict> {

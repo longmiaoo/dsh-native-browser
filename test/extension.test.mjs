@@ -8,6 +8,7 @@ import { wheelEvent } from '../dist/packages/provider-chromium/src/mouse.js';
 import { brokerCapabilities, personalBrokerCapability } from '../dist/packages/contracts/src/wire.js';
 import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetricsFunction } from '../dist/packages/provider-chromium/src/frame-geometry-functions.js';
 import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
+import { screenshotRedactionRects } from '../dist/packages/extension-core/src/screenshot-redaction.js';
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
@@ -20,7 +21,7 @@ test('built extension declares presentation scripting on HTTP(S) pages for the c
 });
 
 async function fixture({ handshake = true, timers = { setTimeout, clearTimeout } } = {}) {
-  const responses = new Map(), sent = [], commands = [], scripts = [], tabMessages = [];
+  const responses = new Map(), sent = [], commands = [], scripts = [], tabMessages = [], redactions = [];
   const tab = { id: 7, url: 'https://example.test/form', title: 'Fixture' };
   const ports = [];
   const makePort = () => {
@@ -36,8 +37,15 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     debugger: { attach: async () => {}, detach: async source => { chrome.debugger.onDetach.emit(source); },
       sendCommand: async (_target, method, params) => { commands.push({ method, params }); return {}; }, onDetach: event(), onEvent: event() } };
-  vm.runInNewContext(source, { chrome, crypto: webcrypto, navigator: { userAgent: 'Chrome fixture' },
-    URL, TextEncoder, AbortController, AbortSignal, structuredClone, ...timers, console });
+  class FixtureCanvas {
+    constructor(width, height) { this.width = width; this.height = height; }
+    getContext() { return { drawImage() {}, set fillStyle(_value) {}, fillRect(...values) { redactions.push(values); } }; }
+    async convertToBlob() { return new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }); }
+  }
+  const createImageBitmap = async () => ({ width: 100, height: 100, close() {} });
+  vm.runInNewContext(source, { chrome, crypto: webcrypto, navigator: { userAgent: 'Chrome fixture' }, Blob,
+    OffscreenCanvas: FixtureCanvas, createImageBitmap, atob, btoa, URL, TextEncoder, AbortController, AbortSignal,
+    structuredClone, ...timers, console });
   const ui = command => new Promise(resolve => chrome.runtime.onMessage.listeners[0]({ command },
     { id: chrome.runtime.id, url: chrome.runtime.getURL('popup.html') }, resolve));
   await ui('allow');
@@ -54,7 +62,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     const id = `r-${++counter}`; responses.set(id, resolve);
     ports.at(-1).onMessage.emit({ type: 'request', id, method, params });
   });
-  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, tab, sent };
+  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, redactions, tab, sent };
 }
 
 test('personal Broker handshake discovers ordinary tabs and grants tab leases without popup consent', async () => {
@@ -116,16 +124,42 @@ test('partial frame initialization failure revokes the gate and detaches without
   assert.equal((await f.call('frames.list',{lease:f.lease})).code,'LEASE_REVOKED');await f.ui('stop');
 });
 
-test('screenshot last-mile gate discovers hidden OOPIFs even before an explicit inventory', async () => {
+test('screenshot last-mile gate discovers and redacts hidden OOPIFs before pixels leave the extension', async () => {
   const f=await fixture();await f.call('lease.grant',{lease:f.lease});let captures=0;
   f.chrome.debugger.sendCommand=async(target,method)=>{
     if(method==='Target.setAutoAttach'&&!target.sessionId)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
       {sessionId:'remote',targetInfo:{type:'iframe'}});
     if(method==='Page.getFrameTree')return {frameTree:{frame:{id:target.sessionId?'child':'root',
       ...(target.sessionId?{parentId:'root'}:{}),loaderId:'loader',url:target.sessionId?'https://foreign.test/private':f.tab.url}}};
-    if(method==='Page.captureScreenshot'){captures++;return {data:'must-not-return'};}return {};
+    if(method==='DOM.getFrameOwner')return {backendNodeId:11};
+    if(method==='DOM.getBoxModel')return {model:{border:[10,20,50,20,50,60,10,60]}};
+    if(method==='Page.captureScreenshot'){captures++;return {data:btoa('raw-jpeg')};}return {};
   };
-  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg'}});
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg',quality:70,
+    clip:{x:0,y:0,width:100,height:100,scale:1}}});
+  assert.equal(response.ok,true);assert.equal(captures,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(response.value.redaction)),{policy:'cross-origin-frames',frames:1,regions:1});
+  assert.deepEqual(f.redactions,[[8,18,44,44]]);assert.notEqual(response.value.data,btoa('raw-jpeg'));await f.ui('stop');
+});
+
+test('screenshot redaction maps page quads through viewport clips and safely clips offscreen frames', () => {
+  assert.deepEqual(screenshotRedactionRects([
+    [110,220,150,220,150,260,110,260],
+    [-100,-100,-10,-100,-10,-10,-100,-10],
+  ], {x:100,y:200,width:200,height:100}, {width:100,height:100}), [{x:3,y:18,width:24,height:44}]);
+});
+
+test('screenshot fails closed when a child frame graph cannot be initialized completely', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let captures=0;
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Target.setAutoAttach'&&!target.sessionId)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
+      {sessionId:'broken-child',targetInfo:{type:'iframe'}});
+    if(target.sessionId==='broken-child'&&method==='Page.enable')throw new Error('child setup failed');
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'root-doc',url:f.tab.url}}};
+    if(method==='Page.captureScreenshot'){captures++;return {data:btoa('must-not-return')};}return {};
+  };
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg',quality:70,
+    clip:{x:0,y:0,width:100,height:100,scale:1}}});
   assert.equal(response.code,'POLICY_DENIED');assert.equal(captures,0);await f.ui('stop');
 });
 test('frame churn during screenshot discards pixels even when final tree looks unchanged', async () => {

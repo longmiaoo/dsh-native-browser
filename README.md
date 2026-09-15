@@ -1,12 +1,14 @@
 # dsh-native-browser
 
-> Chrome-first browser runtime for DeepSeek Harness, designed for fast, observable, human-steerable agent browsing.
+> DSH-native control plane for fast, observable and human-steerable browsing in the Chrome you already use.
 
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#project-status)
 [![Chrome first](https://img.shields.io/badge/browser-Chrome-4285F4?logo=googlechrome&logoColor=white)](#scope)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-`dsh-native-browser` aims to let DSH agents operate the Chrome you already use: existing tabs, signed-in sessions and normal extensions, with low-latency semantic observation, reliable actions, visible handoff and safe interruption.
+`dsh-native-browser` lets DSH agents operate the Chrome you already use: existing tabs, signed-in sessions and normal extensions, with low-latency semantic observation, reliable actions, visible handoff and safe interruption.
+
+This project is not trying to become another general-purpose Chrome MCP server. Google's official [Chrome DevTools for agents](https://github.com/ChromeDevTools/chrome-devtools-mcp) is the natural upstream capability layer for DevTools inspection, network analysis, performance traces, Lighthouse, CSS and memory debugging. `dsh-native-browser` focuses on the product layer that a generic MCP server does not own: DSH conversation identity, exact tab ownership, short-lived leases, approval policy, action-result semantics, visible agent presence and immediate human takeover.
 
 The target is not another thin `click(x, y)` wrapper. The design is a stateful browser runtime inspired by the strongest parts of Codex's Chrome integration:
 
@@ -19,6 +21,23 @@ The target is not another thin `click(x, y)` wrapper. The design is a stateful b
 - immediate human interruption and resumable handoff;
 - a presentation-only virtual pointer and click/wheel pulse after verified browser input;
 - screenshots as a visual fallback, not the default source of page structure.
+
+## Positioning
+
+The long-term direction is **DSH-native orchestration with first-party Chrome capabilities where they fit**, not a fork of Chrome DevTools.
+
+| Concern | Chrome DevTools for agents | `dsh-native-browser` |
+|---|---|---|
+| Primary job | General MCP/CLI access to Chrome DevTools | DSH-native personal-browser control and human-agent UX |
+| Browser state | Managed profile, debugging endpoint or Chrome auto-connect | Explicitly claimed tabs in the user's existing profile |
+| Observation | Accessibility snapshot with reusable UIDs | Bounded AX windows, document epochs, scoped refs and incremental observations |
+| Action result | Browser input dispatch plus bounded navigation/DOM settling | Pre-dispatch hit validation, persistent action journal and verified/unknown outcome semantics |
+| Ownership | Selected page or explicit page ID | DSH owner, tab lease, conversation-focus revocation and handoff |
+| Human visibility | Headed browser; visual cursor is not currently built in | Presentation-only virtual pointer, click/wheel pulse and extension Stop control |
+| Deep debugging | Network, console, CSS, Lighthouse, trace and heap tooling | Planned through an optional official DevTools provider instead of reimplementation |
+| Browser scope | Official support for Chrome and Chrome for Testing | Chrome first, with portable contracts and early Edge compatibility gates |
+
+The current alpha ships only the native Chromium path. An adapter for `chrome-devtools-mcp` is a planned provider, not an implemented feature. It must pass attachment-conflict, lifecycle, privacy and latency gates before it can share or replace any part of an active browser session. See the upstream discussions on [visual cursor support](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2401) and [silent input false positives](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2199) for two examples of why the DSH control plane remains useful.
 
 ## Project status
 
@@ -54,16 +73,27 @@ flowchart LR
     W[Visible DSH conversation] -->|opaque session ID| T
     A[DSH agent] --> T[Browser tool adapter]
     T --> R[Persistent browser runtime]
-    R --> H[Local native host]
+    R --> G[Ownership / policy / journal]
+    G --> P{Capability router}
+
+    P -->|current default| N[Native Chromium provider]
+    N --> H[Local native host]
     H <--> E[Chrome MV3 extension]
-    E <--> C[Chrome tabs via chrome.debugger / CDP]
-    C --> O[AX tree + DOM + screenshot observations]
+    E <--> C[Claimed Chrome tabs via chrome.debugger / CDP]
+
+    P -.->|planned optional route| D[Chrome DevTools MCP adapter]
+    D -.-> M[Official DevTools MCP sidecar]
+    M -.-> X[Managed or explicitly connected Chrome]
+
+    C --> O[AX / DOM / screenshot observations]
     O --> R
     U[Human using Chrome] <--> C
     U -. interrupt / handoff .-> R
 ```
 
-The runtime keeps live browser objects and event subscriptions out of the model context. The model receives compact, typed observations and stable references; the runtime performs freshness, visibility, stability and hit-target checks immediately before actions.
+The runtime keeps live browser objects and event subscriptions out of the model context. The model receives compact, typed observations and stable references; the runtime performs freshness, visibility, stability and hit-target checks immediately before actions. The capability router will expose a small DSH-facing surface and choose an eligible provider internally, so adding DevTools or future Edge/Firefox providers does not flood the model with dozens of vendor-specific tools.
+
+The planned DevTools adapter is complementary: routine browsing, leases, virtual pointer and human handoff remain on the native control path; specialized debugging can delegate to the official implementation. The router will not assume that two providers can attach to the same target concurrently.
 
 The current design is the [v2 runtime implementation plan](docs/plans/browser-runtime-plan-v2.zh-CN.md), including [Vision Router integration](docs/plans/vision-router-integration.zh-CN.md). Earlier [architecture](docs/architecture.md), [research](docs/research/codex-chrome-browser-architecture.md) and [protocol](docs/protocol.md) documents are historical inputs; they do not override the v2 plan or describe all current implementation details.
 
@@ -130,6 +160,19 @@ pnpm pack
 Only the explicitly versioned alpha is recommended for testing. Do not use it for payments, destructive business actions, password entry, or unattended operation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Security-sensitive findings should follow [SECURITY.md](SECURITY.md), not a public issue.
+
+## Acknowledgements
+
+This project is informed by excellent work across the browser-agent ecosystem:
+
+- [Chrome DevTools for agents](https://github.com/ChromeDevTools/chrome-devtools-mcp), maintained by Google ChromeDevTools, demonstrates how a standards-based MCP surface can make Chrome automation, debugging and performance analysis broadly available. Its DevTools capabilities are the preferred future integration path where they fit.
+- [OpenAI Codex](https://openai.com/codex/) inspired the product target of a browser that feels continuous, visible and easy to hand back to the human. `dsh-native-browser` is an independent implementation based on public behavior and documentation; it is not affiliated with or endorsed by OpenAI.
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) provides the plugin, profile, tool and approval model this package is built for.
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/), Chromium Accessibility and the Chrome Extensions platform provide the browser primitives behind the native provider.
+- [Puppeteer](https://github.com/puppeteer/puppeteer) and [Playwright](https://github.com/microsoft/playwright) provide valuable reference implementations for resilient browser lifecycle, locators, actionability and testing.
+- [dsh-vision-router](https://github.com/ysr666/dsh-vision-router) helped shape the optional visual fallback boundary: screenshots and vision complement semantic observation instead of replacing it.
+
+Names and trademarks belong to their respective owners. Acknowledgement does not imply sponsorship or endorsement. Third-party source incorporated in the future will retain its required license and notice information.
 
 ## Design principles
 

@@ -64,7 +64,7 @@ The early Edge compatibility smoke also passes in an isolated Edge profile with 
 
 ## Scope
 
-Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. See [frame discovery](docs/development.md#frame-discovery-foundation).
+Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. This redaction is present on `main` but was added after the currently published `0.1.0-alpha.2` package. See [frame discovery](docs/development.md#frame-discovery-foundation).
 
 In scope for the first production release:
 
@@ -159,6 +159,64 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
 The Broker and adapter settings must both be present or the claim fails closed. The extension negotiates the Broker's explicit personal-mode capability at startup and then exposes ordinary HTTP(S) tabs without a popup click; a claim still selects one tab and every operation remains fenced by its short tab-scoped lease. The development manifest declares HTTP(S) host access, which Chrome presents when the extension is installed, so personal mode and the virtual pointer remain available after cross-site navigation. Foreground-conversation switching, lease expiry, handoff, disconnect and the extension Stop button revoke control. This alpha has no reliable semantic classifier for payments, publishing or destructive actions, so do not use personal mode for those workflows.
 
 When the visible DSH UI changes conversations, the client bridge releases browser scopes owned by other conversations before the newly selected conversation can claim control. A new conversation never inherits the previous lease. Switching away therefore intentionally interrupts an in-flight browser task instead of letting a background chat keep driving Chrome.
+
+## Use the current alpha
+
+The currently published npm version is `0.1.0-alpha.2`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+
+### Start a browsing session
+
+1. Make sure the unpacked extension and Native Messaging host were installed as described above. After upgrading the npm package, reload the unpacked extension on `chrome://extensions`; the extension files are served from the installed package version and are not updated inside an already running Chrome extension automatically.
+2. Start one Broker in a terminal and leave it running. For ordinary personal browsing:
+
+   ```bash
+   dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
+   ```
+
+   The matching `native-browser` row in the DSH profile patch must use:
+
+   ```yaml
+   - id: native-browser
+     config:
+       approvalMode: personal
+   ```
+
+   Restart that DSH profile after changing the patch. To retain explicit per-action or per-lease approval instead, start the Broker with exact `--allow-origin=` entries and use the corresponding adapter approval mode described above. Do not run restricted and personal Brokers against the same runtime directory.
+3. Open the tab you want to use in Chrome. When Chrome or the extension asks for site access, grant it only to the intended tab/site. The extension popup is also the emergency Stop control.
+4. Talk to DSH normally. The agent discovers the `browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
+
+Safe prompts for a first run:
+
+```text
+列出我当前 Chrome 中可用的标签页，只汇报，不做任何操作。
+接管标题为“Example Domain”的标签页，读取页面内容，然后释放浏览器控制。
+在我指定的标签页中填写这个测试表单，提交前先停下来让我确认。
+```
+
+For a longer task, identify the target tab clearly and state the stopping condition. DSH will claim that tab, observe its semantic page state, perform supported actions and release it with `browser_handoff` when asked. A claim is exclusive: another DSH conversation cannot reuse it. Switching the visible DSH conversation intentionally revokes the previous conversation's browser control, so ask the newly selected conversation to claim the tab again.
+
+### What this version can do
+
+- list connected Chrome instances and eligible existing tabs;
+- claim one tab and read bounded accessible text, controls and named regions;
+- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll and send a verified wheel event;
+- run a bounded batch of up to eight explicit actions, stopping on denial, uncertainty or failed verification;
+- page through large semantic documents and read supported same-origin child frames;
+- capture the current viewport as a DSH attachment and release control back to the user;
+- show a short-lived virtual pointer after a verified click or wheel dispatch.
+
+The normal fast path is semantic observation rather than screenshots. This plugin publishes screenshot attachments but does not itself run a vision model; visual grounding requires a vision-capable DSH session and a separately configured tool such as `dsh-vision-router`. The published `0.1.0-alpha.2` package can fail closed on ordinary pages containing cross-origin or opaque frames. Current `main` redacts safely located foreign frame regions instead, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
+
+### Check the installation
+
+Use the extension ID shown by `chrome://extensions`:
+
+```bash
+dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome --extension-id=<extension-id>
+dsh plugin --profile web exec dsh-native-browser status
+```
+
+`doctor` reporting `ready` proves that local registration, the Broker protocol and a matching connected extension are healthy; it does not grant a tab lease or prove that an arbitrary site is supported. If DSH lists no tab, check the running Broker mode, extension/site consent and that the DSH adapter uses the matching approval mode. A generic `Remote operation failed` during screenshot capture can currently mean that the cross-origin frame policy rejected the image; read/observe the page instead and inspect the DSH trace before retrying.
 
 ## Development
 

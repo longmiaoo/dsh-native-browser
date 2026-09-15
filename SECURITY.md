@@ -8,6 +8,8 @@ Until a private GitHub security-advisory channel is enabled, contact the maintai
 
 Public issues are appropriate for non-sensitive reliability defects after removing personal data and credentials.
 
+The release threat model, trust boundaries and residual risks are documented in [docs/security-model.md](docs/security-model.md). This alpha must not be used for payments, destructive business actions, password entry or unattended operation.
+
 ## Security boundaries
 
 The intended design follows these boundaries:
@@ -22,4 +24,4 @@ The intended design follows these boundaries:
 - a human stop or direct interaction cancels active automation immediately;
 - uninstall removes native-host registration and local credentials.
 
-The detailed threat model will be completed before the first executable Chrome extension release.
+The public alpha keeps the conservative defaults above. Any future relaxation of origin, approval, native-host or action-verification boundaries requires a security review and new compatibility evidence.

@@ -14,7 +14,7 @@ for (const brand of ['chrome', 'edge']) {
   await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ manifest_version: 3,
     name: 'DSH Native Browser (Developer Preview)', version: '0.1.0', minimum_chrome_version: '125',
     description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
-    permissions: ['debugger', 'nativeMessaging', 'activeTab'],
+    permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting'],
     background: { service_worker: 'background.js', type: 'module' },
     action: { default_popup: 'popup.html' } }, null, 2) + '\n');
 }

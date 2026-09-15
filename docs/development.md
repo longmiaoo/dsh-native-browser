@@ -245,6 +245,24 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
 All CLI commands accept `--runtime-dir=/absolute/private/directory`. When using a nondefault directory, the DSH plugin config must set `runtimeDirectory` to the same path. Directory permissions must be `0700`; the token, lock database and newly bound socket are `0600`. Startup now recovers an eligible stale socket while holding process-lifetime ownership, as described below. Do not manually remove the lock database or recovery journal to bypass a startup failure.
 
+### Approval modes
+
+The adapter defaults to `approvalMode: per-action`: claim, each ordinary action and each screenshot ask through DSH, while every batch step receives its own approval. `per-lease` asks once when a tab is claimed, then allows actions, screenshots and batch steps for that short-lived lease. The Broker, exact tab/origin lease, extension popup consent, expiry, turn ownership and Stop button remain enforced in every mode.
+
+`trusted` is the prompt-free development mode. It requires one or more exact origins; paths are normalized away, ports remain significant, and wildcards are rejected. Before and after claim, the adapter verifies that the selected tab is still on a configured origin. Keep this list narrow and match it to the Broker allowlist:
+
+```yaml
+- id: native-browser
+  config:
+    approvalMode: trusted
+    trustedOrigins:
+      - http://127.0.0.1:18765
+```
+
+Do not use `trusted` as a global “all websites” switch. Changing DSH's general filesystem permission does not override this browser-specific policy; configure the adapter explicitly. For signed-in or consequential sites, start with `per-lease` or `per-action`.
+
+The Chrome extension also draws a short-lived virtual pointer after a verified click or wheel event is dispatched. It runs in an isolated world, is inert and accessibility-hidden, and does not add host permissions. The overlay is human feedback only: it cannot supply coordinates, influence target selection, grant authority or cause retries. Its separate `scripting` extension permission means an existing unpacked installation must be reloaded after upgrading.
+
 ### Read-only installation diagnosis
 
 `doctor --browser=chrome|edge --extension-id=<id>` returns versioned JSON containing `status`, individual `checks`, and connection counts. `ready` means the inspected local registration/paths and protocol check passed with a matching browser connected; it does **not** prove a tab lease, site permission, working DSH/model integration, or visual understanding. `attention` covers missing extension-ID evidence or no matching browser; `failed` covers installation, security or connection errors. Both non-ready states exit with code 1; ready exits with code 0.
@@ -270,13 +288,13 @@ This implementation is for cooperative Brokers on local Unix filesystems; it is 
 | Tool | Current behavior |
 |---|---|
 | `browser_list` | List instances, or explicitly allowed tabs for an instance |
-| `browser_claim` | Request a short-lived exclusive tab lease; DSH approval required |
+| `browser_claim` | Request a short-lived exclusive tab lease; approval follows `approvalMode` |
 | `browser_observe` | AX text/controls/named regions; optional `query` for exact name/role search, `rootRef` for a contextual subtree, and per-consumer cursor for deltas/resync |
 | `browser_read_page` | Explicit bounded live traversal windows of the document or a known root; single-use, lease/document/scope-bound continuation; separate from snapshot/delta cursors |
 | `browser_frames` | Bounded frame/document/origin metadata with opaque handles; discovery never grants child AX, input or screenshot permission |
-| `browser_act` | Click/fill/append/check, press a named page key, scroll an exact document/element, send wheel input to an observed target, or navigate within the leased origin; action-specific postconditions; DSH approval required |
-| `browser_batch` | 1–8 explicit actions in one tab queue slot; shared deadline, separate approval per step, stop on failure/uncertainty and whole-plan replay fence |
-| `browser_screenshot` | Capture viewport into a Host image attachment; DSH approval required |
+| `browser_act` | Click/fill/append/check, press a named page key, scroll an exact document/element, send wheel input to an observed target, or navigate within the leased origin; action-specific postconditions; approval follows `approvalMode` |
+| `browser_batch` | 1–8 explicit actions in one tab queue slot; shared deadline, approval follows `approvalMode`, stop on failure/uncertainty and whole-plan replay fence |
+| `browser_screenshot` | Capture viewport into a Host image attachment; approval follows `approvalMode` |
 | `browser_handoff` | Release debugger/control and keep the tab open |
 
 The lease lasts up to two minutes in this preview. On expiry/release/disconnect, old commands cannot resume with the old token. The extension Stop button closes its local gate before contacting the Broker. Already-dispatched inputs cannot be undone.

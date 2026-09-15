@@ -11,8 +11,14 @@ import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunc
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
+test('built extension declares only the additional presentation scripting capability', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
+  assert.ok(manifest.permissions.includes('scripting'));
+  assert.equal(manifest.host_permissions, undefined);
+});
+
 async function fixture({ handshake = true, timers = { setTimeout, clearTimeout } } = {}) {
-  const responses = new Map(), sent = [], commands = [];
+  const responses = new Map(), sent = [], commands = [], scripts = [];
   const tab = { id: 7, url: 'https://example.test/form', title: 'Fixture' };
   const ports = [];
   const makePort = () => {
@@ -24,6 +30,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
   };
   const chrome = { runtime: { id: 'a'.repeat(32), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
     tabs: { query: async () => [tab], get: async () => ({ ...tab }), onRemoved: event(), onUpdated: event() },
+    scripting: { executeScript: async details => { scripts.push(details); return []; } },
     debugger: { attach: async () => {}, detach: async source => { chrome.debugger.onDetach.emit(source); },
       sendCommand: async (_target, method, params) => { commands.push({ method, params }); return {}; }, onDetach: event(), onEvent: event() } };
   vm.runInNewContext(source, { chrome, crypto: webcrypto, navigator: { userAgent: 'Chrome fixture' },
@@ -44,7 +51,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     const id = `r-${++counter}`; responses.set(id, resolve);
     ports.at(-1).onMessage.emit({ type: 'request', id, method, params });
   });
-  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, tab, sent };
+  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tab, sent };
 }
 
 test('page traversal is lease-gated and navigation revokes retained continuations', async () => {
@@ -183,6 +190,8 @@ test('extension child-click commands bind semantic target, refuse coordinate inj
   const result=await f.call('frame.click',params);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.value.acknowledged,true);
   const input=f.geometryCalls.filter(c=>c.method.startsWith('Input.'));assert.deepEqual(input.map(c=>c.p.type),['mousePressed','mouseReleased']);
   assert.ok(input.every(c=>c.target.sessionId===undefined&&Math.abs(c.p.x-220)<1e-6&&Math.abs(c.p.y-130)<1e-6));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(JSON.stringify(f.scripts.map(s=>s.args[0])),JSON.stringify([{x:220,y:130,phase:'move'},{x:220,y:130,phase:'click'}]));
   assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,2);
   await f.ui('stop');assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');
 });
@@ -438,9 +447,14 @@ test('mouse gate accepts one canonical wheel sample but rejects modifiers and bl
   for(const patch of [{modifiers:2},{deltaY:10001},{buttons:1},{type:'mouseMoved'},{deltaX:0,deltaY:0}]) {
     assert.equal((await send({...event,...patch})).code,'POLICY_DENIED');
   }
+  assert.equal(f.scripts.length,0);
   assert.equal((await send(event)).ok,true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.scripts.length,1);assert.equal(JSON.stringify(f.scripts[0].target),JSON.stringify({tabId:7}));assert.equal(f.scripts[0].world,'ISOLATED');
+  assert.equal(JSON.stringify(f.scripts[0].args),JSON.stringify([{x:20,y:30,phase:'wheel'}]));
   await f.ui('stop'); assert.equal((await send(event)).code,'LEASE_REVOKED');
-  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);
+  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(f.scripts.length,2);
+  assert.equal(f.scripts[1].args,undefined);
 });
 
 test('scroll document discovery only permits a shallow non-piercing root handle', async () => {

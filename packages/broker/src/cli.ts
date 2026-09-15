@@ -22,6 +22,10 @@ export async function main(args: string[]): Promise<void> {
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
   } else if (command === 'native-host') {
     await runNativeHost(directory, args.find(arg => arg.startsWith('chrome-extension://')) ?? '');
+  } else if (command === 'extension-path') {
+    const brand = option('browser') ?? 'chrome';
+    if (brand !== 'chrome' && brand !== 'edge') throw new Error('Browser must be chrome or edge');
+    console.log(fileURLToPath(new URL(`../../../../dist/extension/${brand}`, import.meta.url)));
   } else if (command === 'install-host') {
     const brand = option('browser') ?? 'chrome';
     if (brand !== 'chrome' && brand !== 'edge') throw new Error('Browser must be chrome or edge');
@@ -45,6 +49,6 @@ export async function main(args: string[]): Promise<void> {
     try { console.log(JSON.stringify({ connected: true, instances: await peer.call('browser.instances', {}) }, null, 2)); }
     finally { peer.close(); }
   } else {
-    console.log('dsh-native-browser broker --allow-origin=https://example.com\ndsh-native-browser install-host --browser=chrome --extension-id=<id>\ndsh-native-browser uninstall-host --browser=chrome --extension-id=<id>\ndsh-native-browser doctor --browser=chrome --extension-id=<id>\ndsh-native-browser status\nAll commands accept --runtime-dir=<private-directory>.\nHost install/uninstall/doctor also accept an explicit --manifest-dir=<registration-directory>.');
+    console.log('dsh-native-browser extension-path --browser=chrome\ndsh-native-browser broker --allow-origin=https://example.com\ndsh-native-browser install-host --browser=chrome --extension-id=<id>\ndsh-native-browser uninstall-host --browser=chrome --extension-id=<id>\ndsh-native-browser doctor --browser=chrome --extension-id=<id>\ndsh-native-browser status\nAll commands accept --runtime-dir=<private-directory>.\nHost install/uninstall/doctor also accept an explicit --manifest-dir=<registration-directory>.');
   }
 }

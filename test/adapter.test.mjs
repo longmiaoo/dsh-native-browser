@@ -9,14 +9,14 @@ import { FakeProvider } from './helpers/fake-provider.mjs';
 import { createHash } from 'node:crypto';
 import Ajv from 'ajv';
 
-async function fixture(t) {
+async function fixture(t, config = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
   const broker = await startBroker({ directory, allowedOrigins: ['https://example.test'] });
   const provider = new FakeProvider(); broker.runtime.register(provider);
   const definitions = new Map(), hooks = new Map(), effects = [], services = new Map();
   const ctx = { tools: { register: tool => definitions.set(tool.name, tool) },
     on: (event, handler) => hooks.set(event, handler), effect: callback => effects.push(callback()), get: name => services.get(name) };
-  apply(ctx, { runtimeDirectory: directory });
+  apply(ctx, { runtimeDirectory: directory, ...config });
   t.after(async () => { for (const dispose of effects) dispose(); await broker.close(); await rm(directory, { recursive: true }); });
   let count = 0;
   const prepare = (name, args, sessionId = 'session') => {
@@ -29,6 +29,44 @@ async function fixture(t) {
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('claim exposes one explicit public lease ID and hides internal capabilities', async t => {
+  const f = await fixture(t), lease = await f.prepare('browser_claim', claimArgs).run();
+  assert.equal(lease.leaseId, lease.id);
+  assert.equal(typeof lease.leaseId, 'string');
+  assert.equal(lease.token, undefined);
+  assert.equal(lease.owner, undefined);
+  assert.equal((await f.prepare('browser_observe', { leaseId: lease.leaseId }).run()).tab, 'tab-1');
+});
+test('per-lease mode asks once at claim and permits later actions, screenshots and batch steps', async t => {
+  const f = await fixture(t, { approvalMode: 'per-lease' });
+  const pending = f.prepare('browser_claim', claimArgs); assert.equal(pending.decision.kind, 'ask');
+  const lease = await pending.run();
+  const action = f.prepare('browser_act', { requestId: 'per-lease-action', leaseId: lease.id, documentEpoch: 'doc-1',
+    action: { kind: 'fill', ref: 'node-1', text: 'trusted lease' } });
+  assert.equal(action.decision.kind, 'allow'); assert.equal((await action.run()).outcome, 'succeeded');
+  assert.equal(f.prepare('browser_screenshot', { leaseId: lease.id }).decision.kind, 'allow');
+  const batch = f.prepare('browser_batch', { requestId: 'per-lease-batch', leaseId: lease.id, documentEpoch: 'doc-1',
+    steps: [{ action: { kind: 'fill', ref: 'node-1', text: 'batch without another prompt' } }] });
+  assert.equal(batch.decision.kind, 'allow'); assert.equal((await batch.run()).outcome, 'succeeded');
+});
+test('trusted mode is prompt-free only for an exact configured tab origin', async t => {
+  const f = await fixture(t, { approvalMode: 'trusted', trustedOrigins: ['https://example.test/path-is-normalized'] });
+  const claim = f.prepare('browser_claim', claimArgs); assert.equal(claim.decision.kind, 'allow');
+  const lease = await claim.run(); assert.equal(lease.origin, 'https://example.test');
+  const action = f.prepare('browser_act', { requestId: 'trusted-action', leaseId: lease.id, documentEpoch: 'doc-1',
+    action: { kind: 'fill', ref: 'node-1', text: 'no prompt' } });
+  assert.equal(action.decision.kind, 'allow'); assert.equal((await action.run()).outcome, 'succeeded');
+  await f.prepare('browser_handoff', { leaseId: lease.id }).run();
+  f.provider.tab.url = 'https://untrusted.test/form';
+  await assert.rejects(f.prepare('browser_claim', claimArgs).run(), { code: 'POLICY_DENIED' });
+  assert.equal(f.provider.grants.size, 0);
+});
+test('trusted mode rejects missing, wildcard and malformed origin configuration', () => {
+  const ctx = { tools: { register() {} }, on() {}, effect() {} };
+  assert.throws(() => apply(ctx, { approvalMode: 'trusted' }), { code: 'INVALID_REQUEST' });
+  assert.throws(() => apply(ctx, { approvalMode: 'trusted', trustedOrigins: ['*'] }));
+  assert.throws(() => apply(ctx, { approvalMode: 'everything', trustedOrigins: ['https://example.test'] }), { code: 'INVALID_REQUEST' });
+});
 test('explicit frame click keeps public approval, exact scope schema and Broker deduplication',async t=>{
   const f=await fixture(t),lease=await f.prepare('browser_claim',claimArgs).run(),frame={frameId:'child',documentEpoch:'child-doc'};let calls=0;
   f.provider.frames=async l=>({tab:l.tab,documentEpoch:'root-doc',truncated:false,frames:[
@@ -196,7 +234,9 @@ test('a new turn uses a new wire owner and old cleanup does not revoke the new l
   const lateOldCall = f.prepare('browser_observe', { leaseId: old.id });
   f.end(); await until(() => f.provider.grants.size === 0);
   const next = await f.prepare('browser_claim', claimArgs).run();
-  assert.notEqual(old.owner, next.owner); assert.notEqual(old.token, next.token);
+  assert.notEqual(old.leaseId, next.leaseId);
+  assert.equal(old.owner, undefined); assert.equal(next.owner, undefined);
+  assert.equal(old.token, undefined); assert.equal(next.token, undefined);
   await assert.rejects(lateOldCall.run(), e => e.code === 'LEASE_REVOKED');
   assert.equal((await f.prepare('browser_observe', { leaseId: next.id }).run()).tab, 'tab-1');
 });

@@ -4,8 +4,12 @@
   "description": "Chrome-first native browser runtime for DeepSeek Harness with semantic observation, reliable CDP actions, and human-agent handoff",
   "type": "module",
   "main": "index.js",
+  "types": "./dist/packages/dsh-adapter/src/index.d.ts",
   "exports": {
-    ".": "./index.js",
+    ".": {
+      "types": "./dist/packages/dsh-adapter/src/index.d.ts",
+      "import": "./index.js"
+    },
     "./observations": {
       "types": "./dist/packages/contracts/src/observations.d.ts",
       "import": "./dist/packages/contracts/src/observations.js"
@@ -17,10 +21,13 @@
     "bin",
     "dist",
     "cordis.patch.yml",
-    "docs",
+    "docs/**/*.md",
+    "docs/benchmark-results/*.json",
+    "docs/compatibility/*.json",
     "protocol",
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "SECURITY.md",
     "LICENSE"
   ],
@@ -80,9 +87,6 @@
     "node": ">=22.19"
   },
   "packageManager": "pnpm@11.1.1",
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
-  },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@types/chrome": "^0.2.9",

@@ -61,6 +61,72 @@ function checkGate(lease: Lease, signal: AbortSignal): number {
   }
   return id;
 }
+
+type PointerPhase = 'move' | 'click' | 'wheel';
+function showVirtualPointer(id: number, params: Record<string, unknown>): void {
+  const type = params.type;
+  if (type !== 'mousePressed' && type !== 'mouseReleased' && type !== 'mouseWheel') return;
+  const x = Number(params.x), y = Number(params.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  const phase: PointerPhase = type === 'mouseReleased' ? 'click' : type === 'mouseWheel' ? 'wheel' : 'move';
+  // This isolated-world overlay is deliberately presentation-only. Browser input
+  // has already been dispatched from semantically verified geometry; failure to
+  // draw the pointer must never delay, authorize, retarget or replay an action.
+  void chrome.scripting.executeScript({
+    target: { tabId: id }, world: 'ISOLATED', args: [{ x, y, phase }],
+    func: (payload: { x: number; y: number; phase: PointerPhase }) => {
+      const world = globalThis as typeof globalThis & { __dshPointerV1?: {
+        host: HTMLDivElement; arrow: SVGElement; ring: HTMLDivElement; fade?: ReturnType<typeof setTimeout>;
+      } };
+      let state = world.__dshPointerV1;
+      if (!state?.host.isConnected) {
+        const host = document.createElement('div');
+        host.setAttribute('aria-hidden', 'true');
+        host.setAttribute('inert', '');
+        Object.assign(host.style, { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px', overflow: 'visible',
+          zIndex: '2147483647', pointerEvents: 'none', userSelect: 'none', contain: 'layout style', isolation: 'isolate',
+          opacity: '0', transition: 'opacity 120ms ease' });
+        const root = host.attachShadow({ mode: 'closed' });
+        root.innerHTML = `<style>
+          :host{all:initial}.arrow{position:absolute;left:-3px;top:-3px;width:25px;height:31px;overflow:visible;
+            filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));transform-origin:3px 3px}
+          .ring{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border:3px solid #37a6ff;border-radius:999px;
+            box-sizing:border-box;opacity:0;transform:scale(.35)}
+          .ring.click{animation:dsh-click 420ms cubic-bezier(.2,.8,.2,1)}
+          .ring.wheel{border-style:dashed;animation:dsh-wheel 520ms ease-out}
+          @keyframes dsh-click{0%{opacity:.95;transform:scale(.3)}100%{opacity:0;transform:scale(1.55)}}
+          @keyframes dsh-wheel{0%{opacity:.9;transform:scale(.45) rotate(0)}100%{opacity:0;transform:scale(1.3) rotate(90deg)}}
+        </style>
+        <svg class="arrow" viewBox="0 0 25 31" aria-hidden="true">
+          <path d="M2 1.5v23.2l6.3-5.6 4.1 9.6 4.1-1.8-4.2-9.4 8.5-.4z" fill="#1687ff" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
+        </svg><div class="ring"></div>`;
+        const arrow = root.querySelector('.arrow') as SVGElement;
+        const ring = root.querySelector('.ring') as HTMLDivElement;
+        (document.documentElement || document.body)?.append(host);
+        state = world.__dshPointerV1 = { host, arrow, ring };
+      }
+      const { host, arrow, ring } = state;
+      host.style.transition = host.style.opacity === '0' ? 'opacity 120ms ease' : 'transform 110ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease';
+      host.style.transform = `translate3d(${payload.x}px,${payload.y}px,0)`;
+      host.style.opacity = '1';
+      arrow.style.transform = payload.phase === 'move' ? 'scale(.94)' : 'scale(1)';
+      if (payload.phase !== 'move') {
+        ring.className = 'ring';
+        void ring.getBoundingClientRect();
+        ring.classList.add(payload.phase);
+      }
+      if (state.fade) clearTimeout(state.fade);
+      state.fade = setTimeout(() => { if (host.isConnected) host.style.opacity = '.24'; }, 1400);
+    },
+  }).catch(() => {});
+}
+function removeVirtualPointer(id: number): void {
+  void chrome.scripting.executeScript({ target: { tabId: id }, world: 'ISOLATED', func: () => {
+    const world = globalThis as typeof globalThis & { __dshPointerV1?: { host: HTMLDivElement; fade?: ReturnType<typeof setTimeout> } };
+    if (world.__dshPointerV1?.fade) clearTimeout(world.__dshPointerV1.fade);
+    world.__dshPointerV1?.host.remove(); delete world.__dshPointerV1;
+  } }).catch(() => {});
+}
 async function ensure(lease: Lease, signal: AbortSignal): Promise<number> {
   const id = checkGate(lease, signal);
   const tab = await chrome.tabs.get(id);
@@ -78,6 +144,7 @@ function stop(id: number, forget = true): Promise<void> {
   if (lease) pager.revoke(lease.token + '|');
   clearTimeout(changeTimers.get(id)); changeTimers.delete(id);
   changeSequences.delete(id);
+  removeVirtualPointer(id);
   if (forget) allowed.delete(id);
   if (lease) { try { port?.postMessage({ type: 'event', event: 'lease.revoked', value: { leaseId: lease.id } }); } catch {} }
   return enqueue(id, async () => {
@@ -91,6 +158,7 @@ async function frameGraph(lease: Lease, signal: AbortSignal) {
     await ensure(lease, currentSignal); checkGate(lease, currentSignal);
     beforeDispatch?.();
     const result = await chrome.debugger.sendCommand({ tabId: id, ...(sessionId ? { sessionId } : {}) }, command, params) as Record<string, any>;
+    if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);
     await ensure(lease, currentSignal); return result;
   };
   let graph = frameSessions.get(id);
@@ -268,7 +336,9 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
-      return await chrome.debugger.sendCommand({ tabId: id }, command, params);
+      const result = await chrome.debugger.sendCommand({ tabId: id }, command, params);
+      if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);
+      return result;
     });
   }
   throw new BrowserError('INVALID_REQUEST', 'Unknown extension command');

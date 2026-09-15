@@ -1,5 +1,5 @@
 # Development preview. Browser tools require a running local Broker, native host
-# registration, extension tab consent and DSH approval. See docs/development.md.
+# registration, extension tab consent and the configured approval policy. See docs/development.md.
 - insert:
     - id: native-browser
       name: dsh-native-browser

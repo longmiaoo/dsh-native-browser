@@ -19,6 +19,7 @@ test('built extension declares presentation scripting on HTTP(S) pages for the c
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
   assert.equal(manifest.version, '0.1.0.5');
   assert.ok(manifest.permissions.includes('scripting'));
+  assert.ok(manifest.permissions.includes('downloads'));
   assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
   assert.equal(manifest.optional_host_permissions, undefined);
   assert.deepEqual(manifest.content_scripts, [{ matches: ['http://*/*', 'https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);
@@ -39,6 +40,9 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     tabs: { query: async () => [tab], get: async () => ({ ...tab }),
       sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
+    downloads: { onCreated: event(), onChanged: event(),
+      search: async ({ id }) => id === 5 ? [{ id: 5, filename: '/tmp/report.pdf', bytesReceived: 10, totalBytes: 10,
+        exists: true, state: 'complete', referrer: 'https://example.test/form' }] : [] },
     debugger: { attach: async () => {}, detach: async source => { chrome.debugger.onDetach.emit(source); },
       sendCommand: async (_target, method, params) => { commands.push({ method, params }); return {}; }, onDetach: event(), onEvent: event() } };
   class FixtureCanvas {
@@ -111,6 +115,28 @@ test('file chooser opened events forward tab, lease and backend node metadata', 
   assert.equal(event.value.tab, f.lease.tab);
   assert.equal(event.value.leaseId, f.lease.id);
   assert.equal(event.value.backendNodeId, 99);
+  await f.ui('stop');
+});
+
+test('download arming is lease-gated and chrome.downloads events forward real file metadata', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('downloads.arm', { lease: f.lease })).ok, true);
+  assert.equal((await f.call('downloads.arm', { lease: f.lease, extra: true })).code, 'INVALID_REQUEST');
+  f.chrome.downloads.onCreated.emit({ id: 5, filename: '', referrer: 'https://example.test/form',
+    totalBytes: 0, url: 'https://example.test/export' });
+  const started = f.sent.find(m => m.type === 'event' && m.event === 'download.started');
+  assert.ok(started, 'download.started reached the native port');
+  assert.equal(started.value.tab, f.lease.tab);
+  assert.equal(started.value.leaseId, f.lease.id);
+  assert.equal(started.value.id, 5);
+  f.chrome.downloads.onChanged.emit({ id: 5, state: { current: 'complete' } });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const completed = f.sent.find(m => m.type === 'event' && m.event === 'download.progress');
+  assert.ok(completed, 'download.progress reached the native port');
+  assert.equal(completed.value.state, 'complete');
+  assert.equal(completed.value.filename, '/tmp/report.pdf');
+  assert.equal(completed.value.receivedBytes, 10);
   await f.ui('stop');
 });
 

@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import { BrowserError, checkAbort, originOf, type ActionRequest, type BrowserInstance,
   type BrowserProvider, type Lease, type NodeRef, type Observation, type ProviderExecution, type SemanticQuery,
-  type Action, type Expected, type ObservationScope, type ProviderResult, type ScrollEvidence, type ScrollPosition, type Screenshot, type TabSummary } from '../../contracts/src/index.js';
+  type Action, type DownloadEvidence, type Expected, type ObservationScope, type ProviderResult, type ScrollEvidence, type ScrollPosition, type Screenshot, type TabSummary } from '../../contracts/src/index.js';
 import { actionRequest, scrollDelta, string, semanticQuery, pageReadOptions, frameTarget } from '../../contracts/src/validation.js';
 import type { PageReadOptions, ObservationPage, FrameTarget } from '../../contracts/src/index.js';
 import { actionDeadline, ChangeClock, waitUntil } from './wait.js';
@@ -658,6 +660,91 @@ export class ChromiumProvider implements BrowserProvider {
     return await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding);
   }
 
+  private async download(lease: Lease, request: ActionRequest, action: Extract<Action, { kind: 'download' }>,
+    execution: ProviderExecution, clock: ChangeClock, stateBinding?: StateBinding): Promise<ProviderResult> {
+    const { signal } = execution;
+    const target = this.pages.get(lease.tab)?.byRef.get(action.ref);
+    if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale download trigger');
+    if (!controlRoles.has(target.role)) throw new BrowserError('NOT_ACTIONABLE', 'Download trigger must be an observed control');
+    await this.checkIdentity(lease, target, signal);
+    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const objectId = resolved.object?.objectId;
+    if (!objectId) throw new BrowserError('STALE_TARGET', 'Download trigger was removed');
+    let started: { id: number } | undefined;
+    let finished: { state: 'complete' | 'interrupted'; filename?: string; receivedBytes?: number; totalBytes?: number; exists?: boolean } | undefined;
+    const unsubscribe = this.channel.onEvent?.((event, raw) => {
+      if (!raw || typeof raw !== 'object') return;
+      const value = raw as Dict;
+      if (event === 'download.started' && !started && value.tab === lease.tab && value.leaseId === lease.id
+        && Number.isSafeInteger(value.id)) {
+        started = { id: value.id };
+        clock.pulse();
+      } else if (event === 'download.progress' && started && value.id === started.id
+        && (value.state === 'complete' || value.state === 'interrupted')) {
+        finished = { state: value.state,
+          ...(typeof value.filename === 'string' && value.filename ? { filename: value.filename } : {}),
+          ...(Number.isSafeInteger(value.receivedBytes) && value.receivedBytes >= 0 ? { receivedBytes: value.receivedBytes } : {}),
+          ...(Number.isSafeInteger(value.totalBytes) && value.totalBytes >= 0 ? { totalBytes: value.totalBytes } : {}),
+          ...(value.exists === false ? { exists: false } : {}) };
+        clock.pulse();
+      }
+    });
+    try {
+      execution.onDispatch();
+      // chrome.debugger rejects browser-level download commands. The extension arms
+      // its chrome.downloads observer for exactly this lease, then reports the real
+      // DownloadItem id, absolute filename and completion state.
+      await this.channel.call('downloads.arm', { lease }, signal);
+      let previous: Dict | undefined, previousAt = 0, scrolled = false;
+      const geometry = await waitUntil(async () => {
+        await this.checkIdentity(lease, target, signal);
+        const next = await this.geometry(lease, objectId, signal);
+        if (next.inViewport === false && !scrolled) {
+          scrolled = true; execution.onDispatch();
+          await this.cdp(lease, 'DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendId }, signal);
+          previous = undefined; return undefined;
+        }
+        if (!next.ok) { previous = undefined; return undefined; }
+        const stable = previous && sameGeometry(previous, next);
+        const now = performance.now();
+        if (stable && now - previousAt >= 32) return next;
+        if (!stable) { previous = next; previousAt = now; }
+        return undefined;
+      }, { signal, clock, fallbackMs: 40 });
+      await this.checkIdentity(lease, target, signal);
+      const finalPoint = await this.geometry(lease, objectId, signal, { x: geometry.x, y: geometry.y });
+      if (!finalPoint.ok || !sameGeometry(geometry, finalPoint)) {
+        throw new BrowserError('NOT_ACTIONABLE', 'Selected download point changed before input');
+      }
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
+      try {
+        await waitUntil(async () => started ? true : undefined, { signal, clock });
+      } catch (error) {
+        if (error instanceof BrowserError && error.code === 'DEADLINE_EXCEEDED') throw new BrowserError('NOT_ACTIONABLE', 'No download started');
+        throw error;
+      }
+      await waitUntil(async () => finished ? true : undefined, { signal, clock });
+      if (finished!.state === 'interrupted') throw new BrowserError('NAVIGATION_FAILED', 'Download was interrupted');
+      if (finished!.exists === false) throw new BrowserError('NOT_ACTIONABLE', 'Downloaded file is missing');
+      if (!finished!.filename) throw new BrowserError('NOT_ACTIONABLE', 'Download filename is unavailable');
+      let size: number;
+      try { size = (await stat(finished!.filename)).size; }
+      catch { throw new BrowserError('NOT_ACTIONABLE', 'Downloaded file is missing'); }
+      const evidence: DownloadEvidence = { filename: path.basename(finished!.filename), path: finished!.filename,
+        receivedBytes: finished!.receivedBytes ?? size, ...(finished!.totalBytes === undefined ? {} : { totalBytes: finished!.totalBytes }) };
+      const observation = action.expected
+        ? (await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding)).observation
+        : await this.observe(lease, signal);
+      return { observation, postcondition: 'passed', download: evidence };
+    } finally {
+      unsubscribe?.();
+      await this.cdp(lease, 'Runtime.releaseObject', { objectId }, AbortSignal.timeout(1000)).catch(() => {});
+    }
+  }
+
   async actFrame(lease:Lease,raw:ActionRequest,execution:ProviderExecution):Promise<ProviderResult>{
     const request=actionRequest(raw),frame=request.frame,action=request.action;
     if(!frame||action.kind!=='click')throw new BrowserError('INVALID_REQUEST','Explicit child click scope is required');
@@ -759,6 +846,7 @@ export class ChromiumProvider implements BrowserProvider {
       }
       if (action.kind === 'upload') return await this.upload(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       if (action.kind === 'choose') return await this.choose(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
+      if (action.kind === 'download') return await this.download(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
       if (!controlRoles.has(original.role) && !original.editable && !(action.kind === 'wheel' && regionRoles.has(original.role))) {

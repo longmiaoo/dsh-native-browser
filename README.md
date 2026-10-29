@@ -195,7 +195,7 @@ For a longer task, identify the target tab clearly and state the stopping condit
 
 - list connected Chrome instances and eligible existing tabs;
 - claim one tab and read bounded accessible text, controls and named regions;
-- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>` and accept a native file chooser for an observed trigger;
+- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>`, accept a native file chooser and capture a page-triggered download;
 - run a bounded batch of up to eight explicit actions, stopping on denial, uncertainty or failed verification;
 - page through large semantic documents and read supported same-origin child frames;
 - capture the current viewport as a DSH attachment and release control back to the user;

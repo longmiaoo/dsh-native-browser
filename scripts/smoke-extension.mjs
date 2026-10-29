@@ -18,7 +18,14 @@ const executablePath = process.env.DSH_CHROME_TEST_EXECUTABLE;
 if (!executablePath) throw new Error('Set DSH_CHROME_TEST_EXECUTABLE to a Chrome-for-Testing executable supporting Extensions.triggerAction');
 const profile = await mkdtemp(path.join(tmpdir(), 'dsh-mv3-smoke-'));
 const html = await readFile(new URL('../test/fixtures/form.html', import.meta.url));
-const server = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(html); });
+const server = http.createServer((req, res) => {
+  if (req.url === '/download') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': 'attachment; filename="fixture.txt"' });
+    res.end('downloaded fixture');
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(html);
+});
 server.listen(0, '127.0.0.1'); await once(server, 'listening');
 const origin = `http://127.0.0.1:${server.address().port}`;
 const foreignServer = http.createServer((_req, res) => {
@@ -27,7 +34,7 @@ const foreignServer = http.createServer((_req, res) => {
 });
 foreignServer.listen(0, '127.0.0.1'); await once(foreignServer, 'listening');
 const foreignOrigin = `http://127.0.0.1:${foreignServer.address().port}`;
-let context, runtime;
+let context, runtime, poller; let polling = true;
 try {
   const extensionPath = path.resolve(import.meta.dirname, '../dist/extension/chrome');
   context = await chromium.launchPersistentContext(profile, { executablePath, headless: true,
@@ -50,6 +57,9 @@ try {
   });
   const page = context.pages()[0]; await page.goto(`${origin}/`);
   const browserCDP = await context.browser().newBrowserCDPSession();
+  // Test-harness only: keep page-triggered downloads inside the isolated profile.
+  await browserCDP.send('Browser.setDownloadBehavior', { behavior: 'allow',
+    downloadPath: path.join(profile, 'downloads'), eventsEnabled: true });
   // The experimental test API runs the real toolbar action and grants activeTab.
   const { targetInfos } = await browserCDP.send('Target.getTargets', { filter: [{ type: 'tab' }] });
   const tabTarget = targetInfos.find(t => t.url === page.url()); assert.ok(tabTarget);
@@ -72,6 +82,9 @@ try {
     value: { version: 1, connectionEpoch: 'isolated-mv3-test', capabilities } }), { helloId: hello.id, capabilities: [...brokerCapabilities] });
   let counter = 0;
   const eventListeners = new Set(), capturedEvents = [];
+  const dispatch = events => {
+    for (const event of events) { capturedEvents.push(event); for (const listener of eventListeners) listener(event.event, event.value); }
+  };
   const channel = {
     onEvent(listener) { eventListeners.add(listener); return () => eventListeners.delete(listener); },
     async call(method, params, signal) {
@@ -89,14 +102,22 @@ try {
           });
           return { reply, events: bridge.events.splice(0) };
         }, { type: 'request', id, method, params });
-        for (const event of events) { capturedEvents.push(event); for (const listener of eventListeners) listener(event.event, event.value); }
+        dispatch(events);
         if (!reply.ok) throw new BrowserError(reply.code, 'Live extension rejected request');
         return reply.value;
       } finally { signal?.removeEventListener('abort', abort); }
     },
   };
+  // The production bridge delivers events continuously; this test bridge must too,
+  // otherwise waits that never issue a request (chooser/download) cannot observe them.
+  poller = (async () => {
+    while (polling) {
+      try { dispatch(await worker.evaluate(() => globalThis.__smokeBridge.events.splice(0))); } catch {}
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  })();
   const instance = { ...hello.params.instance, capabilities: { ax: true, screenshot: true } };
-  const provider = new ChromiumProvider(instance, channel);
+  const provider = new ChromiumProvider(instance, channel, { downloadRoot: path.join(profile, 'downloads') });
   runtime = new BrowserRuntime(async request => new URL(request.tab.url).origin === origin);
   runtime.register(provider);
   const signal = AbortSignal.timeout(20000), owner = 'mv3-smoke';
@@ -127,6 +148,18 @@ try {
   assert.equal((await act('mv3-upload', { kind: 'upload', ref: fileInput.id, files: [uploadPath], expected: { kind: 'text', text: 'upload.txt' } })).outcome, 'succeeded');
   assert.equal(await page.locator('#uploadInput').evaluate(element => element.files[0]?.name), 'upload.txt');
   assert.equal(await page.locator('#uploadStatus').textContent(), 'upload.txt');
+  await page.evaluate(() => {
+    const link = document.createElement('a');
+    link.id = 'downloadLink'; link.href = '/download'; link.textContent = '下载附件';
+    link.setAttribute('aria-label', '下载附件');
+    document.body.append(link);
+  });
+  observation = await runtime.observe(owner, lease.id, signal);
+  const downloadLink = observation.nodes.find(n => n.name === '下载附件'); assert.ok(downloadLink, 'download link is observable');
+  const downloaded = await act('mv3-download', { kind: 'download', ref: downloadLink.id });
+  assert.equal(downloaded.outcome, 'succeeded');
+  assert.equal(downloaded.download.filename, 'fixture.txt');
+  assert.equal(await readFile(downloaded.download.path, 'utf8'), 'downloaded fixture');
   assert.equal((await act('mv3-nav', { kind: 'navigate', url: `${origin}/next` })).outcome, 'succeeded');
   const cleanScreenshot = await runtime.capture(owner, lease.id, signal); assert.ok(cleanScreenshot.data.length > 100);
   assert.deepEqual(cleanScreenshot.redaction, { policy: 'cross-origin-frames', frames: 0, regions: 0 });
@@ -168,7 +201,8 @@ try {
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
-      'Real file input upload via DOM.setFileInputFiles', 'Same-origin navigation', 'JPEG capture',
+      'Real file input upload via DOM.setFileInputFiles', 'Real attachment download via chrome.downloads',
+      'Same-origin navigation', 'JPEG capture',
       'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
       ...frameGeometry.checks,'Popup Stop denies subsequent bound frame geometry'],
     scope: 'Real isolated Chrome MV3 extension and runtime; native port is a test bridge, not Native Messaging or DSH/model end-to-end' };
@@ -177,6 +211,7 @@ try {
   await page.screenshot({ path: 'output/playwright/mv3-smoke.png' });
   console.log(JSON.stringify(report, null, 2));
 } finally {
+  polling = false; await poller.catch(() => {});
   await runtime?.dispose(); await context?.close();
   await new Promise(resolve => server.close(resolve));
   await new Promise(resolve => foreignServer.close(resolve));

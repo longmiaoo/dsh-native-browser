@@ -8,15 +8,31 @@ export function string(value: unknown, max = 256): string {
   return value;
 }
 const absoluteWindowsPath = /^[A-Za-z]:[\\/]|^\\\\[^\\]+\\[^\\]+/;
-export function uploadFile(value: unknown): string {
+export function localPath(value: unknown): string {
   const file = string(value, 4096);
   if (file.includes('\0') || /[\r\n]/.test(file) || file.includes('://')) {
-    throw new BrowserError('INVALID_REQUEST', 'Upload files must be local paths without control characters or URL schemes');
+    throw new BrowserError('INVALID_REQUEST', 'Local paths must not contain control characters or URL schemes');
   }
   if (!file.startsWith('/') && !absoluteWindowsPath.test(file)) {
-    throw new BrowserError('INVALID_REQUEST', 'Upload files must be absolute local paths');
+    throw new BrowserError('INVALID_REQUEST', 'Local paths must be absolute');
   }
   return file;
+}
+export function uploadFile(value: unknown): string { return localPath(value); }
+export function downloadEvidence(value: unknown): import('./index.js').DownloadEvidence {
+  const v = record(value);
+  const filename = string(v.filename, 255);
+  if (/[\\/\0\r\n]/.test(filename) || filename === '.' || filename === '..') {
+    throw new BrowserError('INVALID_REQUEST', 'Download filename must be a single safe name');
+  }
+  if (!Number.isSafeInteger(v.receivedBytes) || Number(v.receivedBytes) < 0) {
+    throw new BrowserError('INVALID_REQUEST', 'Download byte count is invalid');
+  }
+  if (v.totalBytes !== undefined && (!Number.isSafeInteger(v.totalBytes) || Number(v.totalBytes) < Number(v.receivedBytes))) {
+    throw new BrowserError('INVALID_REQUEST', 'Download total must cover its received bytes');
+  }
+  return { filename, path: localPath(v.path), receivedBytes: Number(v.receivedBytes),
+    ...(v.totalBytes === undefined ? {} : { totalBytes: Number(v.totalBytes) }) };
 }
 export function scrollDelta(value: unknown): { deltaX: number; deltaY: number } {
   const v = record(value);
@@ -125,6 +141,12 @@ export function actionRequest(value: unknown): ActionRequest {
     }
     action = { kind: 'choose', ref: string(a.ref), files: a.files.map(uploadFile) };
   }
+  else if (a.kind === 'download') {
+    if (Object.keys(a).some(key => !['kind', 'ref', 'expected'].includes(key))) {
+      throw new BrowserError('INVALID_REQUEST', 'Download requires one exact trigger and no path or URL parameters');
+    }
+    action = { kind: 'download', ref: string(a.ref) };
+  }
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
   if (a.expected !== undefined) {
     const e = record(a.expected);
@@ -139,7 +161,7 @@ export function actionRequest(value: unknown): ActionRequest {
     else throw new BrowserError('INVALID_REQUEST', 'Unsupported postcondition');
     if ((action.kind === 'scroll' || action.kind === 'wheel') && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll/wheel cannot verify an input value');
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
-    if ((action.kind === 'upload' || action.kind === 'choose') && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'File actions verify page text or node state, not input value or navigation');
+    if ((action.kind === 'upload' || action.kind === 'choose' || action.kind === 'download') && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'File actions verify page text or node state, not input value or navigation');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),
     documentEpoch: string(v.documentEpoch,512), action };

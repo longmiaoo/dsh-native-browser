@@ -21,7 +21,7 @@ for (const brand of ['chrome', 'edge']) {
     name: 'DSH Native Browser (Developer Preview)', version: '0.1.0.5', minimum_chrome_version: '125',
     key: developmentExtensionKey,
     description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
-    permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting'],
+    permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting', 'downloads'],
     host_permissions: ['http://*/*', 'https://*/*'],
     content_scripts: [{ matches: ['http://*/*', 'https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }],
     background: { service_worker: 'background.js', type: 'module' },

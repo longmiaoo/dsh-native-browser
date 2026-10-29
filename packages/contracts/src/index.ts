@@ -129,6 +129,12 @@ export interface ScrollEvidence {
   after: ScrollPosition;
   moved: boolean;
 }
+export interface DownloadEvidence {
+  filename: string;
+  path: string;
+  receivedBytes: number;
+  totalBytes?: number;
+}
 export type Action =
   | { kind: 'check'; ref: string; checked: boolean; expected?: Expected }
   | { kind: 'click'; ref: string; expected?: Expected }
@@ -139,7 +145,8 @@ export type Action =
   | { kind: 'wheel'; ref: string; deltaX: number; deltaY: number; expected?: Expected }
   | { kind: 'navigate'; url: string; expected?: Expected }
   | { kind: 'upload'; ref: string; files: string[]; expected?: Expected }
-  | { kind: 'choose'; ref: string; files: string[]; expected?: Expected };
+  | { kind: 'choose'; ref: string; files: string[]; expected?: Expected }
+  | { kind: 'download'; ref: string; expected?: Expected };
 export interface ActionRequest {
   requestId: string;
   leaseId: string;
@@ -173,6 +180,7 @@ export interface ActionResult {
   code?: ErrorCode;
   observation?: FullObservation;
   scroll?: ScrollEvidence;
+  download?: DownloadEvidence;
   /** Historical metadata only. Never an assertion about the current page or restored authority. */
   recovery?: import('./journal.js').RecoveryRecord;
 }
@@ -185,6 +193,7 @@ export interface ProviderResult {
   observation: Observation;
   postcondition: 'passed' | 'failed' | 'unverified';
   scroll?: ScrollEvidence;
+  download?: DownloadEvidence;
 }
 export interface BrowserProvider {
   readonly instance: BrowserInstance;

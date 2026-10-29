@@ -5,7 +5,7 @@ import {
   type Lease, type FullObservation, type ObserveOptions, type ObservationUpdate, type TabSummary, type ErrorCode,
 } from '../../contracts/src/index.js';
 import { ObservationCache } from './observations.js';
-import { actionRequest, batchRequest, observationScope, observeOptions, pageReadOptions, sameScope } from '../../contracts/src/validation.js';
+import { actionRequest, batchRequest, downloadEvidence, observationScope, observeOptions, pageReadOptions, sameScope } from '../../contracts/src/validation.js';
 import { scrollMovedAsRequested, validateScrollEvidence } from '../../contracts/src/scrolling.js';
 import { recoveredAction, type ActionJournal, type RecoveryRecord } from '../../contracts/src/journal.js';
 import { ActionResultCache } from './action-results.js';
@@ -500,10 +500,15 @@ export class BrowserRuntime {
         if (scroll && result.postcondition === 'passed' && !scrollMovedAsRequested(scroll)) {
           throw new BrowserError('INVALID_REQUEST', 'Provider claimed scroll success without movement in the requested direction');
         }
+        if (request.action.kind !== 'download' && result.download !== undefined) {
+          throw new BrowserError('INVALID_REQUEST', 'Unexpected download evidence');
+        }
+        const download = request.action.kind === 'download' ? downloadEvidence(result.download) : undefined;
         return { requestId: request.requestId,
           outcome: result.postcondition === 'passed' ? 'succeeded' : result.postcondition === 'failed' ? 'failed' : 'unknown',
           dispatch: dispatched ? 'observed' : 'notDispatched', postcondition: result.postcondition,
-          observation: this.observations.publish(entry.lease.owner, entry.lease.id, result.observation), ...(scroll ? { scroll } : {}) };
+          observation: this.observations.publish(entry.lease.owner, entry.lease.id, result.observation),
+          ...(scroll ? { scroll } : {}), ...(download ? { download } : {}) };
       };
       outcome = serialize ? await this.serialized(entry, signal, perform) : await perform();
     } catch (error) {

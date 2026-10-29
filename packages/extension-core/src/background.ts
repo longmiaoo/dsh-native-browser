@@ -23,6 +23,7 @@ const gates = new Map<number, Lease>();
 const pager = new AXPager();
 const frameSessions = new Map<number, FrameSessions>();
 const attached = new Set<number>();
+const pendingDownloads: Lease[] = [];
 const queues = new Map<number, Promise<unknown>>();
 const changeTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const changeSequences = new Map<number, number>();
@@ -30,6 +31,7 @@ let port: chrome.runtime.Port | undefined;
 let instanceId = crypto.randomUUID();
 let status = 'Disconnected';
 let brokerPersonal = false;
+const nonNegative = (value: unknown): number | undefined => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : undefined;
 const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocument',
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
@@ -106,6 +108,10 @@ function stop(id: number, forget = true): Promise<void> {
   if (lease) pager.revoke(lease.token + '|');
   clearTimeout(changeTimers.get(id)); changeTimers.delete(id);
   changeSequences.delete(id);
+  const pendingTab = `${instanceId}:${id}`;
+  for (let index = pendingDownloads.length - 1; index >= 0; index--) {
+    if (pendingDownloads[index]!.tab === pendingTab) pendingDownloads.splice(index, 1);
+  }
   removeVirtualPointer(id);
   if (forget) allowed.delete(id);
   if (lease) { try { port?.postMessage({ type: 'event', event: 'lease.revoked', value: { leaseId: lease.id } }); } catch {} }
@@ -176,6 +182,15 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
   if (method === 'lease.revoke') {
     if (gates.get(id)?.token === lease.token) await stop(id, false);
     return { released: true };
+  }
+  if (method === 'downloads.arm') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Download arming only accepts its lease');
+    await ensure(lease, signal); checkGate(lease, signal);
+    if (!pendingDownloads.some(item => item.id === lease.id)) {
+      pendingDownloads.push(lease);
+      while (pendingDownloads.length > 8) pendingDownloads.shift();
+    }
+    return { armed: true };
   }
   if (method === 'frames.list') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Frame discovery only accepts its lease');
@@ -473,6 +488,28 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     const sequence = (changeSequences.get(id) ?? 0) + 1; changeSequences.set(id, sequence);
     try { port?.postMessage({ type: 'event', event: 'page.changed', value: { tab: lease.tab, leaseId: lease.id, sequence } }); } catch {}
   }, 20));
+});
+// chrome.debugger rejects browser-level download commands, so downloads are
+// observed through the extension's own downloads API and attributed to the
+// lease armed immediately before the trigger click.
+chrome.downloads.onCreated.addListener(item => {
+  const referrer = (() => { try { return item.referrer ? originOf(item.referrer) : undefined; } catch { return undefined; } })();
+  const index = pendingDownloads.findIndex(lease => referrer !== undefined && lease.origin === referrer);
+  const lease = pendingDownloads.splice(index >= 0 ? index : 0, 1)[0];
+  if (!lease || lease.expiresAt <= Date.now()) return;
+  try { port?.postMessage({ type: 'event', event: 'download.started', value: { tab: lease.tab, leaseId: lease.id,
+    id: item.id } }); } catch {}
+});
+chrome.downloads.onChanged.addListener(async delta => {
+  const state = delta.state?.current;
+  if (state !== 'complete' && state !== 'interrupted') return;
+  let item: chrome.downloads.DownloadItem | undefined;
+  try { item = (await chrome.downloads.search({ id: delta.id }))[0]; } catch {}
+  const filename = typeof item?.filename === 'string' && item.filename ? item.filename : undefined;
+  const receivedBytes = nonNegative(item?.bytesReceived), totalBytes = nonNegative(item?.totalBytes);
+  try { port?.postMessage({ type: 'event', event: 'download.progress', value: { id: delta.id, state,
+    ...(filename === undefined ? {} : { filename }), ...(receivedBytes === undefined ? {} : { receivedBytes }),
+    ...(totalBytes === undefined ? {} : { totalBytes }), ...(item?.exists === false ? { exists: false } : {}) } }); } catch {}
 });
 // Connecting is not authorization in restricted mode. In explicit personal mode,
 // the Broker's negotiated capability is the durable operator intent; leases still

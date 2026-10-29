@@ -2,6 +2,10 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.0-alpha.5 - 2026-10-29
+
+- Keep npm publication on Ubuntu while requiring the exact commit's macOS Chrome/MV3 CI gate to have passed, avoiding macOS arm64 runner capacity failures without weakening release verification.
+
 ## 0.1.0-alpha.4 - 2026-10-29
 
 - Run tagged npm release verification on the supported macOS Chrome baseline after Linux Chrome exhibited a clipped-target hit-test difference.

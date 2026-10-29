@@ -6,6 +6,7 @@ on:
       - 'v*'
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -15,9 +16,10 @@ concurrency:
 
 jobs:
   publish:
-    # Chrome actionability is a release gate and Chrome stable's hit-test behavior
-    # is the supported macOS baseline. Linux Chrome can differ for clipped targets.
-    runs-on: macos-14
+    # Keep package publication independent of scarce macOS arm64 runner capacity.
+    # The macOS Chrome/MV3 gate below must have passed for this exact commit before
+    # any tag can publish.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out the tagged source
@@ -47,9 +49,21 @@ jobs:
           pnpm check
           pnpm typecheck
           pnpm test
-          pnpm test:chrome
           pnpm test:package-install
           git diff --exit-code
+
+      - name: Verify macOS Chrome and MV3 CI gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          conclusion=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "CI" and .event == "push" and .head_branch == "main")]
+              | sort_by(.created_at) | last | .conclusion')
+          if [[ "$conclusion" != "success" ]]; then
+            echo "The macOS Chrome/MV3 CI gate for ${GITHUB_SHA} is ${conclusion:-missing}." >&2
+            exit 1
+          fi
 
       - name: Verify tag and choose npm channel
         id: release

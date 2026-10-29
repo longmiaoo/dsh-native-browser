@@ -138,7 +138,7 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
     approvalMode: personal
 ```
 
-Broker 和适配器设置必须同时存在，否则 claim 会失败关闭。扩展启动时协商 Broker 的显式 personal 模式能力，之后无需点击 popup 就能暴露普通 HTTP(S) 标签页；claim 仍只选一个标签页，每个操作仍受短标签页租约约束。开发版 manifest 声明 HTTP(S) host 访问，Chrome 安装时会提示，personal 模式和虚拟指针才能在跨站导航后继续可用。前台会话切换、租约过期、交接、断连和扩展 Stop 都会撤销控制。alpha 没有针对支付、发布或破坏性动作的可靠语义分类器，不要在这些流程里使用 personal 模式。
+Broker 和适配器设置必须同时存在，否则 claim 会失败关闭。扩展启动时协商 Broker 的显式 personal 模式能力，之后无需点击 popup 就能暴露普通 HTTP(S) 标签页；claim 仍只选一个标签页，每个操作仍受短标签页租约约束。扩展默认只需要 HTTPS host 访问；明文 HTTP 是可选权限，通过 popup 里的“允许 HTTP 页面显示虚拟指针（可选）”按钮申请。没有这个可选授权时，浏览器控制仍通过 debugger 门禁正常工作，只是明文页面不渲染虚拟指针。前台会话切换、租约过期、交接、断连和扩展 Stop 都会撤销控制。alpha 没有针对支付、发布或破坏性动作的可靠语义分类器，不要在这些流程里使用 personal 模式。
 
 当可见 DSH 界面切换会话时，客户端桥会先释放其他会话拥有的浏览器作用域，再让新会话 claim。新会话永远不会继承旧租约。切走会有意中断正在进行的浏览器任务，而不是让后台聊天继续驱动 Chrome。
 

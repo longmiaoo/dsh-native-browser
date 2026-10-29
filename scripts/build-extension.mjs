@@ -22,8 +22,9 @@ for (const brand of ['chrome', 'edge']) {
     key: developmentExtensionKey,
     description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
     permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting', 'downloads'],
-    host_permissions: ['http://*/*', 'https://*/*'],
-    content_scripts: [{ matches: ['http://*/*', 'https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }],
+    host_permissions: ['https://*/*'],
+    optional_host_permissions: ['http://*/*'],
+    content_scripts: [{ matches: ['https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }],
     background: { service_worker: 'background.js', type: 'module' },
     action: { default_popup: 'popup.html' } }, null, 2) + '\n');
 }

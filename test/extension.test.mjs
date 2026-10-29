@@ -13,16 +13,16 @@ import { extensionIdFromManifestKey } from '../dist/packages/installer/src/exten
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
-test('built extension declares presentation scripting on HTTP(S) pages for the cross-site virtual pointer', async () => {
+test('built extension keeps HTTPS host access required and plaintext HTTP optional for the virtual pointer', async () => {
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
   assert.equal(manifest.version, '0.1.0.6');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('downloads'));
-  assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
-  assert.equal(manifest.optional_host_permissions, undefined);
-  assert.deepEqual(manifest.content_scripts, [{ matches: ['http://*/*', 'https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);
+  assert.deepEqual(manifest.host_permissions, ['https://*/*']);
+  assert.deepEqual(manifest.optional_host_permissions, ['http://*/*']);
+  assert.deepEqual(manifest.content_scripts, [{ matches: ['https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);
 });
 
 async function fixture({ handshake = true, timers = { setTimeout, clearTimeout } } = {}) {

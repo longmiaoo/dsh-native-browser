@@ -211,7 +211,8 @@ try {
   await page.screenshot({ path: 'output/playwright/mv3-smoke.png' });
   console.log(JSON.stringify(report, null, 2));
 } finally {
-  polling = false; await poller.catch(() => {});
+  polling = false;
+  if (poller) await poller.catch(() => {});
   await runtime?.dispose(); await context?.close();
   await new Promise(resolve => server.close(resolve));
   await new Promise(resolve => foreignServer.close(resolve));

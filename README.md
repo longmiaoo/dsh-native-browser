@@ -126,7 +126,7 @@ The package is structured as a DSH bundle and includes the discovery terms used 
 Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.5
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.6
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
@@ -158,7 +158,7 @@ When the visible DSH UI changes conversations, the client bridge releases browse
 
 ## Use the current alpha
 
-The currently published npm version is `0.1.0-alpha.5`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+The currently published npm version is `0.1.0-alpha.6`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
 
 ### Start a browsing session
 

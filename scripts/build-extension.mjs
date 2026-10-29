@@ -18,7 +18,7 @@ for (const brand of ['chrome', 'edge']) {
     outfile: path.join(out, 'pointer.js'), bundle: true, platform: 'browser' });
   await copyFile(path.join(root, 'packages/extension-core/popup.html'), path.join(out, 'popup.html'));
   await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ manifest_version: 3,
-    name: 'DSH Native Browser (Developer Preview)', version: '0.1.0.5', minimum_chrome_version: '125',
+    name: 'DSH Native Browser (Developer Preview)', version: '0.1.0.6', minimum_chrome_version: '125',
     key: developmentExtensionKey,
     description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
     permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting', 'downloads'],

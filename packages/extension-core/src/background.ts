@@ -34,7 +34,7 @@ const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocumen
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
   'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
-  'DOM.setFileInputFiles']);
+  'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -301,6 +301,20 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       try { files.forEach(uploadFile); }
       catch { throw new BrowserError('POLICY_DENIED', 'Upload files must be absolute local paths'); }
     }
+    if (command === 'Page.setInterceptFileChooserDialog') {
+      if (Object.keys(params).length !== 1 || params.enabled !== true) {
+        throw new BrowserError('POLICY_DENIED', 'File chooser interception only enables for the leased tab');
+      }
+    }
+    if (command === 'Page.handleFileChooser') {
+      const files = params.files;
+      if (params.action !== 'accept' || Object.keys(params).length !== 2 || !Array.isArray(files)
+        || files.length < 1 || files.length > 64) {
+        throw new BrowserError('POLICY_DENIED', 'File chooser accept requires bounded local files');
+      }
+      try { files.forEach(uploadFile); }
+      catch { throw new BrowserError('POLICY_DENIED', 'Chosen files must be absolute local paths'); }
+    }
     return enqueue(id, async () => {
       if (command === 'Page.navigate' && (lease.scope ?? 'origin') === 'tab') {
         checkGate(lease, signal);
@@ -445,6 +459,12 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   if (id !== undefined && gates.has(id)) frameSessions.get(id)?.event(source.sessionId ?? '', method, params);
   if (id !== undefined && gates.has(id) && method === 'Page.frameNavigated'
     && !source.sessionId && !(params as { frame?: { parentId?: string } })?.frame?.parentId) pager.revoke(gates.get(id)!.token + '|');
+  if (id !== undefined && gates.has(id) && method === 'Page.fileChooserOpened') {
+    const lease = gates.get(id), backendNodeId = (params as { backendNodeId?: unknown })?.backendNodeId;
+    if (lease && lease.expiresAt > Date.now() && Number.isSafeInteger(backendNodeId)) {
+      try { port?.postMessage({ type: 'event', event: 'fileChooser.opened', value: { tab: lease.tab, leaseId: lease.id, backendNodeId } }); } catch {}
+    }
+  }
   if (id === undefined || !gates.has(id) || !changeEvents.has(method) || changeTimers.has(id)) return;
   changeTimers.set(id, setTimeout(() => {
     changeTimers.delete(id);

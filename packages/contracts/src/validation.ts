@@ -116,6 +116,15 @@ export function actionRequest(value: unknown): ActionRequest {
     }
     action = { kind: 'upload', ref: string(a.ref), files: a.files.map(uploadFile) };
   }
+  else if (a.kind === 'choose') {
+    if (Object.keys(a).some(key => !['kind', 'ref', 'files', 'expected'].includes(key))) {
+      throw new BrowserError('INVALID_REQUEST', 'Choose requires one exact chooser trigger and bounded local files');
+    }
+    if (!Array.isArray(a.files) || a.files.length < 1 || a.files.length > 64) {
+      throw new BrowserError('INVALID_REQUEST', 'Choose requires one to sixty-four local files');
+    }
+    action = { kind: 'choose', ref: string(a.ref), files: a.files.map(uploadFile) };
+  }
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
   if (a.expected !== undefined) {
     const e = record(a.expected);
@@ -130,7 +139,7 @@ export function actionRequest(value: unknown): ActionRequest {
     else throw new BrowserError('INVALID_REQUEST', 'Unsupported postcondition');
     if ((action.kind === 'scroll' || action.kind === 'wheel') && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll/wheel cannot verify an input value');
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
-    if (action.kind === 'upload' && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'Upload verifies page text or node state, not input value or navigation');
+    if ((action.kind === 'upload' || action.kind === 'choose') && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'File actions verify page text or node state, not input value or navigation');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),
     documentEpoch: string(v.documentEpoch,512), action };

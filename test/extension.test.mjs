@@ -86,6 +86,34 @@ test('file selection is allowlisted, resolved-object-only and bounded to absolut
   await f.ui('stop');
 });
 
+test('file chooser interception and accept are allowlisted, enabled-only and bounded to absolute local files', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.setInterceptFileChooserDialog',
+    params: { enabled: true } })).ok, true);
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.setInterceptFileChooserDialog',
+    params: { enabled: false } })).code, 'POLICY_DENIED');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleFileChooser',
+    params: { action: 'accept', files: ['/tmp/a.txt'] } })).ok, true);
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleFileChooser',
+    params: { action: 'cancel' } })).code, 'POLICY_DENIED');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleFileChooser',
+    params: { action: 'accept', files: ['relative.txt'] } })).code, 'POLICY_DENIED');
+  await f.ui('stop');
+});
+
+test('file chooser opened events forward tab, lease and backend node metadata', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.fileChooserOpened', { backendNodeId: 99, frameId: 'frame', mode: 'selectSingle' });
+  const event = f.sent.find(m => m.type === 'event' && m.event === 'fileChooser.opened');
+  assert.ok(event, 'fileChooser.opened reached the native port');
+  assert.equal(event.value.tab, f.lease.tab);
+  assert.equal(event.value.leaseId, f.lease.id);
+  assert.equal(event.value.backendNodeId, 99);
+  await f.ui('stop');
+});
+
 test('personal Broker handshake discovers ordinary tabs and grants tab leases without popup consent', async () => {
   const f = await fixture({ handshake: false });
   f.welcome(f.port, { version: 1, connectionEpoch: 'personal',

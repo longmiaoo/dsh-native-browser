@@ -597,6 +597,67 @@ export class ChromiumProvider implements BrowserProvider {
     return await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding);
   }
 
+  private async choose(lease: Lease, request: ActionRequest, action: Extract<Action, { kind: 'choose' }>,
+    execution: ProviderExecution, clock: ChangeClock, stateBinding?: StateBinding): Promise<ProviderResult> {
+    const { signal } = execution;
+    const target = this.pages.get(lease.tab)?.byRef.get(action.ref);
+    if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale choose target');
+    if (!controlRoles.has(target.role)) throw new BrowserError('NOT_ACTIONABLE', 'File chooser trigger must be an observed control');
+    await this.checkIdentity(lease, target, signal);
+    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const objectId = resolved.object?.objectId;
+    if (!objectId) throw new BrowserError('STALE_TARGET', 'Choose target was removed');
+    let chooserOpened = false;
+    const unsubscribe = this.channel.onEvent?.((event, raw) => {
+      if (event !== 'fileChooser.opened' || !raw || typeof raw !== 'object') return;
+      const value = raw as Dict;
+      if (value.tab === lease.tab && value.leaseId === lease.id) { chooserOpened = true; clock.pulse(); }
+    });
+    try {
+      execution.onDispatch();
+      await this.cdp(lease, 'Page.setInterceptFileChooserDialog', { enabled: true }, signal);
+      let previous: Dict | undefined, previousAt = 0, scrolled = false;
+      const geometry = await waitUntil(async () => {
+        await this.checkIdentity(lease, target, signal);
+        const next = await this.geometry(lease, objectId, signal);
+        if (next.inViewport === false && !scrolled) {
+          scrolled = true; execution.onDispatch();
+          await this.cdp(lease, 'DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendId }, signal);
+          previous = undefined; return undefined;
+        }
+        if (!next.ok) { previous = undefined; return undefined; }
+        const stable = previous && sameGeometry(previous, next);
+        const now = performance.now();
+        if (stable && now - previousAt >= 32) return next;
+        if (!stable) { previous = next; previousAt = now; }
+        return undefined;
+      }, { signal, clock, fallbackMs: 40 });
+      await this.checkIdentity(lease, target, signal);
+      const finalPoint = await this.geometry(lease, objectId, signal, { x: geometry.x, y: geometry.y });
+      if (!finalPoint.ok || !sameGeometry(geometry, finalPoint)) {
+        throw new BrowserError('NOT_ACTIONABLE', 'Selected choose point changed before input');
+      }
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 }, signal);
+      try {
+        await waitUntil(async () => chooserOpened ? true : undefined, { signal, clock });
+      } catch (error) {
+        if (error instanceof BrowserError && error.code === 'DEADLINE_EXCEEDED') {
+          throw new BrowserError('NOT_ACTIONABLE', 'File chooser did not open');
+        }
+        throw error;
+      }
+      execution.onDispatch();
+      await this.cdp(lease, 'Page.handleFileChooser', { action: 'accept', files: action.files }, signal);
+    } finally {
+      unsubscribe?.();
+      await this.cdp(lease, 'Runtime.releaseObject', { objectId }, AbortSignal.timeout(1000)).catch(() => {});
+    }
+    return await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding);
+  }
+
   async actFrame(lease:Lease,raw:ActionRequest,execution:ProviderExecution):Promise<ProviderResult>{
     const request=actionRequest(raw),frame=request.frame,action=request.action;
     if(!frame||action.kind!=='click')throw new BrowserError('INVALID_REQUEST','Explicit child click scope is required');
@@ -697,6 +758,7 @@ export class ChromiumProvider implements BrowserProvider {
         return await this.result(navigationLease, action.expected ?? { kind: 'url', url }, undefined, signal, clock, navigation.loaderId);
       }
       if (action.kind === 'upload') return await this.upload(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
+      if (action.kind === 'choose') return await this.choose(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
       if (!controlRoles.has(original.role) && !original.editable && !(action.kind === 'wheel' && regionRoles.has(original.role))) {

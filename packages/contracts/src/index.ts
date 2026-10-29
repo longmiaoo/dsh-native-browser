@@ -138,7 +138,8 @@ export type Action =
   | { kind: 'scroll'; ref?: string; deltaX: number; deltaY: number; expected?: Expected }
   | { kind: 'wheel'; ref: string; deltaX: number; deltaY: number; expected?: Expected }
   | { kind: 'navigate'; url: string; expected?: Expected }
-  | { kind: 'upload'; ref: string; files: string[]; expected?: Expected };
+  | { kind: 'upload'; ref: string; files: string[]; expected?: Expected }
+  | { kind: 'choose'; ref: string; files: string[]; expected?: Expected };
 export interface ActionRequest {
   requestId: string;
   leaseId: string;

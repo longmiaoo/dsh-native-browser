@@ -17,7 +17,7 @@ test('built extension declares presentation scripting on HTTP(S) pages for the c
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
-  assert.equal(manifest.version, '0.1.0.3');
+  assert.equal(manifest.version, '0.1.0.4');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
   assert.equal(manifest.optional_host_permissions, undefined);

@@ -15,7 +15,9 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Chrome actionability is a release gate and Chrome stable's hit-test behavior
+    # is the supported macOS baseline. Linux Chrome can differ for clipped targets.
+    runs-on: macos-14
     timeout-minutes: 30
     steps:
       - name: Check out the tagged source

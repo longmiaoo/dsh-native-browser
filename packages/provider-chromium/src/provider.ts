@@ -573,6 +573,30 @@ export class ChromiumProvider implements BrowserProvider {
     }
   }
 
+  private async upload(lease: Lease, request: ActionRequest, action: Extract<Action, { kind: 'upload' }>,
+    execution: ProviderExecution, clock: ChangeClock, stateBinding?: StateBinding): Promise<ProviderResult> {
+    const { signal } = execution;
+    const target = this.pages.get(lease.tab)?.byRef.get(action.ref);
+    if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale upload target');
+    await this.checkIdentity(lease, target, signal);
+    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const objectId = resolved.object?.objectId;
+    if (!objectId) throw new BrowserError('STALE_TARGET', 'Upload target was removed');
+    try {
+      const input = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId,
+        functionDeclaration: 'function(){return this instanceof HTMLInputElement && this.type === "file" && this.isConnected === true && this.disabled === false;}',
+        returnByValue: true }, signal);
+      if (input.exceptionDetails || input.result?.value !== true) {
+        throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Upload requires a connected, enabled <input type=file>');
+      }
+      execution.onDispatch();
+      await this.cdp(lease, 'DOM.setFileInputFiles', { files: action.files, objectId }, signal);
+    } finally {
+      await this.cdp(lease, 'Runtime.releaseObject', { objectId }, AbortSignal.timeout(1000)).catch(() => {});
+    }
+    return await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding);
+  }
+
   async actFrame(lease:Lease,raw:ActionRequest,execution:ProviderExecution):Promise<ProviderResult>{
     const request=actionRequest(raw),frame=request.frame,action=request.action;
     if(!frame||action.kind!=='click')throw new BrowserError('INVALID_REQUEST','Explicit child click scope is required');
@@ -672,6 +696,7 @@ export class ChromiumProvider implements BrowserProvider {
         }
         return await this.result(navigationLease, action.expected ?? { kind: 'url', url }, undefined, signal, clock, navigation.loaderId);
       }
+      if (action.kind === 'upload') return await this.upload(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
       if (!controlRoles.has(original.role) && !original.editable && !(action.kind === 'wheel' && regionRoles.has(original.role))) {

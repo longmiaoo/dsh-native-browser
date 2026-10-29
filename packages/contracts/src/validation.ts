@@ -7,6 +7,17 @@ export function string(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.length || value.length > max) throw new BrowserError('INVALID_REQUEST', 'Invalid string field');
   return value;
 }
+const absoluteWindowsPath = /^[A-Za-z]:[\\/]|^\\\\[^\\]+\\[^\\]+/;
+export function uploadFile(value: unknown): string {
+  const file = string(value, 4096);
+  if (file.includes('\0') || /[\r\n]/.test(file) || file.includes('://')) {
+    throw new BrowserError('INVALID_REQUEST', 'Upload files must be local paths without control characters or URL schemes');
+  }
+  if (!file.startsWith('/') && !absoluteWindowsPath.test(file)) {
+    throw new BrowserError('INVALID_REQUEST', 'Upload files must be absolute local paths');
+  }
+  return file;
+}
 export function scrollDelta(value: unknown): { deltaX: number; deltaY: number } {
   const v = record(value);
   const valid = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && Math.abs(n) <= 10_000;
@@ -96,6 +107,15 @@ export function actionRequest(value: unknown): ActionRequest {
       : { kind: 'scroll', ...scrollDelta(a), ...(a.ref === undefined ? {} : { ref: string(a.ref) }) };
   }
   else if (a.kind === 'navigate') action = { kind: 'navigate', url: string(a.url, 8192) };
+  else if (a.kind === 'upload') {
+    if (Object.keys(a).some(key => !['kind', 'ref', 'files', 'expected'].includes(key))) {
+      throw new BrowserError('INVALID_REQUEST', 'Upload requires one exact file-input target and bounded local files');
+    }
+    if (!Array.isArray(a.files) || a.files.length < 1 || a.files.length > 64) {
+      throw new BrowserError('INVALID_REQUEST', 'Upload requires one to sixty-four local files');
+    }
+    action = { kind: 'upload', ref: string(a.ref), files: a.files.map(uploadFile) };
+  }
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
   if (a.expected !== undefined) {
     const e = record(a.expected);
@@ -110,6 +130,7 @@ export function actionRequest(value: unknown): ActionRequest {
     else throw new BrowserError('INVALID_REQUEST', 'Unsupported postcondition');
     if ((action.kind === 'scroll' || action.kind === 'wheel') && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll/wheel cannot verify an input value');
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
+    if (action.kind === 'upload' && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'Upload verifies page text or node state, not input value or navigation');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),
     documentEpoch: string(v.documentEpoch,512), action };

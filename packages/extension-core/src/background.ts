@@ -1,5 +1,5 @@
 import { BrowserError, checkAbort, errorCode, originOf, type Lease } from '../../contracts/src/index.js';
-import { record, string } from '../../contracts/src/validation.js';
+import { record, string, uploadFile } from '../../contracts/src/validation.js';
 import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
 import { allowedMouseEvent } from '../../provider-chromium/src/mouse.js';
 import { axReadRequest, readAXTree } from '../../provider-chromium/src/ax-reader.js';
@@ -33,7 +33,8 @@ let brokerPersonal = false;
 const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocument',
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
-  'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate']);
+  'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
+  'DOM.setFileInputFiles']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -290,6 +291,15 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
       || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {
       throw new BrowserError('POLICY_DENIED', 'Only the fixed document-readiness query is exposed');
+    }
+    if (command === 'DOM.setFileInputFiles') {
+      const files = params.files;
+      if (Object.keys(params).length !== 2 || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
+        || !Array.isArray(files) || files.length < 1 || files.length > 64) {
+        throw new BrowserError('POLICY_DENIED', 'File selection requires one resolved file input and bounded local files');
+      }
+      try { files.forEach(uploadFile); }
+      catch { throw new BrowserError('POLICY_DENIED', 'Upload files must be absolute local paths'); }
     }
     return enqueue(id, async () => {
       if (command === 'Page.navigate' && (lease.scope ?? 'origin') === 'tab') {

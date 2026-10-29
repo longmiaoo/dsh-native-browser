@@ -114,6 +114,19 @@ try {
   const delayed = observation.nodes.find(n => n.name === '延迟反馈'); assert.ok(delayed);
   assert.equal((await act('mv3-click', { kind: 'click', ref: delayed.id, expected: { kind: 'text', text: '延迟保存成功' } })).outcome, 'succeeded');
   assert.equal(await page.evaluate(() => window.fixtureClicks.delayed), 1);
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.id = 'uploadInput'; input.setAttribute('aria-label', '选择文件');
+    const status = document.createElement('div'); status.id = 'uploadStatus'; status.textContent = 'waiting';
+    input.addEventListener('change', () => { status.textContent = input.files?.[0]?.name ?? 'none'; });
+    document.body.append(input, status);
+  });
+  observation = await runtime.observe(owner, lease.id, signal);
+  const fileInput = observation.nodes.find(n => n.name === '选择文件'); assert.ok(fileInput, 'upload file input is observable');
+  const uploadPath = path.join(profile, 'upload.txt'); await writeFile(uploadPath, 'real upload content');
+  assert.equal((await act('mv3-upload', { kind: 'upload', ref: fileInput.id, files: [uploadPath], expected: { kind: 'text', text: 'upload.txt' } })).outcome, 'succeeded');
+  assert.equal(await page.locator('#uploadInput').evaluate(element => element.files[0]?.name), 'upload.txt');
+  assert.equal(await page.locator('#uploadStatus').textContent(), 'upload.txt');
   assert.equal((await act('mv3-nav', { kind: 'navigate', url: `${origin}/next` })).outcome, 'succeeded');
   const cleanScreenshot = await runtime.capture(owner, lease.id, signal); assert.ok(cleanScreenshot.data.length > 100);
   assert.deepEqual(cleanScreenshot.redaction, { policy: 'cross-origin-frames', frames: 0, regions: 0 });
@@ -155,7 +168,8 @@ try {
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
-      'Same-origin navigation', 'JPEG capture', 'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
+      'Real file input upload via DOM.setFileInputFiles', 'Same-origin navigation', 'JPEG capture',
+      'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
       ...frameGeometry.checks,'Popup Stop denies subsequent bound frame geometry'],
     scope: 'Real isolated Chrome MV3 extension and runtime; native port is a test bridge, not Native Messaging or DSH/model end-to-end' };
   await mkdir('output/playwright', { recursive: true });

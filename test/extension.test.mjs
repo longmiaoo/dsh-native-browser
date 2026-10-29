@@ -69,6 +69,23 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
   return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, redactions, tab, sent };
 }
 
+test('file selection is allowlisted, resolved-object-only and bounded to absolute local paths', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  const ok = await f.call('cdp', { lease: f.lease, method: 'DOM.setFileInputFiles',
+    params: { files: ['/tmp/a.txt'], objectId: 'object' } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(f.commands.find(c => c.method === 'DOM.setFileInputFiles').params,
+    { files: ['/tmp/a.txt'], objectId: 'object' });
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'DOM.setFileInputFiles',
+    params: { files: ['relative.txt'], objectId: 'object' } })).code, 'POLICY_DENIED');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'DOM.setFileInputFiles',
+    params: { files: ['/tmp/a.txt'], objectId: 'object', backendNodeId: 1 } })).code, 'POLICY_DENIED');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'DOM.setFileInputFiles',
+    params: { files: Array.from({ length: 65 }, (_, i) => `/tmp/${i}`), objectId: 'object' } })).code, 'POLICY_DENIED');
+  await f.ui('stop');
+});
+
 test('personal Broker handshake discovers ordinary tabs and grants tab leases without popup consent', async () => {
   const f = await fixture({ handshake: false });
   f.welcome(f.port, { version: 1, connectionEpoch: 'personal',

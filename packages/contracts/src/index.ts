@@ -137,7 +137,8 @@ export type Action =
   | { kind: 'press'; ref: string; key: BrowserKey; shift?: boolean; expected?: Expected }
   | { kind: 'scroll'; ref?: string; deltaX: number; deltaY: number; expected?: Expected }
   | { kind: 'wheel'; ref: string; deltaX: number; deltaY: number; expected?: Expected }
-  | { kind: 'navigate'; url: string; expected?: Expected };
+  | { kind: 'navigate'; url: string; expected?: Expected }
+  | { kind: 'upload'; ref: string; files: string[]; expected?: Expected };
 export interface ActionRequest {
   requestId: string;
   leaseId: string;

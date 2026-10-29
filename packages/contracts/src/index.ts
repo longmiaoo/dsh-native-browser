@@ -135,6 +135,12 @@ export interface DownloadEvidence {
   receivedBytes: number;
   totalBytes?: number;
 }
+export interface VisualEvidence {
+  screenshotId: string;
+  target: string;
+  viewportBox: { x1: number; y1: number; x2: number; y2: number };
+  viewportPoint: { x: number; y: number };
+}
 export type Action =
   | { kind: 'check'; ref: string; checked: boolean; expected?: Expected }
   | { kind: 'click'; ref: string; expected?: Expected }
@@ -146,7 +152,11 @@ export type Action =
   | { kind: 'navigate'; url: string; expected?: Expected }
   | { kind: 'upload'; ref: string; files: string[]; expected?: Expected }
   | { kind: 'choose'; ref: string; files: string[]; expected?: Expected }
-  | { kind: 'download'; ref: string; expected?: Expected };
+  | { kind: 'download'; ref: string; expected?: Expected }
+  | { kind: 'visual-click'; screenshotId: string; screenshotSha256: string; target: string;
+      viewport: { width: number; height: number; pageX: number; pageY: number };
+      box: { x1: number; y1: number; x2: number; y2: number };
+      point: { x: number; y: number }; expected?: Expected };
 export interface ActionRequest {
   requestId: string;
   leaseId: string;
@@ -181,6 +191,7 @@ export interface ActionResult {
   observation?: FullObservation;
   scroll?: ScrollEvidence;
   download?: DownloadEvidence;
+  visual?: VisualEvidence;
   /** Historical metadata only. Never an assertion about the current page or restored authority. */
   recovery?: import('./journal.js').RecoveryRecord;
 }
@@ -194,6 +205,7 @@ export interface ProviderResult {
   postcondition: 'passed' | 'failed' | 'unverified';
   scroll?: ScrollEvidence;
   download?: DownloadEvidence;
+  visual?: VisualEvidence;
 }
 export interface BrowserProvider {
   readonly instance: BrowserInstance;

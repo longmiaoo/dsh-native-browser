@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { ScreenshotRegistry } from '../dist/packages/vision-adapter/src/screenshots.js';
 import { boxToViewport } from '../dist/packages/vision-adapter/src/geometry.js';
-import { parseRouterGrounding } from '../dist/packages/vision-adapter/src/grounding.js';
+import { parseRouterGrounding, visualActionFromScreenshot } from '../dist/packages/vision-adapter/src/grounding.js';
 
 function fixture(options) {
   let now = 10000;
@@ -71,6 +71,18 @@ test('public Router result maps once from Host canonical pixels, without a secon
   assert.deepEqual(candidate.viewportPoint, { x: 300, y: 450 });
   assert.equal(candidate.screenshotSha256, ref.sha256); assert.equal('confidence' in candidate, false);
   assert.equal(candidate.leaseId, 'lease-a'); assert.equal(candidate.documentEpoch, 'doc');
+});
+
+test('model-facing image box expands once into a viewport-bound visual action', () => {
+  const f = fixture(), ref = f.add();
+  const action = visualActionFromScreenshot(ref, { x1: 100, y1: 200, x2: 300, y2: 400 }, 'Submit button');
+  assert.deepEqual(action.box, { x1: 150, y1: 300, x2: 450, y2: 600 });
+  assert.deepEqual(action.point, { x: 300, y: 450 });
+  assert.deepEqual(action.viewport, ref.viewport);
+  assert.equal(action.screenshotId, ref.id);
+  assert.equal(action.screenshotSha256, ref.sha256);
+  action.viewport.width = 1;
+  assert.equal(ref.viewport.width, 1200);
 });
 
 test('unavailable backend, wrong image size/space, malformed JSON and impossible boxes fail explicitly', () => {

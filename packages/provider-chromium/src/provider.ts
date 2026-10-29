@@ -64,6 +64,14 @@ const focusStateFunction = `function() {
   return {connected:this.isConnected,focused:this.getRootNode().activeElement===this,
     disabled:!!this.disabled,readOnly:!!this.readOnly,type:this.type};
 }`;
+const visualHitFunction = `function(x, y) {
+  const element = document.elementFromPoint(x, y);
+  if (!element) return {ok:false};
+  const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+  return {ok:true, connected:element.isConnected===true, disabled:element.disabled===true, tag:element.tagName,
+    rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}, pointerEvents:style.pointerEvents,
+    visibility:style.visibility, opacity:style.opacity};
+}`;
 
 /** Shared Chromium semantics: brand differences stay in BrowserInstance/installer. */
 export class ChromiumProvider implements BrowserProvider {
@@ -745,6 +753,50 @@ export class ChromiumProvider implements BrowserProvider {
     }
   }
 
+  private async visualClick(lease: Lease, request: ActionRequest, action: Extract<Action, { kind: 'visual-click' }>,
+    execution: ProviderExecution, clock: ChangeClock, stateBinding?: StateBinding): Promise<ProviderResult> {
+    const { signal } = execution;
+    const current = await this.document(lease, signal);
+    if (current.state.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Document changed since the screenshot');
+    const v = (await this.cdp(lease, 'Page.getLayoutMetrics', {}, signal)).cssVisualViewport;
+    const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
+    if (!v || !near(v.clientWidth, action.viewport.width) || !near(v.clientHeight, action.viewport.height)
+      || !near(v.pageX, action.viewport.pageX) || !near(v.pageY, action.viewport.pageY)) {
+      throw new BrowserError('STALE_TARGET', 'Viewport scrolled or resized since the screenshot');
+    }
+    const rootBackend = (await this.cdp(lease, 'DOM.getDocument', { depth: 0, pierce: false }, signal)).root?.backendNodeId;
+    const objectId = rootBackend ? (await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: rootBackend }, signal)).object?.objectId : undefined;
+    if (!objectId) throw new BrowserError('STALE_TARGET', 'Document root is unavailable');
+    try {
+      const hit = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId, functionDeclaration: visualHitFunction,
+        arguments: [{ value: action.point.x }, { value: action.point.y }], returnByValue: true }, signal);
+      const value = hit.result?.value;
+      if (hit.exceptionDetails || !value?.ok || value.connected !== true || value.disabled === true
+        || value.visibility === 'hidden' || value.visibility === 'collapse' || value.pointerEvents === 'none'
+        || !(value.rect?.width > 0) || !(value.rect?.height > 0) || !(Number(value.opacity) > 0)) {
+        throw new BrowserError('NOT_ACTIONABLE', 'Visual target is not visible or actionable');
+      }
+      const rect = { x1: value.rect.x, y1: value.rect.y, x2: value.rect.x + value.rect.width, y2: value.rect.y + value.rect.height };
+      const overlap = Math.max(0, Math.min(action.box.x2, rect.x2) - Math.max(action.box.x1, rect.x1))
+        * Math.max(0, Math.min(action.box.y2, rect.y2) - Math.max(action.box.y1, rect.y1));
+      const boxArea = (action.box.x2 - action.box.x1) * (action.box.y2 - action.box.y1);
+      const rectArea = (rect.x2 - rect.x1) * (rect.y2 - rect.y1);
+      if (overlap <= 0 || overlap / Math.min(boxArea, rectArea) < 0.5) {
+        throw new BrowserError('AMBIGUOUS_TARGET', 'Visual target does not overlap the hit element enough');
+      }
+      if ((await this.document(lease, signal)).state.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Document changed before visual input');
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: action.point.x, y: action.point.y, button: 'left', clickCount: 1 }, signal);
+      execution.onDispatch();
+      await this.cdp(lease, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: action.point.x, y: action.point.y, button: 'left', clickCount: 1 }, signal);
+    } finally {
+      await this.cdp(lease, 'Runtime.releaseObject', { objectId }, AbortSignal.timeout(1000)).catch(() => {});
+    }
+    const result = await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding);
+    return { ...result, visual: { screenshotId: action.screenshotId, target: action.target,
+      viewportBox: action.box, viewportPoint: action.point } };
+  }
+
   async actFrame(lease:Lease,raw:ActionRequest,execution:ProviderExecution):Promise<ProviderResult>{
     const request=actionRequest(raw),frame=request.frame,action=request.action;
     if(!frame||action.kind!=='click')throw new BrowserError('INVALID_REQUEST','Explicit child click scope is required');
@@ -847,6 +899,7 @@ export class ChromiumProvider implements BrowserProvider {
       if (action.kind === 'upload') return await this.upload(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       if (action.kind === 'choose') return await this.choose(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       if (action.kind === 'download') return await this.download(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
+      if (action.kind === 'visual-click') return await this.visualClick(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
       if (!controlRoles.has(original.role) && !original.editable && !(action.kind === 'wheel' && regionRoles.has(original.role))) {

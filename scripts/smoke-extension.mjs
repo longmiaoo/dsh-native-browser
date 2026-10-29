@@ -135,6 +135,23 @@ try {
   const delayed = observation.nodes.find(n => n.name === '延迟反馈'); assert.ok(delayed);
   assert.equal((await act('mv3-click', { kind: 'click', ref: delayed.id, expected: { kind: 'text', text: '延迟保存成功' } })).outcome, 'succeeded');
   assert.equal(await page.evaluate(() => window.fixtureClicks.delayed), 1);
+  await page.evaluate(() => scrollTo(0, 0));
+  const visualShot = await runtime.capture(owner, lease.id, signal);
+  const submitRect = await page.locator('#submit').evaluate(element => { const r = element.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height }; });
+  const visualAction = { kind: 'visual-click', screenshotId: 'mv3-visual-shot', screenshotSha256: 'b'.repeat(64), target: '提交测试',
+    viewport: visualShot.viewport, box: { x1: submitRect.x, y1: submitRect.y, x2: submitRect.x + submitRect.width, y2: submitRect.y + submitRect.height },
+    point: { x: submitRect.x + submitRect.width / 2, y: submitRect.y + submitRect.height / 2 },
+    expected: { kind: 'text', text: '已提交' } };
+  const visual = await act('mv3-visual-click', visualAction);
+  assert.equal(visual.outcome, 'succeeded');
+  assert.equal(visual.visual.screenshotId, 'mv3-visual-shot');
+  assert.equal(await page.evaluate(() => window.fixtureClicks.submit), 1);
+  await page.evaluate(() => scrollTo(0, 240));
+  const staleVisual = await act('mv3-visual-stale', { ...visualAction, expected: { kind: 'text', text: '已提交' } });
+  assert.notEqual(staleVisual.outcome, 'succeeded');
+  assert.equal(staleVisual.code, 'STALE_TARGET');
+  await page.evaluate(() => scrollTo(0, 0));
   await page.evaluate(() => {
     const input = document.createElement('input');
     input.type = 'file'; input.id = 'uploadInput'; input.setAttribute('aria-label', '选择文件');
@@ -201,6 +218,7 @@ try {
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
+      'Real visual-click from a screenshot box after hit-test and viewport checks',
       'Real file input upload via DOM.setFileInputFiles', 'Real attachment download via chrome.downloads',
       'Same-origin navigation', 'JPEG capture',
       'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',

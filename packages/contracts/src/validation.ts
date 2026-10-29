@@ -34,6 +34,36 @@ export function downloadEvidence(value: unknown): import('./index.js').DownloadE
   return { filename, path: localPath(v.path), receivedBytes: Number(v.receivedBytes),
     ...(v.totalBytes === undefined ? {} : { totalBytes: Number(v.totalBytes) }) };
 }
+const bounded = (value: unknown, min: number, max: number, label: string): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new BrowserError('INVALID_REQUEST', `Invalid ${label}`);
+  }
+  return value;
+};
+export function visualBox(value: unknown): { x1: number; y1: number; x2: number; y2: number } {
+  const v = record(value);
+  if (Object.keys(v).some(key => !['x1', 'y1', 'x2', 'y2'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Visual box accepts only x1/y1/x2/y2');
+  const box = { x1: bounded(v.x1, 0, 1_000_000, 'visual box'), y1: bounded(v.y1, 0, 1_000_000, 'visual box'),
+    x2: bounded(v.x2, 0, 1_000_000, 'visual box'), y2: bounded(v.y2, 0, 1_000_000, 'visual box') };
+  if (box.x1 >= box.x2 || box.y1 >= box.y2) throw new BrowserError('INVALID_REQUEST', 'Visual box must have positive area');
+  return box;
+}
+export function visualPoint(value: unknown): { x: number; y: number } {
+  const v = record(value);
+  if (Object.keys(v).some(key => !['x', 'y'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Visual point accepts only x/y');
+  return { x: bounded(v.x, 0, 1_000_000, 'visual point'), y: bounded(v.y, 0, 1_000_000, 'visual point') };
+}
+function visualViewport(value: unknown) {
+  const v = record(value);
+  if (Object.keys(v).some(key => !['width', 'height', 'pageX', 'pageY'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Invalid visual viewport');
+  return { width: bounded(v.width, 1, 1_000_000, 'viewport width'), height: bounded(v.height, 1, 1_000_000, 'viewport height'),
+    pageX: bounded(v.pageX, 0, 10_000_000, 'viewport pageX'), pageY: bounded(v.pageY, 0, 10_000_000, 'viewport pageY') };
+}
+export function visualEvidence(value: unknown): import('./index.js').VisualEvidence {
+  const v = record(value);
+  return { screenshotId: string(v.screenshotId, 128), target: string(v.target, 500),
+    viewportBox: visualBox(v.viewportBox), viewportPoint: visualPoint(v.viewportPoint) };
+}
 export function scrollDelta(value: unknown): { deltaX: number; deltaY: number } {
   const v = record(value);
   const valid = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && Math.abs(n) <= 10_000;
@@ -147,6 +177,20 @@ export function actionRequest(value: unknown): ActionRequest {
     }
     action = { kind: 'download', ref: string(a.ref) };
   }
+  else if (a.kind === 'visual-click') {
+    if (Object.keys(a).some(key => !['kind', 'screenshotId', 'screenshotSha256', 'target', 'viewport', 'box', 'point', 'expected'].includes(key))) {
+      throw new BrowserError('INVALID_REQUEST', 'Visual click accepts only a grounded screenshot target');
+    }
+    const sha256 = string(a.screenshotSha256, 64);
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new BrowserError('INVALID_REQUEST', 'Invalid visual screenshot digest');
+    const viewport = visualViewport(a.viewport), box = visualBox(a.box), point = visualPoint(a.point);
+    if (box.x2 > viewport.width || box.y2 > viewport.height || point.x > viewport.width || point.y > viewport.height
+      || point.x < box.x1 || point.x > box.x2 || point.y < box.y1 || point.y > box.y2) {
+      throw new BrowserError('INVALID_REQUEST', 'Visual target lies outside its captured viewport');
+    }
+    action = { kind: 'visual-click', screenshotId: string(a.screenshotId, 128), screenshotSha256: sha256,
+      target: string(a.target, 500), viewport, box, point };
+  }
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
   if (a.expected !== undefined) {
     const e = record(a.expected);
@@ -162,6 +206,7 @@ export function actionRequest(value: unknown): ActionRequest {
     if ((action.kind === 'scroll' || action.kind === 'wheel') && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Scroll/wheel cannot verify an input value');
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
     if ((action.kind === 'upload' || action.kind === 'choose' || action.kind === 'download') && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'File actions verify page text or node state, not input value or navigation');
+    if (action.kind === 'visual-click' && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'Visual click verifies page text or node state, not input value or navigation');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),
     documentEpoch: string(v.documentEpoch,512), action };

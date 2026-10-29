@@ -1,6 +1,7 @@
 import { BrowserError } from '../../contracts/src/index.js';
 import { boxToViewport, type PixelBox } from './geometry.js';
 import type { ScreenshotRegistry } from './screenshots.js';
+import type { ScreenshotRef } from './screenshots.js';
 
 export interface VisualCandidate {
   screenshotId: string;
@@ -43,4 +44,11 @@ export function parseRouterGrounding(registry: ScreenshotRegistry, owner: string
     documentEpoch: ref.documentEpoch, expiresAt: ref.expiresAt, box, coordinateSpace: ref.coordinateSpace,
     sourceWidth: ref.imageSize.width, sourceHeight: ref.imageSize.height, viewportBox: mapped.box,
     viewportPoint: mapped.point, targetDescription, source: 'dsh-vision-router-public-ground' };
+}
+
+/** Expand a model-facing image-pixel box into the browser action the provider validates. */
+export function visualActionFromScreenshot(ref: ScreenshotRef, box: PixelBox, target: string) {
+  const mapped = boxToViewport(box, ref.imageSize, ref.viewport, ref.imageToViewport);
+  return { kind: 'visual-click' as const, screenshotId: ref.id, screenshotSha256: ref.sha256, target,
+    viewport: { ...ref.viewport }, box: mapped.box, point: mapped.point };
 }

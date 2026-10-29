@@ -197,13 +197,13 @@ For a longer task, identify the target tab clearly and state the stopping condit
 
 - list connected Chrome instances and eligible existing tabs;
 - claim one tab and read bounded accessible text, controls and named regions;
-- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>`, accept a native file chooser and capture a page-triggered download;
+- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>`, accept a native file chooser, capture a page-triggered download and click a screenshot-bound visual box after hit-test and viewport checks;
 - run a bounded batch of up to eight explicit actions, stopping on denial, uncertainty or failed verification;
 - page through large semantic documents and read supported same-origin child frames;
 - capture the current viewport as a DSH attachment and release control back to the user;
 - show a short-lived virtual pointer after a verified click or wheel dispatch.
 
-The normal fast path is semantic observation rather than screenshots. This plugin publishes screenshot attachments but does not itself run a vision model; visual grounding requires a vision-capable DSH session and a separately configured tool such as `dsh-vision-router`. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
+The normal fast path is semantic observation rather than screenshots. Multimodal sessions such as `DeepSeek-V4.1-Flash` can view the published screenshot attachment directly and pass an image-pixel box to `browser_act` `visual-click`; text-only sessions can optionally use a vision tool such as `dsh-vision-router` to produce the same box. The plugin never dispatches a vision model itself, and the browser-side click still requires a matching document epoch, unchanged viewport, a visible hit target and sufficient box overlap. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
 
 ### Check the installation
 

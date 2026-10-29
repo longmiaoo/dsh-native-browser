@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Add `visual-click`: a screenshot-bound image-pixel box from a multimodal model (or an optional vision tool) is mapped to the CSS viewport and clicked only after document-epoch, viewport scroll/size, hit-target and box-overlap checks.
+- Add `input.visual-click.v1` / `runtime.visual-click.v1` capability negotiation.
+
 ## 0.1.0-alpha.7 - 2026-10-29
 
 - Reduce extension permissions: keep required host access for HTTPS only, move plaintext HTTP to `optional_host_permissions`, and request it from an explicit optional HTTP-pointer control in the popup. Browser control still works without the optional grant; only pointer rendering on plaintext pages is skipped.

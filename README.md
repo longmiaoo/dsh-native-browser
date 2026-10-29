@@ -2,6 +2,8 @@
 
 > DSH-native control plane for fast, observable and human-steerable browsing in the Chrome you already use.
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#project-status)
 [![Chrome first](https://img.shields.io/badge/browser-Chrome-4285F4?logo=googlechrome&logoColor=white)](#scope)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -130,7 +132,7 @@ dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.6
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
-`setup` prints the packaged extension directory and its stable extension ID, then registers the Native Messaging host. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. If you previously loaded a pre-alpha.3 unpacked build, remove it before loading alpha.5 because the extension ID changed.
+`setup` prints the packaged extension directory and its stable extension ID, then registers the Native Messaging host. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. If you previously loaded an older unpacked build, remove it before loading the current version.
 
 Start the local Broker with an explicit allowlist. Origins are exact and include the port; repeat `--allow-origin` for additional sites:
 

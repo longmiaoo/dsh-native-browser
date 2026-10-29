@@ -2,11 +2,14 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.1.0-alpha.3 - 2026-10-29
 
 - Redact visible foreign/opaque iframe branches inside the Chrome extension before screenshot bytes cross Native Messaging, instead of rejecting an otherwise usable viewport.
 - Return bounded redaction evidence with screenshots and include the typed remote error code in user-visible transport failures.
 - Exercise the redaction path against a real cross-origin iframe in the isolated MV3 Chrome smoke.
+- Add `setup --browser=chrome|edge` to install the Native Messaging host for the packaged stable development extension ID, removing the manual Extension ID copy step.
+- Pin the developer-preview Chrome/Edge build to one public manifest key so the unpacked extension ID remains stable across checkout and package paths.
+- Run `test:chrome` in normal CI and tagged npm releases, while keeping unavailable extension redaction evidence fail-closed in the production provider.
 
 ## 0.1.0-alpha.2 - 2026-09-15
 

@@ -45,6 +45,7 @@ jobs:
           pnpm check
           pnpm typecheck
           pnpm test
+          pnpm test:chrome
           pnpm test:package-install
           git diff --exit-code
 

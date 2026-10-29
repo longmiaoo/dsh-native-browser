@@ -64,7 +64,7 @@ The early Edge compatibility smoke also passes in an isolated Edge profile with 
 
 ## Scope
 
-Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. This redaction is present on `main` but was added after the currently published `0.1.0-alpha.2` package. See [frame discovery](docs/development.md#frame-discovery-foundation).
+Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. See [frame discovery](docs/development.md#frame-discovery-foundation).
 
 In scope for the first production release:
 
@@ -126,15 +126,11 @@ The package is structured as a DSH bundle and includes the discovery terms used 
 Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.2
-dsh plugin --profile web exec dsh-native-browser extension-path --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.3
+dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
-Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. Record Chrome's generated 32-character extension ID, then register the Native Messaging host:
-
-```bash
-dsh plugin --profile web exec dsh-native-browser install-host --browser=chrome --extension-id=<extension-id>
-```
+`setup` prints the packaged extension directory and its stable extension ID, then registers the Native Messaging host. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. If you previously loaded an alpha.2 unpacked build, remove it before loading alpha.3 because the extension ID changed.
 
 Start the local Broker with an explicit allowlist. Origins are exact and include the port; repeat `--allow-origin` for additional sites:
 
@@ -162,7 +158,7 @@ When the visible DSH UI changes conversations, the client bridge releases browse
 
 ## Use the current alpha
 
-The currently published npm version is `0.1.0-alpha.2`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+The currently published npm version is `0.1.0-alpha.3`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
 
 ### Start a browsing session
 
@@ -205,14 +201,14 @@ For a longer task, identify the target tab clearly and state the stopping condit
 - capture the current viewport as a DSH attachment and release control back to the user;
 - show a short-lived virtual pointer after a verified click or wheel dispatch.
 
-The normal fast path is semantic observation rather than screenshots. This plugin publishes screenshot attachments but does not itself run a vision model; visual grounding requires a vision-capable DSH session and a separately configured tool such as `dsh-vision-router`. The published `0.1.0-alpha.2` package can fail closed on ordinary pages containing cross-origin or opaque frames. Current `main` redacts safely located foreign frame regions instead, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
+The normal fast path is semantic observation rather than screenshots. This plugin publishes screenshot attachments but does not itself run a vision model; visual grounding requires a vision-capable DSH session and a separately configured tool such as `dsh-vision-router`. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
 
 ### Check the installation
 
-Use the extension ID shown by `chrome://extensions`:
+Run the packaged installation diagnostic and optional raw connection status:
 
 ```bash
-dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome --extension-id=<extension-id>
+dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome
 dsh plugin --profile web exec dsh-native-browser status
 ```
 

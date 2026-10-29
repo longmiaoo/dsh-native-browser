@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { access, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'dsh-native-browser-package-'))
+// Keep the fixture below the Unix-domain socket path limit. The production
+// installer intentionally validates the eventual Broker socket path.
+const temporaryRoot = await mkdtemp('/tmp/dsh-native-browser-package-')
 
 try {
   const { stdout: packOutput } = await execFileAsync(
@@ -38,6 +39,15 @@ try {
 
   assert.equal(extensionPath, expectedPath)
   await access(path.join(extensionPath, 'manifest.json'))
+  const runtimeDirectory = path.join(temporaryRoot, 'runtime')
+  const manifestDirectory = path.join(temporaryRoot, 'native')
+  const { stdout: setupOutput } = await execFileAsync(executable, ['setup', '--browser=chrome',
+    `--runtime-dir=${runtimeDirectory}`, `--manifest-dir=${manifestDirectory}`])
+  const setup = JSON.parse(setupOutput)
+  assert.match(setup.extensionId, /^[a-p]{32}$/)
+  assert.equal(setup.extensionPath, extensionPath)
+  await access(setup.host.manifest)
+  await access(setup.host.launcher)
   console.log('Packed npm artifact executes through pnpm and exposes the Chrome extension.')
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true })

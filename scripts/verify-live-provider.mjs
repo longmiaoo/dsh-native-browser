@@ -32,6 +32,13 @@ export async function verifyLiveProvider(page) {
   const send = async (method, params) => {
     const result = await session.send(method, params);
     if (method.startsWith('Accessibility.')) axReads.push({ method, bytes: Buffer.byteLength(JSON.stringify(result)) });
+    // This harness talks to Playwright's direct CDP session and deliberately bypasses
+    // the MV3 extension. The fixture has no child frames at capture time, so direct
+    // CDP pixels need an explicit zero-frame redaction result to match the production
+    // provider contract. Real extension redaction is exercised by test:extension.
+    if (method === 'Page.captureScreenshot') {
+      return { ...result, redaction: { policy: 'cross-origin-frames', frames: 0, regions: 0 } };
+    }
     return result;
   };
   const provider = new ChromiumProvider(instance, { onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); }, async call(method, params, signal) {

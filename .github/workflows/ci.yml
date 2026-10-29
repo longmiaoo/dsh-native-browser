@@ -21,5 +21,28 @@ jobs:
       - run: corepack prepare pnpm@11.1.1 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:chrome
       - run: pnpm test:package-install
+
+  mv3-extension:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.1.1 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dlx playwright@1.63.0 install chromium
+      - name: Run the production MV3 extension against Chrome for Testing
+        shell: bash
+        run: |
+          executable=$(find "$HOME/Library/Caches/ms-playwright" -type f \
+            -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' \
+            -perm -111 -print -quit)
+          test -n "$executable"
+          DSH_CHROME_TEST_EXECUTABLE="$executable" pnpm test:extension

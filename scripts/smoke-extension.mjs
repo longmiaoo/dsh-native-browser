@@ -9,6 +9,7 @@ import { chromium } from 'playwright-core';
 import { ChromiumProvider } from '../dist/packages/provider-chromium/src/provider.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
+import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
 import { verifyFrameGeometryExtension } from './verify-frame-geometry-extension.mjs';
 
 // Only native transport is substituted. The production bundle, popup permission flow,
@@ -34,6 +35,8 @@ try {
       `--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`] });
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 10000 });
   const extensionId = new URL(worker.url()).hostname;
+  const extensionManifest = JSON.parse(await readFile(path.join(extensionPath, 'manifest.json'), 'utf8'));
+  assert.equal(extensionId, extensionIdFromManifestKey(extensionManifest.key), 'Chrome must honor the packaged stable extension ID');
   await worker.evaluate(() => {
     const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(value) { for (const fn of this.listeners) fn(value); } });
     const bridge = globalThis.__smokeBridge = { sent: [], pending: new Map(), events: [] };

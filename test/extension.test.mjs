@@ -9,11 +9,15 @@ import { brokerCapabilities, personalBrokerCapability } from '../dist/packages/c
 import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetricsFunction } from '../dist/packages/provider-chromium/src/frame-geometry-functions.js';
 import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 import { screenshotRedactionRects } from '../dist/packages/extension-core/src/screenshot-redaction.js';
+import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
 test('built extension declares presentation scripting on HTTP(S) pages for the cross-site virtual pointer', async () => {
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
+  assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
+  assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
+  assert.equal(manifest.version, '0.1.0.3');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
   assert.equal(manifest.optional_host_permissions, undefined);

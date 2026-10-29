@@ -222,14 +222,15 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
 ## Explicit Chrome/profile setup
 
-1. Build, open `chrome://extensions`, enable Developer mode and load unpacked `dist/extension/chrome`. Record the extension ID. Only install into the profile you intend to authorize.
-2. Register the native host for that exact ID:
+1. Build, then register the native host with the packaged stable development extension ID:
 
    ```bash
-   node bin/dsh-native-browser.mjs install-host --browser=chrome --extension-id=<32-character-extension-id>
+   node bin/dsh-native-browser.mjs setup --browser=chrome
    ```
 
-   This writes our host manifest under Chrome's current-user NativeMessagingHosts directory and a launcher/token under the private runtime directory. It does not modify any other extension manifest. Installation preflight, serialization, atomic file replacement and ordinary-failure rollback are described below. Keep the checkout path stable: the development launcher points to this build. Scoped host unregistration is available below; a signed, relocatable installer and complete package removal remain pending.
+   The command prints `extensionPath`, the stable `extensionId` embedded in the extension manifest, and the exact next steps. It writes our host manifest under the browser's current-user NativeMessagingHosts directory and a launcher/token under the private runtime directory. It does not modify any other extension manifest. Existing unpacked builds created before the stable key was introduced should be removed before loading the new build because their extension ID differs. Installation preflight, serialization, atomic file replacement and ordinary-failure rollback are described below. Keep the checkout path stable: the development launcher points to this build. Scoped host unregistration is available below; a signed, relocatable installer and complete package removal remain pending.
+
+2. Open `chrome://extensions`, enable Developer mode, and load unpacked from the printed `extensionPath`. Only install into the profile you intend to authorize.
 
 3. Start the local Broker, listing exact origins you intend to test:
 
@@ -242,7 +243,7 @@ This is not full iframe support: only same-origin ancestors in the root process,
    For an explicitly opted-in personal profile, use `--access-mode=personal` instead of any `--allow-origin` argument. The modes are mutually exclusive. Personal mode lists only extension-consented tabs, but issues a tab-scoped lease that can be rebound to that same tab's current HTTP(S) root origin.
 
 4. In another terminal run `node scripts/dev-fixtures.mjs`, then open `http://127.0.0.1:18765/` in the selected Chrome profile. Open the extension popup and choose “允许当前标签页并连接”.
-5. Run `node bin/dsh-native-browser.mjs doctor --browser=chrome --extension-id=<id>`. It reports installation and connection checks with actionable findings, as described below. Use `status` separately if you deliberately want raw connected-instance details.
+5. Run `node bin/dsh-native-browser.mjs doctor --browser=chrome`. It uses the packaged stable extension ID by default and reports installation and connection checks with actionable findings, as described below. Pass `--extension-id=<id>` for an older or externally supplied build. Use `status` separately if you deliberately want raw connected-instance details.
 6. Mount this local bundle in a dedicated DSH development profile using that DSH version's documented local-plugin mechanism. The plugin requires the `tools` service; `browser_screenshot` also requires `attachments`. Do not replace the user's production profile as part of a test.
 
 All CLI commands accept `--runtime-dir=/absolute/private/directory`. When using a nondefault directory, the DSH plugin config must set `runtimeDirectory` to the same path. Directory permissions must be `0700`; the token, lock database and newly bound socket are `0600`. Startup now recovers an eligible stale socket while holding process-lifetime ownership, as described below. Do not manually remove the lock database or recovery journal to bypass a startup failure.

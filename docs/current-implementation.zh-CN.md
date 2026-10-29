@@ -460,9 +460,9 @@ flowchart TD
 
 | 验证 | 结果 | 说明 |
 |---|---:|---|
-| <code>pnpm check && pnpm typecheck && pnpm test</code> | 513 passed / 0 failed | 静态边界、类型、单元与行为测试；包含前台会话桥接、乱序拒绝、切换撤权与 session dispose 回归 |
+| <code>pnpm check && pnpm typecheck && pnpm test</code> | 530 passed / 0 failed | 静态边界、类型、单元与行为测试；包含前台会话桥接、乱序拒绝、切换撤权与 session dispose 回归 |
 | browser-lab Web 装载 | 通过 | 本地 link 产物已进入 DSH client module 清单；重启后可在真实 UI 中切换两条既有会话，完整“运行中 lease 被切换撤销”仍保留为人工验收项 |
-| <code>pnpm test:chrome</code> | 90 passed | Chrome Stable 152.0.7977.84，真实 Provider/CDP 语义 |
+| <code>pnpm test:chrome</code> | 通过并进入 CI 门禁 | Chrome Stable 156.0.8078.48，真实 Provider/CDP 语义；直连 CDP 测试适配器显式携带零帧遮罩证据，真实扩展遮罩另由 <code>test:extension</code> 验证 |
 | <code>pnpm test:extension</code> | 16 passed | Chrome for Testing 151.0.7922.10，真实 MV3 + chrome.debugger（含跨域 iframe 扩展内遮罩） |
 | <code>pnpm test:native &lt;dsh-path&gt;</code> | 105 passed | DSH ToolRuntime → Broker → Native Host → MV3 → 页面 |
 | <code>pnpm test:frame-page-native</code> | Chrome/Edge 均通过 | 各 7 组：4000 控件、81 窗口、尾页 trusted click、离窗反馈确认、失效与清理 |

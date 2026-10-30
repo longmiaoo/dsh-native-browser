@@ -1,5 +1,9 @@
 # dsh-native-browser
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser icon" />
+</p>
+
 > Fluid, native Chrome automation for DeepSeek Harness.
 
 [![Alpha](https://img.shields.io/badge/status-alpha-orange)](#current-capabilities-and-limits) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)

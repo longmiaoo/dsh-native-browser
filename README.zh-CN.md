@@ -1,5 +1,9 @@
 # dsh-native-browser
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser 图标" />
+</p>
+
 > 为 DeepSeek Harness 打造流畅、连贯的原生 Chrome 操作体验。
 
 [![Alpha](https://img.shields.io/badge/status-alpha-orange)](#当前能力与边界) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)

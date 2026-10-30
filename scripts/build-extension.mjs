@@ -17,14 +17,19 @@ for (const brand of ['chrome', 'edge']) {
   await build({ entryPoints: [path.join(root, 'packages/extension-core/src/pointer.ts')],
     outfile: path.join(out, 'pointer.js'), bundle: true, platform: 'browser' });
   await copyFile(path.join(root, 'packages/extension-core/popup.html'), path.join(out, 'popup.html'));
+  for (const size of [16, 32, 48, 128]) {
+    await copyFile(path.join(root, 'assets', `icon-${size}.png`), path.join(out, `icon-${size}.png`));
+  }
   await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ manifest_version: 3,
-    name: 'DSH Native Browser (Developer Preview)', version: '0.1.0.7', minimum_chrome_version: '125',
+    name: 'DSH Native Browser (Developer Preview)', version: '0.1.0.8', minimum_chrome_version: '125',
     key: developmentExtensionKey,
     description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
+    icons: { 16: 'icon-16.png', 32: 'icon-32.png', 48: 'icon-48.png', 128: 'icon-128.png' },
     permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting', 'downloads', 'tabs'],
     host_permissions: ['https://*/*'],
     optional_host_permissions: ['http://*/*'],
     content_scripts: [{ matches: ['https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }],
     background: { service_worker: 'background.js', type: 'module' },
-    action: { default_popup: 'popup.html' } }, null, 2) + '\n');
+    action: { default_popup: 'popup.html', default_title: 'DSH Native Browser',
+      default_icon: { 16: 'icon-16.png', 32: 'icon-32.png', 48: 'icon-48.png', 128: 'icon-128.png' } } }, null, 2) + '\n');
 }

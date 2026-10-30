@@ -1,5 +1,9 @@
 # dsh-native-browser
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser icon" />
+</p>
+
 > DSH-native control plane for fast, observable and human-steerable browsing in the Chrome you already use.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -128,7 +132,7 @@ The package is structured as a DSH bundle and includes the discovery terms used 
 Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.7
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.8
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
@@ -160,7 +164,7 @@ When the visible DSH UI changes conversations, the client bridge releases browse
 
 ## Use the current alpha
 
-The currently published npm version is `0.1.0-alpha.7`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+The currently published npm version is `0.1.0-alpha.8`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
 
 ### Start a browsing session
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Chrome-first native browser runtime for DeepSeek Harness with semantic observation, reliable CDP actions, and human-agent handoff",
   "type": "module",
   "main": "index.js",
@@ -22,6 +22,7 @@
     "client.js",
     "bin",
     "dist",
+    "assets",
     "cordis.patch.yml",
     "docs/**/*.md",
     "docs/benchmark-results/*.json",

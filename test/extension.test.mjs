@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { keyEvent } from '../dist/packages/provider-chromium/src/keyboard.js';
@@ -17,10 +17,15 @@ test('built extension keeps HTTPS host access required and plaintext HTTP option
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
-  assert.equal(manifest.version, '0.1.0.7');
+  assert.equal(manifest.version, '0.1.0.8');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('downloads'));
   assert.ok(manifest.permissions.includes('tabs'));
+  assert.deepEqual(manifest.icons, { 16: 'icon-16.png', 32: 'icon-32.png', 48: 'icon-48.png', 128: 'icon-128.png' });
+  assert.deepEqual(manifest.action.default_icon, { 16: 'icon-16.png', 32: 'icon-32.png', 48: 'icon-48.png', 128: 'icon-128.png' });
+  for (const size of [16, 32, 48, 128]) {
+    await access(new URL(`../dist/extension/chrome/icon-${size}.png`, import.meta.url));
+  }
   assert.deepEqual(manifest.host_permissions, ['https://*/*']);
   assert.deepEqual(manifest.optional_host_permissions, ['http://*/*']);
   assert.deepEqual(manifest.content_scripts, [{ matches: ['https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);

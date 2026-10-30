@@ -1,5 +1,9 @@
 # dsh-native-browser
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser 图标" />
+</p>
+
 > 面向 DSH 的原生浏览器控制面：在你已经登录、已经打开的 Chrome 里，提供快速、可见、可随时接手浏览体验。
 
 [简体中文](README.zh-CN.md) | [English](README.md)
@@ -112,7 +116,7 @@ flowchart LR
 前置条件：macOS、Google Chrome、DSH `0.1.5-rc.1`、Node.js 22.19 或更新版本、pnpm 11。npm 包已经包含构建好的 JavaScript，安装时不会执行构建脚本。
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.7
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.8
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
@@ -144,7 +148,7 @@ Broker 和适配器设置必须同时存在，否则 claim 会失败关闭。扩
 
 ## 使用当前 alpha
 
-当前 npm 版本是 `0.1.0-alpha.7`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
+当前 npm 版本是 `0.1.0-alpha.8`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
 
 ### 开始一次浏览会话
 

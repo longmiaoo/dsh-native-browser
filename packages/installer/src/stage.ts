@@ -31,7 +31,10 @@ async function copyTree(source: string, target: string, budget: CopyBudget): Pro
       if (!value.isDirectory() || value.isSymbolicLink()) refused();
       await copyTree(from, to, budget);
     } else if (entry.isFile()) {
-      if (!value.isFile() || value.isSymbolicLink() || value.nlink !== 1 || value.uid !== process.getuid!() || value.size > MAX_BYTES) refused();
+      // pnpm legitimately hard-links immutable package-store files on Linux.
+      // Reading those into a new private file is safe; never chmod/mutate the
+      // source inode. Destination/runtime state still uses private single links.
+      if (!value.isFile() || value.isSymbolicLink() || value.uid !== process.getuid!() || value.size > MAX_BYTES) refused();
       budget.bytes += value.size;
       if (budget.bytes > MAX_BYTES) refused();
       await copyFile(from, to, constants.COPYFILE_EXCL);

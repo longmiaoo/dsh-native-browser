@@ -2,12 +2,20 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## 0.1.0-alpha.12 - 2026-10-30
+## 0.1.0 - 2026-10-30
 
-- Include the one-command installer and isolated tool namespace prepared for alpha.11.
-- Simulate the macOS platform explicitly in the installer orchestration test and keep both OS command runners mocked, so Ubuntu publication exercises the same scenario without invoking macOS services.
-- Add an unsupported-platform service regression test and an Ubuntu package CI job before release tagging.
-- Alpha.11 was tagged but not published to npm: its release verification caught the platform-dependent test. Its tag is preserved unchanged.
+First stable release, scoped to macOS + Google Chrome. DSH host-component validation covers 0.1.5-rc.1 and 0.2.1-rc.3; Edge and complete Linux/Windows installation remain experimental.
+
+- Ship the one-command installer: stable extension staging, Native Messaging registration, background LaunchAgent Broker readiness checks, and Chrome/Finder setup guidance including Command+Shift+G.
+- Check service ownership before installation/removal, reject competing manual Brokers, and fail unsupported automatic installs before writing files. Keep DSH approval configuration explicit.
+- Copy legitimate pnpm hard-linked package files into independent private staged files; give slow new-tab navigation the bounded action budget without repeating tab creation. Accept verified close acknowledgments even when Chrome removal revokes the lease first.
+- Register 13 `native_browser_*` tools by default. Legacy `browser_*` aliases are opt-in and occupied aliases are skipped.
+- Include semantic reads, verified browser input, local batches, screenshots/guarded visual clicks, uploads/downloads/dialogs, multi-tab grouping and close, visible pointer feedback, Stop/handoff and foreground-conversation revocation.
+- Verify fresh packed installation, repeated installation, migration from published alpha.10, stable extension ID/path, runtime identity preservation and scoped host uninstall/reinstall.
+- Add an installed-tarball macOS LaunchAgent/Native Messaging/DSH acceptance harness and unify English/Chinese installation, upgrade, approval and troubleshooting documentation.
+- Keep Ubuntu package checks and macOS Chrome/MV3 CI gates ahead of tag-bound npm Trusted Publishing; create the GitHub Release after successful npm publication.
+
+The alpha.11 tag is preserved but its npm publication was blocked by a platform-dependent test, now fixed. Alpha.12 was prepared in source and is superseded by 0.1.0 without publishing an npm prerelease.
 
 ## 0.1.0-alpha.11 - 2026-10-30 (unpublished)
 

@@ -6,13 +6,13 @@
 
 > 为 DeepSeek Harness 打造流畅、连贯的原生 Chrome 操作体验。
 
-[![Alpha](https://img.shields.io/badge/status-alpha-orange)](#当前能力与边界) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · 简体中文 · [开始试用](#开始试用) · [参与共建](#参与共建) · [反馈体验](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
 让 DSH 在你日常使用的 Chrome 中办事：沿用已有标签页、登录状态和扩展，通过自然语言读取页面、填写表单、完成连续操作，并在需要时交还控制。
 
-**我们以 Codex 的浏览器操作体验为标杆：让熟悉 Codex 的用户来到 DSH，也能获得自然、连贯的浏览器协作体验。** 项目正在向这个目标打磨，目前处于公开 Alpha 阶段。
+**我们以 Codex 的浏览器操作体验为标杆：让熟悉 Codex 的用户来到 DSH，也能获得自然、连贯的浏览器协作体验。** 首个正式版本将支持范围限定为 macOS + Chrome，并持续打磨真实任务中的流畅度。
 
 我们希望把操作做得足够顺，让你愿意把越来越多的浏览器任务交给 AI。欢迎带着一个真实任务来试用，也欢迎一起解决其中每一次停顿、误解和不顺手。
 
@@ -48,66 +48,80 @@
 
 ## 开始试用
 
-下面安装已发布的 `0.1.0-alpha.10`，使用 DSH `web` profile。[开发版本](#开发下一个版本)正在准备 `alpha.12`，增加一键安装和独立工具命名。安装到 `desktop` 时，将命令中的 `web` 一致替换为 `desktop`。两个 profile 需要分别安装。
+正式版 `0.1.0` 的支持范围是 **macOS + Google Chrome**。需要 Node.js ≥ 22.19、pnpm 11，以及已能正常对话的 DSH。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
 
-环境以 **macOS + Google Chrome** 为首要验证目标。需要 Node.js ≥ 22.19、可运行的 DSH 和 pnpm 11。已记录的 DSH 验证版本是 `0.1.5-rc.1`；发布包声明兼容 `>=0.1.5-rc.1 <0.3.0`，其他版本仍欢迎提交兼容性反馈。
+### 1 一条命令配置本机组件
 
-### 1 安装插件并注册连接组件
-
-```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.10
-dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
-```
-
-`setup` 会注册 Native Messaging Host，并输出扩展目录 `extensionPath` 和稳定的扩展 ID。
-
-打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，载入输出的 `extensionPath`。若已有旧的未打包扩展，按 setup 提示先移除旧版，再载入当前版本。
-
-### 2 启动首次试用连接
-
-在终端运行以下命令，并保持该进程运行。这条首次试用路线只准入 `https://example.com`，沿用默认的逐动作审批。
+在终端粘贴这一整行：
 
 ```bash
-dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://example.com
+dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-确保所选 DSH profile 中 `native-browser` 配置使用默认的 `approvalMode: per-action`。如果此前改过权限模式，先按[配置说明](docs/development.md#explicit-chromeprofile-setup)核对。
+如果你使用 `desktop`、`browser-lab` 或其他 Profile，把整行中的两处 `web` 都换成实际名称。插件需要安装到你正在使用的 DSH Profile；装到另一个 Profile 不会在当前聊天中注册工具。
 
-重启对应 DSH profile。在目标 Chrome profile 中打开 `https://example.com`，通过扩展弹窗允许该标签页并连接。
+安装器会把扩展复制到固定目录，注册 Native Messaging Host，启动并检查后台 Broker，然后打开 Chrome 扩展页和 Finder。终端关闭后后台服务继续运行。
 
-### 3 完成第一个任务
+### 2 首次在 Chrome 确认加载扩展
 
-在 DSH 中发送：
+在 `chrome://extensions` 开启“开发者模式”，点击“加载已解压的扩展程序”。在出现的目录选择窗口按 **Command + Shift + G**，粘贴安装器输出的完整扩展目录，回车后点击“选择”。隐藏的 `.dsh` 目录也可以这样直接定位。
+
+这是首次手动确认步骤。当前通过 npm 分发未打包扩展，尚未在 Chrome 网上应用店上架。
+
+### 3 连接并开始对话
+
+重启安装插件的 DSH Profile。在 Chrome 打开一个普通网页，点开 DSH Native Browser 扩展，点击“允许当前标签页并连接”。然后在 DSH 输入：
 
 ```text
-接管标题为“Example Domain”的已授权标签页，读取标题和主要内容，然后释放浏览器控制。
+使用 native_browser 工具，读取我刚才授权页面的标题和主要内容，然后交还浏览器控制。
 ```
 
-按 DSH 提示批准工具操作。首次成功的标志是：DSH 返回正确的页面内容，并结束本次浏览器控制，页面仍留在 Chrome 中。
+成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。插件默认逐动作确认，安装器不会修改 DSH 的权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
 
-若连接失败，运行诊断：
+### 权限模式
+
+默认 `per-action` 适合首次验收。希望每次接管只确认一次，可以在该 Profile **已有** 的 `native-browser` 配置行加入：
+
+```yaml
+- id: native-browser
+  config:
+    approvalMode: per-lease
+```
+
+个人日常浏览可显式选择 `approvalMode: personal`，再重启对应 Profile。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
+
+### 升级、排障与卸载
+
+升级也运行上面的安装命令，然后在 Chrome 扩展页点“重新加载”，并重启对应 DSH Profile。固定扩展目录不会随 npm 包路径变化。**从旧 Alpha 首次迁移时**，移除原先从 `node_modules` 或源码目录加载的旧扩展，改为加载安装器输出的固定目录，并重新授权标签页。
+
+若旧版 Broker 仍在某个终端运行，先在那个终端按 Ctrl+C，再运行安装命令。不要同时运行手工 Broker 和后台服务。
+
+诊断命令中的 `web` 同样要换成实际 Profile：
 
 ```bash
 dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome
+dsh plugin --profile web exec dsh-native-browser service-status
 ```
 
-`ready` 表示连接组件健康；实际页面任务还需要对应的标签页授权。
+`doctor` 的 `ready` 表示连接组件和浏览器连接健康，不代表已经授权页面或模型任务一定成功。没有浏览器连接时，检查扩展是否已加载，以及是否点过“允许当前标签页并连接”。工具没有出现时，检查 Profile 并重启 DSH。完整故障对应表见[安装指南](docs/installation.zh-CN.md)。
 
-### 日常连续操作的权限配置
+卸载前先执行：
 
-首次连接成功后，可根据使用场景选择 `per-lease`、`trusted` 或显式启用的 `personal` 模式，减少逐动作确认。模式说明和完整配置见[开发与安装文档](docs/development.md#approval-modes)。
+```bash
+dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome
+```
 
-`personal` 需要匹配的 Broker 启动模式和 DSH 配置。请按文档切换已有进程；同一个运行目录只使用一个 Broker。本 Alpha 不适用于支付、破坏性业务操作、密码输入或无人值守任务。
+再在 Chrome 移除扩展，并从 DSH 插件管理器卸载插件。命令停止属于当前运行目录的后台服务并移除该浏览器的 Host 注册，保留本地状态和固定扩展目录；不会关闭你的标签页。
 
 ## 当前能力与边界
 
-`alpha.10` 提供页面语义读取、点击、输入、滚动、复选框及单选框操作、批处理、多标签页、截图、受控视觉点击，以及文件上传、下载和原生对话框相关动作。各动作的具体条件见[版本说明](CHANGELOG.md)与该版本随包提供的文档。[实现文档](docs/current-implementation.zh-CN.md)描述开发版本，可能包含尚未发布的改动。
+`0.1.0` 提供页面语义读取、点击、输入、滚动、复选框及单选框操作、批处理、多标签页、截图、受控视觉点击，以及文件上传、下载和原生对话框相关动作。各动作的具体条件见[版本说明](CHANGELOG.md)与该版本随包提供的文档。[实现文档](docs/current-implementation.zh-CN.md)描述开发版本，可能包含尚未发布的改动。
 
 - 跨域 iframe 内容与动作仍有边界；发现一个 frame 不等于获得读取权限。
 - 视觉点击需要截图及相应的模型理解能力；插件自身不运行视觉模型。
 - 明确的 Stop 与 handoff 已有机制；自动识别任意人工操作并无缝续接仍需打磨。
 - Edge 已有早期兼容性验证，正式支持和其他操作系统的完整验证仍在推进。
-- 目前需要手动加载 Chrome 扩展；完整安装器和更轻松的更新流程是共建方向。
+- 首次需要手动加载 Chrome 扩展；本机组件已由安装器配置，Chrome 商店分发和自动扩展升级仍在推进。
 
 控制连接运行在本机。页面文本和截图可能通过 DSH 发给你配置的模型，请按模型服务和 DSH 的数据策略选择处理内容。
 
@@ -164,33 +178,11 @@ pnpm test
 
 这些方向欢迎提案；具体工作以讨论和可复现的问题为起点。[路线图](docs/roadmap.md)记录更详细的计划。
 
-## 开发下一个版本
+## 工具命名与共存
 
-当前检出代码正在准备 `0.1.0-alpha.12`，元数据记录了 DSH `0.1.5-rc.1` 和 `0.2.1-rc.3` 的兼容性，声明范围为 `>=0.1.5-rc.1 <0.3.0`。源码开发请使用对应的本地插件安装说明；上面的已发布 `alpha.10` 是独立的安装路线。
+正式版默认注册 13 个 `native_browser_*` 工具，例如 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立命名避免与使用 `browser_*` 的插件重名。需要兼容旧提示词时，可在已有配置中显式设置 `legacyToolNames: true`；已被其他插件占用的旧别名会跳过。新任务直接使用标准名称。
 
-开发版本增加了一键安装器。在已完成构建的本地仓库中运行：
-
-```bash
-node bin/dsh-native-browser.mjs install --browser=chrome
-```
-
-在 macOS 上，该命令将扩展放入稳定的私有目录，注册 Native Messaging Host、启动 LaunchAgent Broker，并打开扩展安装页。你仍需手动完成 Chrome 的“加载已解压的扩展程序”确认，再将本地 bundle 挂载到专用 DSH 开发 profile。步骤见[安装说明](docs/development.md#explicit-chromeprofile-setup)。升级后重新执行安装并重载扩展。该安装方式已提供 Broker，请勿在同一运行目录额外启动竞争的手工 Broker。
-
-安装器使用个人模式 Broker，adapter 仍默认逐动作审批。若要为普通个人浏览显式减少确认，可在 profile 已有的 `native-browser` 行中配置 `approvalMode: personal`，再重启对应 DSH profile。Stop、handoff 和会话切换仍会释放控制。
-
-### 工具命名与共存
-
-`alpha.12` 使用 `native_browser_*` 命名，包括 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立前缀便于与其他浏览器插件共存；已发布 `alpha.10` 使用早期的 `browser_*` 名称。
-
-旧提示词或自动化需要兼容别名时，可显式开启：
-
-```yaml
-- id: native-browser
-  config:
-    legacyToolNames: true
-```
-
-已被其他插件占用的别名会跳过，标准的 `native_browser_*` 工具仍然可用。新集成应使用标准名称。
+源码开发、手工 Broker 和实验功能见[开发文档](docs/development.md)。
 
 ## 技术与验证
 

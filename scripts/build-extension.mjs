@@ -27,9 +27,9 @@ for (const brand of ['chrome', 'edge']) {
     await copyFile(path.join(root, 'assets', `icon-${size}.png`), path.join(out, `icon-${size}.png`));
   }
   await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ manifest_version: 3,
-    name: 'DSH Native Browser (Developer Preview)', version: extensionVersion, minimum_chrome_version: '125',
+    name: 'DSH Native Browser', version: extensionVersion, minimum_chrome_version: '125',
     key: developmentExtensionKey,
-    description: 'User-authorized browser control for DeepSeek Harness. Development preview.',
+    description: 'Native browser control for DeepSeek Harness with semantic reading, visible pointer feedback and human handoff.',
     icons: { 16: 'icon-16.png', 32: 'icon-32.png', 48: 'icon-48.png', 128: 'icon-128.png' },
     permissions: ['debugger', 'nativeMessaging', 'activeTab', 'scripting', 'downloads', 'tabs', 'tabGroups'],
     host_permissions: ['https://*/*'],

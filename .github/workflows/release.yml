@@ -72,6 +72,7 @@ jobs:
           set -euo pipefail
           package_name=$(node -p "require('./package.json').name")
           package_version=$(node -p "require('./package.json').version")
+          test -f "docs/releases/${package_version}.md"
           expected_tag="v${package_version}"
 
           if [[ "${GITHUB_REF_TYPE}" != "tag" || "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
@@ -106,3 +107,28 @@ jobs:
 
       - name: Publish with npm Trusted Publishing
         run: npm publish --access public --provenance --tag "${{ steps.release.outputs.dist_tag }}"
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Create the matching GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version=$(node -p "require('./package.json').version")
+          flags=(--latest)
+          if [[ "$package_version" == *-* ]]; then
+            flags=(--prerelease --latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file "docs/releases/${package_version}.md" \
+            "${flags[@]}"

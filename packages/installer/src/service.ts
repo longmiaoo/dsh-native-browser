@@ -51,10 +51,29 @@ export function brokerServicePlist(options: { label: string; nodePath: string; c
 
 async function launchctl(args: string[]): Promise<void> { await execFileAsync('/bin/launchctl', args); }
 
+async function waitForServiceRemoval(): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (await serviceIsLoaded()) {
+    if (Date.now() >= deadline) throw new BrowserError('INSTALLATION_FAILED', 'Previous Broker service is still stopping. Check service-status and rerun install after it stops.');
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
+/** One per-user service owns one runtime. A custom install must not replace or
+ * stop the Broker serving another runtime/profile. */
+export async function checkServiceOwner(directory: string, plistDirectory?: string): Promise<void> {
+  const plist = path.join(path.resolve(plistDirectory ?? servicePlistDirectory()), `${SERVICE_LABEL}.plist`);
+  const before = await snapshot(plist, 32768);
+  if (before && !before.bytes.toString('utf8').includes(`<string>--runtime-dir=${xml(path.resolve(directory))}</string>`)) {
+    throw new BrowserError('POLICY_DENIED', 'The installed Broker service belongs to a different runtime. Uninstall that service with its original --runtime-dir before changing runtimes.');
+  }
+}
+
 /** Install or refresh one user LaunchAgent. Existing file content is validated by
  * the shared bounded atomic writer; no root privilege or system-wide policy is used. */
 export async function installBrokerService(options: BrokerServiceOptions): Promise<BrokerServiceResult> {
   if (process.platform !== 'darwin') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Automatic Broker service is currently implemented for macOS only');
+  await checkServiceOwner(options.directory, options.plistDirectory);
   const directory = path.resolve(options.directory);
   const nodePath = path.resolve(options.nodePath ?? process.execPath);
   const cliPath = path.resolve(options.cliPath);
@@ -76,15 +95,21 @@ export async function installBrokerService(options: BrokerServiceOptions): Promi
   // Refreshing an existing generation is intentional: bootout stops only this
   // user's label and never signals an unrelated process. Not-loaded is harmless.
   await run(['bootout', `${scope}/${SERVICE_LABEL}`]).catch(() => {});
+  // bootout can return before launchd has removed the old job. Re-registering
+  // immediately intermittently fails with bootstrap error 5 during upgrades.
+  if (!options.launchctl) await waitForServiceRemoval();
   await run(['bootstrap', scope, plist]);
   return { label: SERVICE_LABEL, plist, scope, loaded: true, stdoutLog, stderrLog };
 }
 
-export async function uninstallBrokerService(options: { plistDirectory?: string; launchctl?: (args: string[]) => Promise<void> } = {}): Promise<{ removed: boolean; plist: string }> {
+export async function uninstallBrokerService(options: { directory: string; plistDirectory?: string; launchctl?: (args: string[]) => Promise<void> }): Promise<{ removed: boolean; plist: string }> {
   if (process.platform !== 'darwin') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Automatic Broker service is currently implemented for macOS only');
+  await checkServiceOwner(options.directory, options.plistDirectory);
   const plist = path.join(path.resolve(options.plistDirectory ?? servicePlistDirectory()), `${SERVICE_LABEL}.plist`);
+  if (!await snapshot(plist, 32768)) return { removed: false, plist };
   const run = options.launchctl ?? launchctl;
   await run(['bootout', `gui/${userInfo().uid}/${SERVICE_LABEL}`]).catch(() => {});
+  if (!options.launchctl) await waitForServiceRemoval();
   try {
     const value = await lstat(plist);
     if (!value.isFile() || value.uid !== process.getuid!() || (value.mode & 0o077)) {

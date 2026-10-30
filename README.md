@@ -6,13 +6,13 @@
 
 > Fluid, native Chrome automation for DeepSeek Harness.
 
-[![Alpha](https://img.shields.io/badge/status-alpha-orange)](#current-capabilities-and-limits) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
 Let DSH work in the Chrome you already use—with your existing tabs, signed-in sessions and extensions. Ask it to read pages, fill forms and work through browser tasks, with visible actions and explicit handoff when you need control.
 
-**Our experience benchmark is Codex: we want people moving from Codex to DSH to find browser work just as natural and continuous.** This is an open alpha, and we are building toward that goal.
+**Our experience benchmark is Codex: we want people moving from Codex to DSH to find browser work just as natural and continuous.** Version 0.1.0 focuses on macOS and Chrome; improving real-task fluency remains an ongoing goal.
 
 We want browser work to feel smooth enough that you choose to delegate more of it. Bring a real task, show us where the experience breaks down, and help improve the next step.
 
@@ -51,67 +51,80 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-These instructions pin the published `0.1.0-alpha.10` and use the DSH `web` profile. The [development version](#develop-the-next-version) prepares `alpha.12` with a one-command installer and isolated tool names. For `desktop`, replace `web` consistently in every command. Install separately into each profile you use.
+Version **0.1.0 supports macOS + Google Chrome**. You need Node.js ≥ 22.19, pnpm 11 and a working DSH installation. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-**macOS + Google Chrome** is the primary validation target. You need Node.js ≥ 22.19, a working DSH installation and pnpm 11. Recorded DSH validation uses `0.1.5-rc.1`; the published package declares `>=0.1.5-rc.1 <0.3.0`. Reports from other versions are welcome.
+### 1 Configure the local components
 
-### 1 Install and register the connection components
+Paste this entire line into a terminal:
 
-```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.10
-dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
+```sh
+dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-`setup` registers the Native Messaging host and prints `extensionPath` and the stable extension ID.
+Replace **both** occurrences of `web` with your actual DSH profile, such as `desktop` or `browser-lab`. Installing into a different profile does not register tools in your current chat.
 
-Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `extensionPath`. If an older unpacked extension is present, follow the setup instructions to remove it before loading this build.
+The installer stages the extension in a stable private directory, registers Native Messaging, starts and checks a macOS background Broker, and opens Chrome extensions plus Finder. The service continues after you close the terminal.
 
-### 2 Start the first connection
+### 2 Confirm the extension once in Chrome
 
-Run the following command in a terminal and keep it running. This first-run route admits only `https://example.com` and uses the default approval for individual actions.
+Open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**. In the directory picker press **Command + Shift + G**, paste the full extension path printed by the installer, press Return, then Select. This also locates hidden directories.
 
-```bash
-dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://example.com
-```
+The extension is currently distributed unpacked through npm; Chrome Web Store distribution is not included.
 
-The selected DSH profile's `native-browser` configuration should use the default `approvalMode: per-action`. If you previously changed it, check the [configuration guide](docs/development.md#explicit-chromeprofile-setup).
+### 3 Connect and ask DSH
 
-Restart the corresponding DSH profile. Open `https://example.com` in the intended Chrome profile, then use the extension popup to allow that tab and connect.
-
-### 3 Finish a first task
-
-Send this to DSH:
+Restart the DSH profile where you installed the plugin. Open a normal webpage in Chrome, open the extension popup, and choose **允许当前标签页并连接** (allow the current tab and connect). Then ask DSH:
 
 ```text
-Claim the authorized tab titled “Example Domain”, read its title and main
-content, then release browser control.
+Use the native_browser tools to read the title and main content of the page I just authorized, then hand browser control back to me.
 ```
 
-Approve the requested tool operations. A successful first run returns the correct page content and releases control while leaving the page open.
+DSH should return the page contents and leave the tab open. The default approval mode is per-action; installation does not change DSH approval configuration. Screenshot understanding depends on your selected model; Vision Router is optional.
 
-If the connection fails, run:
+### Approval modes
 
-```bash
+For one confirmation per tab claim, add this to the **existing** plugin entry in your actual profile and restart it:
+
+```yaml
+- id: native-browser
+  config:
+    approvalMode: per-lease
+```
+
+For ordinary personal browsing, explicitly choose `approvalMode: personal`. The installer already provides a matching personal Broker. After the extension connects, personal mode can discover and claim ordinary HTTP(S) tabs in that Chrome instance. Enable it only for a personal browser whose pages you intend to make available. Stop, handoff, foreground conversation changes and lease expiry revoke control. Personal mode can retain control across turns in the same conversation. The plugin cannot reliably identify every consequential business action; let a human handle payment, publishing and irreversible operations. See [approval modes](docs/development.md#approval-modes).
+
+### Upgrade, diagnose and uninstall
+
+Run the installation line again, reload the extension in Chrome, and restart the DSH profile. The staged extension path stays stable across package upgrades. When migrating from an older Alpha, remove the extension loaded from `node_modules` or a checkout, load the new stable directory once, and authorize the tab again.
+
+If an old manual Broker is still running, stop it with Ctrl+C in its terminal before installation. The background service and a manual Broker must not compete for the same runtime.
+
+Replace `web` consistently when diagnosing:
+
+```sh
 dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome
+dsh plugin --profile web exec dsh-native-browser service-status
 ```
 
-`ready` means the connection components are healthy. A page task still needs authorization for the relevant tab.
+`ready` confirms local registration and browser connectivity, not tab authorization or model-task success. If the browser is missing, check extension loading and popup consent. If tools are missing, verify the profile and restart DSH. Detailed recovery steps: [installation guide](docs/installation.zh-CN.md).
 
-### Configure continuous everyday use
+Before removing the package, run:
 
-Once the first connection works, choose `per-lease`, `trusted` or explicitly enabled `personal` mode as appropriate to reduce individual approval prompts. See [approval modes](docs/development.md#approval-modes) for their scope and complete configuration.
+```sh
+dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome
+```
 
-`personal` requires matching Broker and DSH settings. Follow the guide when switching an existing process; use one Broker per runtime directory. This alpha is unsuitable for payments, destructive business operations, password entry or unattended tasks.
+Then remove the Chrome extension and uninstall the DSH plugin using the plugin manager. This stops the service belonging to the selected runtime and unregisters the browser Host; local state, the staged extension and user tabs are preserved.
 
 ## Current capabilities and limits
 
-`alpha.10` includes semantic reads, clicks, text entry, scrolling, checkbox/radio actions, batches, multiple tabs, screenshots, guarded visual clicks, and actions for uploads, downloads and native dialogs. See the [changelog](CHANGELOG.md) and that version's bundled documentation for exact conditions. The [implementation inventory](docs/current-implementation.zh-CN.md) describes the development version, which can contain changes that have not shipped.
+`0.1.0` includes semantic reads, clicks, text entry, scrolling, checkbox/radio actions, batches, multiple tabs, screenshots, guarded visual clicks, and actions for uploads, downloads and native dialogs. See the [changelog](CHANGELOG.md) and that version's bundled documentation for exact conditions. The [implementation inventory](docs/current-implementation.zh-CN.md) describes the development version, which can contain changes that have not shipped.
 
 - Cross-origin iframe content and actions remain bounded. Discovering a frame does not authorize reading it.
 - Visual clicks require a screenshot and suitable model understanding. The plugin does not run a vision model itself.
 - Explicit Stop and handoff are implemented. Recognizing arbitrary human intervention and resuming seamlessly still needs work.
 - Edge has early compatibility evidence; formal support and complete validation on other operating systems remain work in progress.
-- Chrome currently loads the extension manually. Easier installation and upgrades are contribution opportunities.
+- First-time Chrome extension loading requires manual confirmation. The installer handles the local components; store distribution and automatic extension updates remain future work.
 
 The control connection runs locally. Page text and screenshots may be sent through DSH to your configured model; choose content according to your DSH and model provider's data policies.
 
@@ -168,33 +181,11 @@ Start with a focused change and read the [contribution guide](CONTRIBUTING.md). 
 
 These directions welcome proposals; use discussions in concrete issues and reproducible tasks to define the work. See the [roadmap](docs/roadmap.md) for the broader plan.
 
-## Develop the next version
+## Tool names and coexistence
 
-This checkout prepares `0.1.0-alpha.12`. Its metadata records compatibility with DSH `0.1.5-rc.1` and `0.2.1-rc.3`, within the declared `>=0.1.5-rc.1 <0.3.0` range. Use its local-plugin installation instructions when developing from source; the published `alpha.10` quickstart above remains a separate route.
+The stable version registers 13 `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix avoids name collisions with plugins using `browser_*`. Old aliases are opt-in through `legacyToolNames: true`; occupied aliases are skipped. Use the canonical names for new tasks.
 
-The development version adds a one-command installer. From a built local checkout:
-
-```bash
-node bin/dsh-native-browser.mjs install --browser=chrome
-```
-
-On macOS, it stages the extension under a stable private path, registers the Native Messaging host, starts a LaunchAgent Broker and opens the extension setup page. Complete Chrome's **Load unpacked** confirmation manually, then mount the local bundle into a dedicated DSH development profile. See [installation details](docs/development.md#explicit-chromeprofile-setup). After an upgrade, rerun installation and reload the extension. A service installed this way supplies the Broker; do not also start a competing manual Broker in the same runtime directory.
-
-The installer starts a personal Broker while the adapter retains its default `per-action` approvals. To opt in to fewer prompts for ordinary personal browsing, set `approvalMode: personal` on the profile's existing `native-browser` row and restart that DSH profile. Explicit Stop, handoff and conversation switching continue to release control.
-
-### Tool names and coexistence
-
-`alpha.12` uses `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix permits coexistence with other browser plugins. Published `alpha.10` uses the earlier `browser_*` names.
-
-For an older prompt or automation that needs the aliases, opt in explicitly:
-
-```yaml
-- id: native-browser
-  config:
-    legacyToolNames: true
-```
-
-Aliases already owned by another plugin are skipped; the canonical `native_browser_*` tools remain available. New integrations should use the canonical names.
+Source development, manual Broker setup and experimental features are documented in [development.md](docs/development.md).
 
 ## Technical foundations and evidence
 

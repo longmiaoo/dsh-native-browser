@@ -126,13 +126,15 @@ export class BrowserRuntime {
     // inventory. Wait for the exact created handle rather than claiming a
     // not-yet-visible tab.
     let visible = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
+    const inventoryDeadline = Date.now() + this.limits.actionMs;
+    while (Date.now() < inventoryDeadline) {
       checkAbort(signal);
       const listed = await provider.listTabs(signal);
       if (listed.some(item => item.id === tab.id && item.instanceId === instanceId)) { visible = true; break; }
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    if (!visible) throw new BrowserError('STALE_TARGET', 'Created tab did not appear in the inventory');
+    checkAbort(signal);
+    if (!visible) throw new BrowserError('DEADLINE_EXCEEDED', 'Tab was created but did not appear before the deadline. List existing tabs before attempting another open.');
     const lease = await this.claim(owner, instanceId, tab.id, signal, scope);
     return lease;
   }
@@ -152,8 +154,11 @@ export class BrowserRuntime {
     const linked = AbortSignal.any([signal, entry.controller.signal]);
     await this.authorized(entry, 'observe', linked);
     if (!entry.provider.close) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot close tabs');
-    await entry.provider.close(entry.lease, linked);
-    this.entry(owner, leaseId);
+    checkAbort(linked);
+    // Chrome may deliver onRemoved/lease.revoked before the close ACK. Keep
+    // caller/lifecycle cancellation, but do not cancel the ACK with the lease's
+    // own expected removal. The provider still rechecks its gate before removal.
+    await entry.provider.close(entry.lease, signal);
     await this.release(owner, leaseId).catch(() => {});
   }
 

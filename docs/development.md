@@ -1,6 +1,6 @@
-# Development preview setup
+# Development and advanced setup
 
-This is an opt-in developer build, not a stable release. Do not use it for payments, destructive changes or unattended work on business accounts yet. No installation into the user's browser/profile is performed by `pnpm build` or the automated tests.
+For the supported macOS + Chrome installation route, start with the [README](../README.md) and [installation guide](installation.zh-CN.md). This document describes source development, advanced manual setup and experimental features. The plugin cannot classify every consequential business action; keep payment, publishing and irreversible business steps under human control. Builds and automated tests do not install into daily browser profiles.
 
 ## Build and validate
 
@@ -222,6 +222,8 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
 ## Explicit Chrome/profile setup
 
+This is the advanced manual setup route for development. Ordinary users should run the installer in the README; it already starts a Broker. Do not also start a manual Broker for that same runtime.
+
 1. Build, then register the native host with the packaged stable development extension ID:
 
    ```bash
@@ -240,7 +242,7 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
    With no allowed origins, the Broker denies page access. Origin ports matter. It does not auto-approve newly reached websites. Multiple `--allow-origin=` arguments are supported; this preview's list is fixed for the Broker lifetime.
 
-   For an explicitly opted-in personal profile, use `--access-mode=personal` instead of any `--allow-origin` argument. The modes are mutually exclusive. Personal mode lists only extension-consented tabs, but issues a tab-scoped lease that can be rebound to that same tab's current HTTP(S) root origin.
+   For an explicitly opted-in personal profile, use `--access-mode=personal` instead of any `--allow-origin` argument. The modes are mutually exclusive. Personal mode lists ordinary HTTP(S) tabs in the connected browser and can grant a tab-scoped lease without per-tab popup consent. That lease follows the same tab's current HTTP(S) root origin; DSH approval configuration remains a separate gate.
 
 4. In another terminal run `node scripts/dev-fixtures.mjs`, then open `http://127.0.0.1:18765/` in the selected Chrome profile. Open the extension popup and choose “允许当前标签页并连接”.
 5. Run `node bin/dsh-native-browser.mjs doctor --browser=chrome`. It uses the packaged stable extension ID by default and reports installation and connection checks with actionable findings, as described below. Pass `--extension-id=<id>` for an older or externally supplied build. Use `status` separately if you deliberately want raw connected-instance details.
@@ -264,7 +266,7 @@ The adapter defaults to `approvalMode: per-action`: claim, each ordinary action 
 
 Do not use `trusted` as a global “all websites” switch. Changing DSH's general filesystem permission does not override this browser-specific policy; configure the adapter explicitly. For signed-in or consequential sites, start with `per-lease` or `per-action`.
 
-`personal` is the opt-in prompt-free mode for ordinary browsing in a personal Chrome profile. It requires the Broker to be started separately with `--access-mode=personal`, rejects `trustedOrigins`, follows only the same extension-consented tab across credential-free HTTP(S) root navigations, and keeps its short-lived lease across turns in the same DSH conversation. Switching the foreground conversation, disposing the Session, lease expiry, explicit handoff, disconnect or Stop still revokes it. A newly selected existing Chrome tab still needs its own popup consent.
+`personal` is the opt-in prompt-free mode for ordinary browsing in a personal Chrome profile. It requires the Broker to be started separately with `--access-mode=personal`, rejects `trustedOrigins`, can claim ordinary HTTP(S) tabs in the connected browser, follows only the same leased tab across credential-free HTTP(S) root navigations, and keeps its short-lived lease across turns in the same DSH conversation. Switching the foreground conversation, disposing the Session, lease expiry, explicit handoff, disconnect or Stop still revokes it. In personal mode another ordinary tab may be separately claimed without popup consent; other modes still enforce their configured origin/approval boundaries.
 
 ```yaml
 - id: native-browser
@@ -272,7 +274,7 @@ Do not use `trusted` as a global “all websites” switch. Changing DSH's gener
     approvalMode: personal
 ```
 
-The alpha cannot reliably infer whether an arbitrary click submits a payment, publishes content or performs another irreversible business operation. Personal mode therefore does not implement the future sensitive-action confirmation layer and must not be used for those workflows.
+The plugin cannot reliably infer whether an arbitrary click submits a payment, publishes content or performs another irreversible business operation. Personal mode therefore does not implement the future sensitive-action confirmation layer and must not be used for those workflows.
 
 The Chrome extension also draws a short-lived virtual pointer after a verified click or wheel event is dispatched. It runs in an isolated world, is inert and accessibility-hidden. HTTP/HTTPS injection is declared as an optional host permission and requested from Chrome only when the user clicks the popup's tab-consent button; this lets the pointer survive cross-site navigation in personal mode. The overlay is human feedback only: it cannot supply coordinates, influence target selection, grant browser control or cause retries. An existing unpacked installation must be reloaded after upgrading, then the optional permission must be accepted once.
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { access, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -48,7 +48,50 @@ try {
   assert.equal(setup.extensionPath, extensionPath)
   await access(setup.host.manifest)
   await access(setup.host.launcher)
-  console.log('Packed npm artifact executes through pnpm and exposes the Chrome extension.')
+
+  const install = async (bin, runtime, native) => {
+    const { stdout } = await execFileAsync(bin, ['install', '--browser=chrome', '--no-service', '--no-open', '--json',
+      `--runtime-dir=${runtime}`, `--manifest-dir=${native}`])
+    const result = JSON.parse(stdout)
+    assert.equal(result.manualActionRequired, 'load-unpacked')
+    assert.equal(result.extensionId, setup.extensionId)
+    assert.equal(result.extensionPath, path.join(runtime, 'extension', 'chrome'))
+    const manifest = JSON.parse(await readFile(path.join(result.extensionPath, 'manifest.json'), 'utf8'))
+    const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+    assert.equal(manifest.version, pkg.version)
+    await access(result.host.manifest)
+    await access(result.host.launcher)
+    return result
+  }
+  const first = await install(executable, runtimeDirectory, manifestDirectory)
+  const token = await readFile(path.join(runtimeDirectory, 'auth-token'))
+  const repeated = await install(executable, runtimeDirectory, manifestDirectory)
+  assert.equal(repeated.extensionPath, first.extensionPath)
+  assert.deepEqual(await readFile(path.join(runtimeDirectory, 'auth-token')), token)
+
+  // Reproduce the actual old-user route: registry alpha.10 setup, package-manager
+  // replacement, then the new install command into the same private runtime.
+  const upgradeConsumer = path.join(temporaryRoot, 'upgrade-consumer')
+  await mkdir(upgradeConsumer)
+  await execFileAsync('pnpm', ['add', '--dir', upgradeConsumer, '--ignore-scripts', 'dsh-native-browser@0.1.0-alpha.10'])
+  const upgradeBin = path.join(upgradeConsumer, 'node_modules', '.bin', 'dsh-native-browser')
+  const upgradeRuntime = path.join(temporaryRoot, 'upgraded'), upgradeNative = path.join(temporaryRoot, 'upgrade-native')
+  const old = JSON.parse((await execFileAsync(upgradeBin, ['setup', '--browser=chrome',
+    `--runtime-dir=${upgradeRuntime}`, `--manifest-dir=${upgradeNative}`])).stdout)
+  const oldToken = await readFile(path.join(upgradeRuntime, 'auth-token'))
+  await execFileAsync('pnpm', ['add', '--dir', upgradeConsumer, '--ignore-scripts', archive])
+  const upgraded = await install(upgradeBin, upgradeRuntime, upgradeNative)
+  assert.equal(upgraded.extensionId, old.extensionId)
+  assert.deepEqual(await readFile(path.join(upgradeRuntime, 'auth-token')), oldToken)
+  const host = JSON.parse(await readFile(upgraded.host.manifest, 'utf8'))
+  assert.equal(host.path, path.join(upgradeRuntime, 'native-host'))
+  assert.deepEqual(host.allowed_origins, [`chrome-extension://${upgraded.extensionId}/`])
+  await execFileAsync(upgradeBin, ['uninstall-host', '--browser=chrome',
+    `--runtime-dir=${upgradeRuntime}`, `--manifest-dir=${upgradeNative}`])
+  await assert.rejects(access(upgraded.host.manifest), { code: 'ENOENT' })
+  await access(path.join(upgraded.extensionPath, 'manifest.json'))
+  await install(upgradeBin, upgradeRuntime, upgradeNative)
+  console.log('Packed npm consumer: fresh install, repeat install, alpha.10 upgrade, host uninstall/reinstall, stable extension ID/path and preserved runtime identity passed. Desktop service/browser consent are tested separately.')
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true })
 }

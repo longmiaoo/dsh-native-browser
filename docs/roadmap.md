@@ -1,5 +1,7 @@
 # Chrome-first roadmap
 
+> Current release scope: 0.1.0 supports macOS + Chrome. See the README and release acceptance record. The phases below describe the broader multi-browser/multi-platform vision, not prerequisites that are claimed complete by this scoped release.
+
 This roadmap is ordered by risk retirement, not feature count. Dates are intentionally absent until the first benchmark harness is running.
 
 ## Phase 0 — foundation (current)

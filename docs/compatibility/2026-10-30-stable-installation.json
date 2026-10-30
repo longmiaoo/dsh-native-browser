@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-10-30T08:57:31.061Z",
+  "passed": [
+    "Installed tarball starts a real LaunchAgent Broker; repeated install restarts it at the same extension path and preserves authentication",
+    "Chrome loads the staged extension, launches the installed Native Host and doctor reports ready",
+    "All 13 native_browser tools register beside an existing browser_claim tool without aliases or collisions",
+    "Installed package performs Chinese fill, verified click, Host-owned screenshot and handoff through real DSH tools",
+    "Real HTTPS-page wheel dispatch renders the virtual pointer without external submission; no scroll-success claim",
+    "Read-only public Example Domain and GitHub repository reads plus agent-tab open, activate and close passed",
+    "Foreground conversation RPC revokes the installed native stack lease before another conversation can use it (UI notification simulated)",
+    "Real extension Stop invalidates the held DSH lease"
+  ],
+  "scope": "Installed npm tarball, real macOS LaunchAgent, temporary Chrome-for-Testing profile and Native Messaging registration, actual DSH ToolRuntime with explicit personal-mode test config. Deterministic tool calls; no LLM, daily user profile or business account.",
+  "browserVersion": "153.0.8010.12",
+  "dshVersion": "0.2.1-rc.3",
+  "outcome": "passed",
+  "cleanupComplete": true,
+  "targetVersion": "0.1.0",
+  "sourceSha256": {
+    "packages/installer/src/quick-install.ts": "8e990ca246e1823737e85040e815b31e45b1722b001548d1cb23384e89601c15",
+    "packages/installer/src/service.ts": "429587e9cbaef6040ab7725385329060af3144bd5e2ffbf9b50d59a89e5bc9aa",
+    "packages/installer/src/stage.ts": "b8740e0264f06864eeb925d7891fce8466bfd26a41c30f333b7a83a0880dad32",
+    "packages/runtime-core/src/runtime.ts": "0a0f2149afbe3da155c026f22b73aab3ea2d152e5dda9e2375a968db8033ef69",
+    "packages/dsh-adapter/src/index.ts": "8fe819dd9c543e9ab52f6f75e15178e219d320cb16436f7ce6527ad4c50381d5",
+    "scripts/smoke-installation.mjs": "7503af6b7553c3c7b286d722fa948dfcec495cc74d2ec31ea94dca39115fc780"
+  }
+}

@@ -59,13 +59,13 @@ export async function main(args: string[]): Promise<void> {
     if (flag('json')) console.log(JSON.stringify(result, null, 2));
     else {
       const browserName = brand === 'chrome' ? 'Chrome' : 'Edge';
-      console.log(`\nDSH Native Browser 已准备完成\n\n扩展目录\n  ${result.extensionPath}\n\nNative Messaging Host\n  已注册\n\n本地 Broker\n  ${result.service ? `已作为 ${result.service.label} 启动` : '未自动启动（--no-service）'}\n\n还差 1 步\n  在已打开的 ${browserName} 扩展页开启“开发者模式”，点击“加载已解压的扩展程序”，选择上面的扩展目录。\n  ${result.opened ? `${browserName} 扩展页和扩展目录已自动打开。` : result.openError ? `自动打开失败：${result.openError}` : '按 --no-open 跳过了自动打开。'}\n\n验证\n  dsh plugin --profile web exec dsh-native-browser doctor --browser=${brand}\n`);
+      console.log(`\nDSH Native Browser 本机组件已配置\n\n扩展目录（升级后保持不变）\n  ${result.extensionPath}\n\nNative Messaging Host\n  已注册\n\n本地 Broker\n  ${result.service ? `已注册后台服务 ${result.service.label} 并请求启动；请用 doctor 确认连接。` : '未自动启动（--no-service）'}\n\n完成 Chrome 和 DSH 连接\n  1. 在 ${browserName} 扩展页开启“开发者模式”，点击“加载已解压的扩展程序”。\n     在目录选择窗口按 Command+Shift+G，粘贴上面的完整扩展目录，回车后点击“选择”。\n     首次迁移旧版时，请移除从 node_modules 或源码路径加载的旧扩展，再加载此目录；之后升级只需重新运行 install 并重载扩展。\n  2. 重启安装插件的 DSH Profile；在普通网页打开扩展弹窗，点击“允许当前标签页并连接”。\n  3. 在 DSH 中输入：“读取刚才授权页面的标题和主要内容，然后交还控制。”\n  ${result.opened ? `${browserName} 扩展页和扩展目录已自动打开。` : result.openError ? `自动打开失败：${result.openError}` : '按 --no-open 跳过了自动打开。'}\n\n诊断（将 web 替换为实际安装的 Profile）\n  dsh plugin --profile web exec dsh-native-browser doctor --browser=${brand}\n  默认逐动作确认；减少确认的配置见 README“权限模式”。\n`);
     }
   } else if (command === 'uninstall') {
     const brand = option('browser') ?? 'chrome';
     if (brand !== 'chrome' && brand !== 'edge') throw new Error('Browser must be chrome or edge');
     const extensionId = option('extension-id') ?? (await packagedExtension(brand)).extensionId;
-    const service = await uninstallBrokerService({}).catch(error => ({ removed: false, plist: '', error: error instanceof Error ? error.message : String(error) }));
+    const service = await uninstallBrokerService({ directory });
     const host = await uninstallHost({ directory, brand, ...registration, extensionId });
     console.log(JSON.stringify({ service, host, stagedExtensionPreserved: true }, null, 2));
   } else if (command === 'service-status') {

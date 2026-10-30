@@ -7,7 +7,7 @@ import vm from 'node:vm';
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
-function fixture() {
+function fixture(respond) {
   let definition, current = 'chat-a';
   const listListeners = new Set(), eventListeners = new Map(), documentListeners = new Map(), disposers = [], calls = [];
   const window = { __ModuleLoader__: { load(value) { definition = value; } } };
@@ -20,7 +20,7 @@ function fixture() {
   const plugin = definition.factory();
   const ctx = {
     sessions: { list: { getSnapshot: () => ({ current }), subscribe: listener => { listListeners.add(listener); return () => listListeners.delete(listener); } } },
-    connection: { rpc: { call: async (channel, endpoint, payload, signal) => { calls.push({ channel, endpoint, payload: structuredClone(payload), signal }); return { ok: true, value: {} }; } } },
+    connection: { rpc: { call: async (channel, endpoint, payload, signal) => { calls.push({ channel, endpoint, payload: structuredClone(payload), signal }); return respond ? respond(channel, endpoint) : { ok: true, value: {} }; } } },
     on(name, listener) { eventListeners.set(name, listener); return () => eventListeners.delete(name); },
     effect(callback) { disposers.push(callback()); },
   };
@@ -36,7 +36,7 @@ function fixture() {
 test('client reports canonical current-session changes over authenticated Connection RPC only', async () => {
   const f = fixture(); await flush();
   assert.equal(f.calls.length, 1);
-  assert.equal(f.calls[0].channel, '/dsh-native-browser'); assert.equal(f.calls[0].endpoint, 'foreground');
+  assert.equal(f.calls[0].channel, '/api'); assert.equal(f.calls[0].endpoint, 'dsh-native-browser/foreground');
   assert.equal(f.calls[0].payload.sessionId, 'chat-a');
   assert.match(f.calls[0].payload.clientId, /^[0-9a-f-]{36}$/i);
   assert.deepEqual(Object.keys(f.calls[0].payload).sort(), ['clientId', 'issuedAt', 'revision', 'sessionId']);
@@ -53,4 +53,19 @@ test('hidden pages cannot steal foreground; visibility and reconnect reassert th
   f.reset(); await flush(); assert.equal(f.calls.length, 3); assert.equal(f.calls[2].payload.sessionId, 'chat-hidden');
   f.dispose(); assert.equal(f.calls[2].signal.aborted, true);
   f.select('chat-after-dispose'); f.reset(); await flush(); assert.equal(f.calls.length, 3);
+});
+
+
+test('legacy host fallback occurs only for a definite missing route', async () => {
+  const old = fixture(channel => {
+    if (channel === '/api') throw Error('transport failure for /api/dsh-native-browser/foreground: HTTP 404');
+    return { ok: true, value: {} };
+  });
+  await flush(); assert.equal(old.calls.length, 2);
+  assert.equal(old.calls[1].channel, '/dsh-native-browser');
+  assert.equal(old.calls[1].endpoint, 'foreground'); old.dispose();
+  for (const status of [401, 403, 500]) {
+    const denied = fixture(() => { throw Error(`transport failure: HTTP ${status}`); });
+    await flush(); assert.equal(denied.calls.length, 1); denied.dispose();
+  }
 });

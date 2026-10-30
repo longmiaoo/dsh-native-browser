@@ -8,7 +8,7 @@ Until a private GitHub security-advisory channel is enabled, contact the maintai
 
 Public issues are appropriate for non-sensitive reliability defects after removing personal data and credentials.
 
-The release threat model, trust boundaries and residual risks are documented in [docs/security-model.md](docs/security-model.md). This alpha must not be used for payments, destructive business actions, password entry or unattended operation.
+The release threat model, trust boundaries and residual risks are documented in [docs/security-model.md](docs/security-model.md). Use explicit human review for payments and destructive business actions; password-field input is intentionally restricted. Installation does not authorize unattended use.
 
 ## Security boundaries
 
@@ -21,7 +21,7 @@ The intended design follows these boundaries:
 - web content is untrusted data and cannot grant permissions or redefine policy;
 - sensitive writes, transmissions and account actions go through DSH approval policy;
 - screenshots, accessibility trees and logs receive size limits and secret-aware retention;
-- a human stop or direct interaction cancels active automation immediately;
-- uninstall removes native-host registration and local credentials.
+- the explicit Stop action and handoff revoke active browser control; direct-interaction behavior depends on the supported event path and should not be treated as a universal cancellation guarantee;
+- component uninstall removes native-host registration and the login service, but deliberately preserves runtime credentials/recovery state and staged files; full deletion requires stopping the components and separately removing those files. See [PRIVACY.md](PRIVACY.md).
 
-The public alpha keeps the conservative defaults above. Any future relaxation of origin, approval, native-host or action-verification boundaries requires a security review and new compatibility evidence.
+The stable release retains explicit approval and control boundaries. Any future relaxation of origin, approval, native-host or action-verification boundaries requires a security review and new compatibility evidence.

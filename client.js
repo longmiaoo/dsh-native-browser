@@ -8,6 +8,19 @@ window.__ModuleLoader__.load({
     const exports = module.exports;
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
 
+    async function callHost(ctx, endpoint, payload, signal) {
+      // New hosts share authenticated /api routes across Web and Desktop.
+      // Retry only a definite missing route, never an auth/timeout/server error.
+      try {
+        const result = await ctx.connection.rpc.call('/api', `dsh-native-browser/${endpoint}`, payload, signal);
+        if (result?.ok !== false || result.error?.code !== 'gateway/not-found') return result;
+      } catch (error) {
+        if (!String(error?.message).endsWith(': HTTP 404')) throw error;
+      }
+      signal?.throwIfAborted();
+      return ctx.connection.rpc.call('/dsh-native-browser', endpoint, payload, signal);
+    }
+
     function setupSettings(ctx) {
       // Older/custom clients may omit settings. Foreground handoff must still
       // work there; use the host's React, never bundle another React instance.
@@ -28,7 +41,7 @@ window.__ModuleLoader__.load({
           setBusy(true); setError(''); setNotice('');
           const timer = setTimeout(() => controller.abort(), 60000);
           try {
-            const response = await ctx.connection.rpc.call('/dsh-native-browser', endpoint,
+            const response = await callHost(ctx, endpoint,
               endpoint === 'setup.install' ? { confirmed: true } : {}, controller.signal);
             if (controller.signal.aborted) return;
             if (response?.ok !== true) throw new Error(response?.error?.message || t('请求失败，请重试。', 'Request failed. Please retry.'));
@@ -127,7 +140,7 @@ window.__ModuleLoader__.load({
           const timeout = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(5000) : undefined;
           const signal = timeout && typeof AbortSignal.any === 'function'
             ? AbortSignal.any([lifecycle.signal, timeout]) : lifecycle.signal;
-          const result = await ctx.connection.rpc.call('/dsh-native-browser', 'foreground', payload, signal);
+          const result = await callHost(ctx, 'foreground', payload, signal);
           if (!result || result.ok !== true) throw new Error('Foreground conversation handoff was rejected');
         }).catch(() => {});
       };

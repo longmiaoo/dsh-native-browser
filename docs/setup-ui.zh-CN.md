@@ -1,6 +1,6 @@
 # 无需填写 Profile 的浏览器配置入口
 
-状态：开发分支实现，尚未发布；npm `0.1.0` 不含此入口。
+版本：`0.1.1` 新增；`0.1.0` 不含此入口。
 
 ## 用户路径
 
@@ -43,7 +43,7 @@
 
 客户端使用 DSH 的 `settings.section` 插槽和宿主提供的 React。原有前台会话切换桥接继续保留。使用最新 DSH 设置插槽的部署会出现“浏览器配置”；不提供该插槽 API 的旧客户端仍需使用文档中的安装方式。
 
-服务端沿用 Connection 的 `trusted-host` RPC 通道 `/dsh-native-browser`：
+新版宿主使用 Connection 的 `/api/dsh-native-browser/<端点>` 精确路由，由宿主负责登录鉴权、请求来源和 owner 身份校验；不占用 API Gateway 的共享拦截器。不提供精确路由 API 的旧宿主保留 `/dsh-native-browser` RPC 通道。客户端仅在明确返回路由不存在时回退，不会在鉴权失败或超时后重发安装请求。
 
 | 端点 | 参数 | 行为 |
 | --- | --- | --- |
@@ -62,11 +62,15 @@
 ## 验证记录（2026-10-30）
 
 - `pnpm check`：元数据和架构边界通过。
-- `pnpm test`：588 项通过，0 失败、0 跳过。覆盖只读状态、确认参数、路径拒绝、重复请求、运行目录冲突、失败后重试、取消、Electron 启动器兼容及适配器 RPC 接线。
+- `pnpm test`：591 项通过，0 失败、0 跳过。覆盖只读状态、确认参数、路径拒绝、重复请求、运行目录冲突、失败后重试、取消、Electron 启动器兼容及适配器 RPC 接线。
 - `scripts/smoke-setup-ui.mjs`：使用 DSH `0.2.1-rc.3` 的真实 SlotCore、共享 React `18.3.1`、ReactDOM `18.3.1` 和隔离 Chrome `153.0.8010.12`。实际点击首次安装、重复安装、重新打开和检查连接；使用真实安装器写入临时目录，身份令牌保持不变；没有页面异常。
 - `scripts/smoke-setup-desktop.mjs`：在本机 DSH NEXT 的 Electron `44.7.0` / Node `24.21.0` 内运行。真实生成并启动 Native Messaging 启动器，即使子进程不继承 Electron 环境变量仍能完成 Broker 握手和标签查询，诊断为 `ready`。首次运行有一次 5 秒 RPC 超时；加入阶段诊断后的两次运行通过，尚不能据此给出首次冷启动时延保证。
 
-UI 验证是实际组件和真实 DSH 插槽内核的隔离验证，尚未替换用户日常 Desktop 插件，也不等同于完整 Desktop 设置外壳的发布验收。UI 测试不注册用户 LaunchAgent；Desktop 测试使用协议提供者夹具，不能当作真实 Chrome 操作验收。正式发布前仍需完整宿主内的安装/升级验收。
+- `scripts/smoke-setup-host.mjs`：完整 DSH Web `0.2.1-rc.3` 外壳和真实 Connection 服务。由 npm 打包安装插件后打开“设置 → 浏览器配置”，读取初始状态、点击检查连接、验证前台会话通知。未登录请求返回 401，跨来源请求返回 403，无确认安装返回业务拒绝。没有页面异常。该测试发现并修复了旧独立 RPC 路由在真实宿主中触发 `webServer` 依赖错误的问题。
+- `pnpm test:package-install`：新装、重复安装、alpha.10 升级、宿主卸载/重装、稳定 ID/路径和身份保持通过。
+- `pnpm test:installation /path/to/installed-dsh`：打包后的插件通过真实 DSH ToolRuntime、macOS LaunchAgent、Native Messaging 和隔离 Chrome 完成中文输入、点击、截图、公开网页读取、标签创建/关闭、虚拟鼠标和 Stop 验收，测试资源已清理。
+
+验证边界：完整 Web 外壳测试只检查配置状态及拒绝路径，不点击会改动本机注册/服务的安装按钮；真实安装写入由隔离组件测试和安装验收覆盖。Desktop 已验证其运行时与启动器，但未替换用户日常 Desktop 插件或验收整个 Desktop 设置外壳。浏览器动作使用确定性工具调用，不能代替任意模型的端到端成功率测试。
 
 复现 UI 测试（设置 `DSH_CHROME_TEST_EXECUTABLE` 为测试版 Chrome，使用隔离浏览器）：
 
@@ -84,3 +88,12 @@ ELECTRON_RUN_AS_NODE=1 '/Applications/DSH NEXT.app/Contents/MacOS/DSH NEXT' scri
 ```
 
 产物为 `output/playwright/setup-desktop.json`；测试不修改用户的 Chrome 注册目录或登录服务。
+
+
+完整 Web 设置外壳验收（先启动已安装本次打包插件的隔离 DSH Web，配置临时 `runtimeDirectory`，把启动日志保存到临时文件）：
+
+```sh
+DSH_CHROME_TEST_EXECUTABLE=/path/to/test-chrome node scripts/smoke-setup-host.mjs /tmp/isolated-dsh-launch.log
+```
+
+日志包含临时登录链接，勿公开。测试只在隔离浏览器内使用它，不将链接、认证信息或配置路径写入报告。产物为 `output/playwright/setup-host.png` 和 `setup-host.json`。

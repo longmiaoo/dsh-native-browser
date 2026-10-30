@@ -7,6 +7,7 @@ import type { RpcPeer } from '../../transport-native/src/rpc.js';
 import { ScreenshotRegistry } from '../../vision-adapter/src/screenshots.js';
 import { visualActionFromScreenshot } from '../../vision-adapter/src/grounding.js';
 import { createSetupController } from './setup.js';
+import { registerHostRoutes } from './host-routes.js';
 
 export const name = 'dsh-native-browser';
 export const inject = ['tools', 'connection'];
@@ -405,13 +406,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   compatibilityName('screenshot', screenshotDefinition.description, screenshotDefinition);
 
   const connectionService = ctx.get?.('connection');
-  if (typeof connectionService?.rpc?.handle !== 'function') {
+  if (typeof connectionService?.fetch?.register !== 'function' && typeof connectionService?.rpc?.handle !== 'function') {
     throw new BrowserError('UNSUPPORTED_CAPABILITY', 'DSH Connection RPC is required for foreground conversation handoff');
   }
   const clientRevisions = new Map<string, number>();
   const setup = createSetupController(config.runtimeDirectory);
   let latestIssuedAt = 0;
-  ctx.effect(() => connectionService.rpc.handle('/dsh-native-browser', async (endpoint: string, raw: unknown, signal: AbortSignal) => {
+  ctx.effect(() => registerHostRoutes(connectionService, async (endpoint: string, raw: unknown, signal: AbortSignal) => {
     checkAbort(signal);
     if (disposed) throw new BrowserError('CONNECTION_LOST', 'Plugin disposed');
     if (endpoint.startsWith('setup.')) return setup(endpoint, raw, signal);
@@ -434,7 +435,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     latestIssuedAt = Math.max(latestIssuedAt, issuedAt);
     const released = releaseBackgroundScopes(p.sessionId as string | null);
     return { ok: true, value: { accepted: true, released } };
-  }, { authority: 'trusted-host' }));
+  }));
 
   ctx.on('tools/pre-execute', (exec: Execution, next: () => unknown) => {
     const shortName = exec.name.startsWith(`${TOOL_NAMESPACE}_`) ? exec.name.slice(TOOL_NAMESPACE.length + 1)

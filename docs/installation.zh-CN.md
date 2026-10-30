@@ -1,20 +1,20 @@
 # 安装、升级与故障处理
 
-0.1.0 的正式支持范围为 macOS + Chrome。Node.js ≥ 22.19、pnpm 11、可正常对话的 DSH 是前置条件。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
+0.1.1 的正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
 
-## 开发分支的新入口（尚未发布）
+## 推荐：DSH 内配置（0.1.1）
 
 从当前 DSH 的插件市场安装后，按宿主提示重载，进入 **设置 → 浏览器配置**，点击 **完成浏览器配置**。无需输入 Profile；安装使用当前加载的插件包和它的运行目录。点击会注册本机组件、安装或更新登录后自动运行的服务并打开 Chrome，不会更改 DSH 审批设置或授权标签页。连接检查只读取状态。
 
 在 Chrome 加载扩展后，回到此页点击 **检查连接**。升级插件后再点击 **完成浏览器配置**，并在 Chrome 重载扩展。尚无 Chrome 商店版本，不能承诺完全无点击安装。详细限制和验证见[配置页说明](setup-ui.zh-CN.md)。
 
-## 已发布 0.1.0 的 CLI/Web 安装
+## CLI/Web 命令行安装（高级用法）
 
 以下仅以已知的 CLI/Web Profile `web` 为例；使用 `browser-lab` 等其他 CLI Profile 时，两处名称必须一致。Desktop 用户应从桌面应用内的插件市场管理插件，不要把公共 CLI 命令直接替换成 `desktop`；它可能拒绝操作桌面专属 Profile。
 
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。安装完成不会自动批准任何标签页，也不会修改 DSH 的审批模式。

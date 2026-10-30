@@ -6,7 +6,7 @@
 
 > Fluid, native Chrome automation for DeepSeek Harness.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
@@ -51,20 +51,20 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-Version **0.1.0 supports macOS + Google Chrome**. You need Node.js ≥ 22.19, pnpm 11 and a working DSH installation. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
+Version **0.1.1 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-### Coming next: setup inside DSH
+### Recommended: setup inside DSH (0.1.1)
 
-The development branch adds **Settings → Browser setup → Set up Chrome**. This entry is **not yet included in npm 0.1.0**. After the next release, install from the plugin market in the DSH app you use, reload as instructed by DSH, then use this settings page. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
+Version `0.1.1` adds **Settings → Browser setup → Set up Chrome**. Install or update to `0.1.1` from the plugin market in the DSH app you use, reload as instructed by DSH, then use this settings page. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
 
 The extension is not on the Chrome Web Store yet, so initial unpacked loading remains. A future store release can replace directory selection with the user's **Add to Chrome** confirmation and automatic extension updates; that distribution path has not shipped. See the [setup design and validation](docs/setup-ui.zh-CN.md).
 
-### 1 Released 0.1.0 CLI installation
+### CLI installation (advanced CLI/Web usage)
 
 Paste this entire line into a terminal:
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 Use this only for a known CLI/Web profile such as `web` or `browser-lab`, with the same name in both places. `web` is not a universal default. **Desktop users should manage plugins through the Desktop plugin market, not substitute `desktop` into the public CLI**, which restricts management of Desktop-owned profiles. Installing into a different profile does not register tools in the current chat.

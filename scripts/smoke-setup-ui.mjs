@@ -37,7 +37,7 @@ window.__ModuleLoader__ = { load(definition) {
     slots:{inject:(name,callback)=>effects.push(callback()),register:(options,component)=>core.register(options,component)},
     sessions:{list:{getSnapshot:()=>({current:'test-chat'}),subscribe:()=>()=>{}}},
     connection:{rpc:{call:async(channel,endpoint,payload,signal)=>{
-      const response=await fetch('/rpc',{method:'POST',body:JSON.stringify({endpoint,payload}),signal});
+      const response=await fetch('/rpc',{method:'POST',body:JSON.stringify({endpoint:endpoint.split('/').at(-1),payload}),signal});
       return response.json();
     }}}, on:()=>()=>{}, effect:callback=>effects.push(callback())
   });

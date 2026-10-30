@@ -6,7 +6,7 @@
 
 > 为 DeepSeek Harness 打造流畅、连贯的原生 Chrome 操作体验。
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · 简体中文 · [开始试用](#开始试用) · [参与共建](#参与共建) · [反馈体验](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
@@ -48,20 +48,20 @@
 
 ## 开始试用
 
-正式版 `0.1.0` 的支持范围是 **macOS + Google Chrome**。需要 Node.js ≥ 22.19、pnpm 11，以及已能正常对话的 DSH。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
+正式版 `0.1.1` 的支持范围是 **macOS + Google Chrome**，需要已能正常对话的 DSH。CLI/Web 安装需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 配置复用经过验证的内置运行时。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
 
-### 即将发布：在 DSH 内完成配置
+### 推荐：在 DSH 内完成配置（0.1.1）
 
-当前开发分支新增了 **设置 → 浏览器配置 → 完成浏览器配置**；此入口尚未包含在 npm `0.1.0` 中。新版本发布后，推荐从正在使用的 DSH 插件市场安装，按宿主提示重载，然后从此设置页完成配置，**无需寻找或填写 Profile**。页面提供连接诊断、复制目录和重新打开 Chrome 的按钮。桌面端复用经过验证的 DSH 内置运行时，不要求另外安装 Node。
+`0.1.1` 新增 **设置 → 浏览器配置 → 完成浏览器配置**。从正在使用的 DSH 插件市场安装或升级到 `0.1.1`，按宿主提示重载，然后从此设置页完成配置，**无需寻找或填写 Profile**。页面提供连接诊断、复制目录和重新打开 Chrome 的按钮。桌面端复用经过验证的 DSH 内置运行时，不要求另外安装 Node。
 
 Chrome 扩展目前尚未上架商店，首次仍需“加载已解压的扩展程序”。商店版将以“添加至 Chrome”的一次确认替代目录选择，并支持扩展自动更新；这部分尚未实现。参见[安装入口设计与验证](docs/setup-ui.zh-CN.md)。
 
-### 1 已发布 0.1.0 的命令行安装
+### 命令行安装（CLI/Web 高级用法）
 
 在终端粘贴这一整行：
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 这条命令仅用于你已知名称的 CLI/Web Profile，例如 `web` 或 `browser-lab`；两处名称必须一致。`web` 不是所有用户的默认值。**DSH Desktop 用户应通过桌面应用的插件市场管理插件，不要直接把它改成 `desktop`**：公开 CLI 对桌面专属 Profile 有管理限制。插件装到另一个 Profile 不会出现在当前聊天中。

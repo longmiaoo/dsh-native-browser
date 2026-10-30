@@ -21,18 +21,18 @@ try{
  adapter=await nativeAdapter({hostRoot,executablePath,signal,brand,html});let h=await adapter.prepare({},'frame-page');
  await h.page.waitForFunction(()=>document.querySelector('#child')?.contentDocument?.querySelector('#last'));
  for(const f of h.page.frames())await f.waitForLoadState('load');
- let inventory=await adapter.tool('browser_frames',{leaseId:h.lease.id});
+ let inventory=await adapter.tool('native_browser_frames',{leaseId:h.lease.id});
  const foreign=inventory.frames.find(f=>f.originRelation==='cross-origin');assert.ok(foreign);
  const selected=inventory.frames.find(f=>f.id===foreign.parentId);let frame={frameId:selected.id,documentEpoch:selected.documentEpoch};
  const childPage=h.page.frames().find(f=>new URL(f.url()).pathname==='/child');
  const discover=async()=>{const result=await h.observe({frame,query:{name:'Window region',role:'region'}});assert.equal(result.nodes.length,1);return result.nodes[0].id;};
- let rootRef=await discover();const read=(extra={})=>adapter.tool('browser_read_page',{leaseId:h.lease.id,frame,rootRef,...extra});
- const readWhole=(extra={})=>adapter.tool('browser_read_page',{leaseId:h.lease.id,frame,...extra});
+ let rootRef=await discover();const read=(extra={})=>adapter.tool('native_browser_read_page',{leaseId:h.lease.id,frame,rootRef,...extra});
+ const readWhole=(extra={})=>adapter.tool('native_browser_read_page',{leaseId:h.lease.id,frame,...extra});
  const queryBase=await h.observe({frame,query:{name:'Window region',role:'region'}});
  const first=await read();assert.deepEqual(first.scope,{kind:'subtree',frameId:frame.frameId,rootRef});assert.equal(first.documentEpoch,frame.documentEpoch);
  assert.equal(first.format,undefined);assert.equal(first.cursor,undefined);assert.ok(first.page.continuation);
  assert.equal((await h.observe({frame,query:{name:'Window region',role:'region'},cursor:queryBase.cursor})).resyncRequired,false);
- await assert.rejects(adapter.tool('browser_read_page',{leaseId:h.lease.id,continuation:first.page.continuation}));
+ await assert.rejects(adapter.tool('native_browser_read_page',{leaseId:h.lease.id,continuation:first.page.continuation}));
  await assert.rejects(readWhole({continuation:first.page.continuation}));
  await assert.rejects(read({frame:{frameId:foreign.id,documentEpoch:foreign.documentEpoch},rootRef:undefined}));
  passed.push('Public frame-page schema and exact child/root scopes preserve query baselines and reject root/foreign token widening');
@@ -45,12 +45,12 @@ try{
  assert.deepEqual(names,Array.from({length:4000},(_,i)=>'Item '+i));assert.ok(maxBytes<40*1024);assert.ok(last);
  passed.push('All 4000 child-region controls are read in order without duplicate refs across bounded live windows, retaining the region beyond the 2048-ref LRU');
  const action={requestId:'last-child-page',leaseId:h.lease.id,documentEpoch:frame.documentEpoch,frame,action:{kind:'click',ref:last.id,expected:{kind:'text',text:'Last page clicked'}}};
- let clicked;try{clicked=await adapter.tool('browser_act',action);}catch(error){
+ let clicked;try{clicked=await adapter.tool('native_browser_act',action);}catch(error){
   // Only owned-fixture numeric/boolean diagnostics, never arbitrary Host messages.
   console.error('Last-page fixture diagnostics',await childPage.evaluate(()=>({hits,feedback:document.querySelector('#feedback').textContent==='Last page clicked',
    x:document.querySelector('#last').getBoundingClientRect().x,y:document.querySelector('#last').getBoundingClientRect().y})));throw error;
  }
- assert.equal(clicked.outcome,'succeeded');await adapter.tool('browser_act',action);assert.deepEqual(await childPage.evaluate(()=>hits),[true]);
+ assert.equal(clicked.outcome,'succeeded');await adapter.tool('native_browser_act',action);assert.deepEqual(await childPage.evaluate(()=>hits),[true]);
  passed.push('The visible final-page child ref is usable for an authorized trusted click with text verification and no replay; no automatic scrolling is claimed');
  rootRef=await discover();const fresh=await read(),token=fresh.page.continuation;
  await childPage.locator('button[data-index="70"]').evaluate(el=>el.textContent='Fresh item 70');
@@ -66,7 +66,7 @@ try{
  const whole=await readWhole();assert.equal(whole.scope.kind,'frame');assert.ok(!whole.nodes.some(n=>n.name==='Foreign only'));assert.equal(whole.page.incomplete,true);
  passed.push('Whole-child windows keep their own scope and mark nested-frame omissions as incomplete');
  await childPage.goto(new URL('/child',childPage.url()).href);await assert.rejects(readWhole({continuation:beforeMove.page.continuation}));
- inventory=await adapter.tool('browser_frames',{leaseId:h.lease.id});const updated=inventory.frames.find(f=>f.id===frame.frameId);assert.ok(updated);frame={frameId:updated.id,documentEpoch:updated.documentEpoch};
+ inventory=await adapter.tool('native_browser_frames',{leaseId:h.lease.id});const updated=inventory.frames.find(f=>f.id===frame.frameId);assert.ok(updated);frame={frameId:updated.id,documentEpoch:updated.documentEpoch};
  rootRef=await discover();const beforeStop=await read();await adapter.stop();await assert.rejects(read({continuation:beforeStop.page.continuation}));
  await adapter.allow();h=await adapter.prepare({},'frame-page-renewed');await assert.rejects(read({continuation:beforeStop.page.continuation}));
  passed.push('Child navigation, actual popup Stop and reconsent cannot revive old documents, refs or page tokens');

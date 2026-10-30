@@ -1,5 +1,7 @@
-# Development preview. Browser tools require a running local Broker, native host
-# registration, extension tab consent and the configured approval policy. See docs/development.md.
+# Development preview. Canonical DSH tools use the collision-resistant
+# native_browser_* namespace. They require a running local Broker, native host
+# registration, extension tab consent and the configured approval policy.
+# Opt in to browser_* compatibility aliases with legacyToolNames: true.
 - insert:
     - id: native-browser
       name: dsh-native-browser

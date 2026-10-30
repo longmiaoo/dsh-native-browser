@@ -61,6 +61,7 @@ export async function nativeAdapter({ hostRoot, executablePath, html, signal, co
     }
     ctx = new Context(); await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime);
     await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'attachments') });
+    ctx.provide('connection', { rpc: { handle: () => () => {} } });
     await ctx.plugin(plugin, { runtimeDirectory: directory });
     const session = Session.create(SessionId('executor-benchmark')); session.append('turn/start', { turn: 1 });
     // Benchmarks default to deterministic approval. Integration tests may mount
@@ -88,8 +89,8 @@ export async function nativeAdapter({ hostRoot, executablePath, html, signal, co
         }
       }
     };
-    const instances = await call('browser_list', {}); assert.equal(instances.length, 1);
-    const instance = instances[0], tabs = await call('browser_list', { instanceId: instance.id }); assert.equal(tabs.length, 1);
+    const instances = await call('native_browser_list', {}); assert.equal(instances.length, 1);
+    const instance = instances[0], tabs = await call('native_browser_list', { instanceId: instance.id }); assert.equal(tabs.length, 1);
     const tab = tabs[0]; assert.equal(new URL(tab.url).origin, origin);
     return { close, page, worker, instance, tool: call, recordInto: value => { calls = value; },
       stop: () => popupCommand('stop'),
@@ -102,16 +103,16 @@ export async function nativeAdapter({ hostRoot, executablePath, html, signal, co
       },
       browserVersion: browser.browser().version(), dshVersion: JSON.parse(await readFile(path.join(hostRoot, 'package.json'), 'utf8')).version,
       async prepare(task, trialId) {
-        if (lease) { await call('browser_handoff', { leaseId: lease.id }); lease = undefined; }
+        if (lease) { await call('native_browser_handoff', { leaseId: lease.id }); lease = undefined; }
         await page.goto(origin); await page.bringToFront();
-        lease = await call('browser_claim', { instanceId: instance.id, tab: tab.id });
-        const snapshot = await call('browser_observe', { leaseId: lease.id });
+        lease = await call('native_browser_claim', { instanceId: instance.id, tab: tab.id });
+        const snapshot = await call('native_browser_observe', { leaseId: lease.id });
         const context = { page, lease, snapshot,
           ref(name) { const found = snapshot.nodes.filter(n => n.name === name); assert.equal(found.length, 1, 'Expected one known fixture target'); return found[0].id; },
-          observe: options => call('browser_observe', { leaseId: lease.id, ...options }),
-          act: action => call('browser_act', { requestId: `${trialId}-${++actionId}`, leaseId: lease.id,
+          observe: options => call('native_browser_observe', { leaseId: lease.id, ...options }),
+          act: action => call('native_browser_act', { requestId: `${trialId}-${++actionId}`, leaseId: lease.id,
             documentEpoch: snapshot.documentEpoch, action, timeoutMs: 3000 }),
-          capture: () => call('browser_screenshot', { leaseId: lease.id }),
+          capture: () => call('native_browser_screenshot', { leaseId: lease.id }),
           readImage: attachment => ctx.attachments.readImage(attachment, signal),
         };
         await task.prepare?.(context); return context;

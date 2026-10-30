@@ -27,7 +27,7 @@ try{
  adapter=await nativeAdapter({hostRoot,executablePath,signal,brand,html});let h=await adapter.prepare({},'frame-query');
  await h.page.waitForFunction(()=>document.querySelector('#child')?.contentDocument?.querySelector('#target'));
  for(const child of h.page.frames())await child.waitForLoadState('load');
- const discover=()=>adapter.tool('browser_frames',{leaseId:h.lease.id});
+ const discover=()=>adapter.tool('native_browser_frames',{leaseId:h.lease.id});
  const inventory=await discover();assert.equal(inventory.frames.length,4);
  const main=inventory.frames.find(f=>f.isMain),foreign=inventory.frames.find(f=>f.originRelation==='cross-origin');assert.ok(foreign);
  const selected=inventory.frames.find(f=>f.id===foreign.parentId);assert.ok(selected);assert.equal(selected.parentId,main.id);
@@ -40,8 +40,8 @@ try{
  passed.push('Exact child query finds an actionable control omitted from the 220-control default view, excluding same-name root/sibling/foreign-descendant controls');
 
  const act={requestId:'query-click',leaseId:h.lease.id,documentEpoch:frame.documentEpoch,frame,action:{kind:'click',ref:found.nodes[0].id,expected:{kind:'text',text:'Query click completed'}}};
- const result=await adapter.tool('browser_act',act);assert.equal(result.outcome,'succeeded',JSON.stringify(result));assert.deepEqual(await childPage.evaluate(()=>hits),[{trusted:true}]);
- assert.deepEqual(await adapter.tool('browser_act',act),result);assert.equal(await childPage.evaluate(()=>hits.length),1);
+ const result=await adapter.tool('native_browser_act',act);assert.equal(result.outcome,'succeeded',JSON.stringify(result));assert.deepEqual(await childPage.evaluate(()=>hits),[{trusted:true}]);
+ assert.deepEqual(await adapter.tool('native_browser_act',act),result);assert.equal(await childPage.evaluate(()=>hits.length),1);
  passed.push('A source-query ref drives the formal child-click path with one trusted event, child text verification and no replay');
 
  const duplicates={name:'重复候选',role:'button'},before=await lookup(duplicates);assert.equal(before.nodes.length,20);assert.equal(new Set(before.nodes.map(n=>n.id)).size,20);
@@ -57,7 +57,7 @@ try{
 
  const old=(await lookup(query)).nodes[0].id;await childPage.locator('#target').evaluate(el=>el.replaceWith(el.cloneNode(true)));
  const replacement=await lookup(query);assert.equal(replacement.nodes.length,1);assert.notEqual(replacement.nodes[0].id,old);
- const stale=await adapter.tool('browser_act',{...act,requestId:'query-old-node',action:{kind:'click',ref:old}});assert.equal(stale.dispatch,'notDispatched');assert.equal(await childPage.evaluate(()=>hits.length),1);
+ const stale=await adapter.tool('native_browser_act',{...act,requestId:'query-old-node',action:{kind:'click',ref:old}});assert.equal(stale.dispatch,'notDispatched');assert.equal(await childPage.evaluate(()=>hits.length),1);
  passed.push('A same-name replacement gets a fresh child ref and the previous ref cannot dispatch');
  await assert.rejects(h.observe({frame:{frameId:foreign.id,documentEpoch:foreign.documentEpoch},query}));
  await assert.rejects(lookup(query,{rootRef:'unobserved-child-root'}));

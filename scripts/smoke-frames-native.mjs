@@ -34,7 +34,7 @@ try{
         globalThis.frameProbe.push({parent:source.sessionId??'',child:p.sessionId,tabId:source.tabId});
     });
   });
-  const read=()=>adapter.tool('browser_frames',{leaseId:h.lease.id});
+  const read=()=>adapter.tool('native_browser_frames',{leaseId:h.lease.id});
   // A live topology is allowed to reject a raced read. Retries are bounded and
   // metadata-only; successful but incomplete/wrong graphs are never accepted.
   let readRetries=0;
@@ -102,7 +102,7 @@ try{
   const renewed=await settled();assert.ok(renewed.frames.every(f=>!first.frames.some(old=>old.id===f.id)));
   await assert.rejects(observeFrame(changed));
   passed.push('Actual extension Stop revokes discovery; new consent cannot resurrect old frame handles');
-  await adapter.tool('browser_handoff',{leaseId:h.lease.id});assert.equal(h.page.isClosed(),false);
+  await adapter.tool('native_browser_handoff',{leaseId:h.lease.id});assert.equal(h.page.isClosed(),false);
   const detached=await adapter.worker.evaluate(async tabId=>{
     try{await chrome.debugger.sendCommand({tabId},'Page.getFrameTree');return false;}catch{return true;}
   },attachments[0].tabId);assert.equal(detached,true);

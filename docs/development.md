@@ -93,7 +93,7 @@ Local report: `output/playwright/edge-native-smoke.json`; retained sanitized evi
 
 ## Frame discovery foundation
 
-`browser_frames({leaseId})` returns structural metadata for the authorized tab: opaque frame IDs, parent IDs, document epochs, canonical HTTP(S) origins, root-relative origin relation and observed context availability. It never returns child text, frame names/titles, URL paths/query strings, or raw Chromium session/context IDs. `contextStatus: known` is evidence of a default execution context, not access permission. Missing context/epoch and `truncated:true` must not be treated as complete evidence. Frame handles cannot be passed as node refs or AX roots.
+`native_browser_frames({leaseId})` returns structural metadata for the authorized tab: opaque frame IDs, parent IDs, document epochs, canonical HTTP(S) origins, root-relative origin relation and observed context availability. It never returns child text, frame names/titles, URL paths/query strings, or raw Chromium session/context IDs. `contextStatus: known` is evidence of a default execution context, not access permission. Missing context/epoch and `truncated:true` must not be treated as complete evidence. Frame handles cannot be passed as node refs or AX roots.
 
 The optional portable provider seam and runtime validator contain no Chromium or DSH dependency. MV3 lazily enables metadata discovery on the first frame query **or screenshot**: root Runtime events distinguish same-process frames; recursive iframe-only flat attachment covers OOPIF descendants. Each child enables Page/Runtime metadata and its own auto-attach. Only default-world contexts are retained. A late destroyed-context event with an old unique ID cannot erase a reused numeric-ID successor. Session detach and failed parent setup remove descendants; Stop/release/disconnect dispose the graph before queued detachment. Root setup failure revokes the lease instead of retaining partially configured attachment. A child setup failure conservatively marks coverage incomplete until the next lease.
 
@@ -118,11 +118,11 @@ Still required by the full v2 plan: cross-origin frame authorization and reads, 
 Frame discovery itself still returns metadata only. To read one selected child, use the existing observation tool with its exact current identity:
 
 ```javascript
-const inventory = await browser_frames({ leaseId });
+const inventory = await native_browser_frames({ leaseId });
 const selected = inventory.frames.find(frame => frame.id === chosenFrameId);
 const frame = { frameId: selected.id, documentEpoch: selected.documentEpoch };
-const first = await browser_observe({ leaseId, frame });
-const next = await browser_observe({ leaseId, frame, cursor: first.cursor });
+const first = await native_browser_observe({ leaseId, frame });
+const next = await native_browser_observe({ leaseId, frame, cursor: first.cursor });
 ```
 
 The portable runtime validates current metadata before reading: target and every ancestor must have the leased root origin, complete ancestry and a current default context. A root-origin grandchild behind a foreign parent is denied, as are opaque/foreign targets, incomplete graphs, main-frame targets and stale epochs. Main-frame observation uses the ordinary path. No child URL/title is returned; `url/title` remain tab metadata while `scope:{kind:'frame',frameId}` identifies the content view. `documentEpoch` belongs to the child, not the root.
@@ -135,13 +135,13 @@ This is an increment toward full frame interaction: `frame` combines with exact 
 
 ### Exact same-origin child queries
 
-`browser_observe({leaseId,frame,query,cursor?})` finds an exact accessible name and optional role within one currently authorized child document. It can locate an exposed control omitted by the default bounded view without returning the whole child tree. For example:
+`native_browser_observe({leaseId,frame,query,cursor?})` finds an exact accessible name and optional role within one currently authorized child document. It can locate an exposed control omitted by the default bounded view without returning the whole child tree. For example:
 
 ```javascript
 const query = { name: '精确查找目标', role: 'button' };
-const candidates = await browser_observe({ leaseId, frame, query });
+const candidates = await native_browser_observe({ leaseId, frame, query });
 // Inspect candidates; do not select the first result when several are plausible.
-const update = await browser_observe({ leaseId, frame, query, cursor: candidates.cursor });
+const update = await native_browser_observe({ leaseId, frame, query, cursor: candidates.cursor });
 ```
 
 The portable optional seam is `findFrame(lease,frame,query,signal)`. Providers without it fail closed, never calling root `find` or substituting a whole-frame read. Results carry the child epoch and `scope:{kind:'query',frameId,query}`. Root queries, other frames, full-frame observations and different filters have separate delta bases. The exported reducer validates these scopes. Querying absent matches does not invalidate unrelated child refs; current query refs can be used by the existing explicit child-click path. Same-name candidates stay distinct, replacements get new refs, and action-time identity checks still apply. Known child `rootRef` scopes and child page windows are implemented below; fuzzy/substring/regex public search and automatic disambiguation are not implemented.
@@ -157,8 +157,8 @@ The source reuses the bounded query projection: up to 2,048 raw candidates exami
 Use a root ref obtained from the selected child's observation/query. The root can be a named region or another observed node; a frame handle, root-page ref or sibling-frame ref is not a child root. These are ordinary tool arguments, not an arbitrary JavaScript tool:
 
 ```javascript
-const local = await browser_observe({ leaseId, frame, rootRef: billingRegion.id });
-const matches = await browser_observe({
+const local = await native_browser_observe({ leaseId, frame, rootRef: billingRegion.id });
+const matches = await native_browser_observe({
   leaseId, frame, rootRef: billingRegion.id,
   query: { name: '保存', role: 'button' }
 });
@@ -174,7 +174,7 @@ Subtree acquisition reuses the existing bounded AX walker at that exact root. Ev
 
 ### Bounded same-origin child page windows
 
-`browser_read_page({leaseId,frame,rootRef?,continuation?})` extends the existing live-window contract to one current same-origin child document or an already observed root inside it. Repeat the exact frame and root on every continuation call. Tokens are single-use, expire after two minutes and bind the lease, child loader/context, root identity and traversal state; scope changes, reordering on the active path, root replacement/adoption, navigation, Stop and re-consent invalidate them. Returned windows keep `scope:{kind:'frame',frameId}` or `{kind:'subtree',frameId,rootRef}` and the child epoch, and never enter a nested frame or replace a delta baseline.
+`native_browser_read_page({leaseId,frame,rootRef?,continuation?})` extends the existing live-window contract to one current same-origin child document or an already observed root inside it. Repeat the exact frame and root on every continuation call. Tokens are single-use, expire after two minutes and bind the lease, child loader/context, root identity and traversal state; scope changes, reordering on the active path, root replacement/adoption, navigation, Stop and re-consent invalidate them. Returned windows keep `scope:{kind:'frame',frameId}` or `{kind:'subtree',frameId,rootRef}` and the child epoch, and never enter a nested frame or replace a delta baseline.
 
 The optional portable seam is `readFramePage`; internal `ax.frame.page` reuses `withFrameNodeScope` and the shared bounded AX pager. The source validates document/root ownership before and after each window, while the provider retains the explicitly validated root across its 2,048-ref LRU churn. Whole-child traversal marks nested-frame omissions with `page.incomplete:true`. This reads mounted DOM only: it does not scroll, materialize virtualized items, provide an atomic snapshot or authorize input.
 
@@ -192,9 +192,9 @@ On 2026-09-15 the assembled DSH → Broker → browser-started Native Host → M
 Use the child's current frame/document identity and a node ref from its own observation. The top-level `documentEpoch` must equal `frame.documentEpoch`, not the root epoch:
 
 ```javascript
-const child = await browser_observe({ leaseId, frame });
+const child = await native_browser_observe({ leaseId, frame });
 // Select the intended unambiguous control from this child observation.
-const result = await browser_act({
+const result = await native_browser_act({
   requestId: uniqueRequestId, leaseId,
   documentEpoch: frame.documentEpoch, frame,
   action: { kind: 'click', ref: chosenChildNode.id,
@@ -244,7 +244,7 @@ This is not full iframe support: only same-origin ancestors in the root process,
 
 4. In another terminal run `node scripts/dev-fixtures.mjs`, then open `http://127.0.0.1:18765/` in the selected Chrome profile. Open the extension popup and choose “允许当前标签页并连接”.
 5. Run `node bin/dsh-native-browser.mjs doctor --browser=chrome`. It uses the packaged stable extension ID by default and reports installation and connection checks with actionable findings, as described below. Pass `--extension-id=<id>` for an older or externally supplied build. Use `status` separately if you deliberately want raw connected-instance details.
-6. Mount this local bundle in a dedicated DSH development profile using that DSH version's documented local-plugin mechanism. The plugin requires the `tools` service; `browser_screenshot` also requires `attachments`. Do not replace the user's production profile as part of a test.
+6. Mount this local bundle in a dedicated DSH development profile using that DSH version's documented local-plugin mechanism. The plugin requires the `tools` service; `native_browser_screenshot` also requires `attachments`. Do not replace the user's production profile as part of a test.
 
 All CLI commands accept `--runtime-dir=/absolute/private/directory`. When using a nondefault directory, the DSH plugin config must set `runtimeDirectory` to the same path. Directory permissions must be `0700`; the token, lock database and newly bound socket are `0600`. Startup now recovers an eligible stale socket while holding process-lifetime ownership, as described below. Do not manually remove the lock database or recovery journal to bypass a startup failure.
 
@@ -308,15 +308,21 @@ This implementation is for cooperative Brokers on local Unix filesystems; it is 
 
 | Tool | Current behavior |
 |---|---|
-| `browser_list` | List instances, or explicitly allowed tabs for an instance |
-| `browser_claim` | Request a short-lived exclusive tab lease; approval follows `approvalMode` |
-| `browser_observe` | AX text/controls/named regions; optional `query` for exact name/role search, `rootRef` for a contextual subtree, and per-consumer cursor for deltas/resync |
-| `browser_read_page` | Explicit bounded live traversal windows of the document or a known root; single-use, lease/document/scope-bound continuation; separate from snapshot/delta cursors |
-| `browser_frames` | Bounded frame/document/origin metadata with opaque handles; discovery never grants child AX, input or screenshot permission |
-| `browser_act` | Click/fill/append/check, press a named page key, scroll an exact document/element, send wheel input to an observed target, or navigate within the leased origin; action-specific postconditions; approval follows `approvalMode` |
-| `browser_batch` | 1–8 explicit actions in one tab queue slot; shared deadline, approval follows `approvalMode`, stop on failure/uncertainty and whole-plan replay fence |
-| `browser_screenshot` | Capture viewport into a Host image attachment; approval follows `approvalMode` |
-| `browser_handoff` | Release debugger/control and keep the tab open |
+| `native_browser_list` | List instances, or explicitly allowed tabs for an instance |
+| `native_browser_claim` | Request a short-lived exclusive tab lease; approval follows `approvalMode` |
+| `native_browser_open` | Open and claim an additional HTTP(S) tab |
+| `native_browser_activate` | Bring one controlled tab to the foreground without changing its authority |
+| `native_browser_close` | Close only a tab created by this agent; user tabs are rejected |
+| `native_browser_release_all` | Release every lease owned by the current DSH session while leaving tabs open |
+| `native_browser_observe` | AX text/controls/named regions; optional `query` for exact name/role search, `rootRef` for a contextual subtree, and per-consumer cursor for deltas/resync |
+| `native_browser_read_page` | Explicit bounded live traversal windows of the document or a known root; single-use, lease/document/scope-bound continuation; separate from snapshot/delta cursors |
+| `native_browser_frames` | Bounded frame/document/origin metadata with opaque handles; discovery never grants child AX, input or screenshot permission |
+| `native_browser_act` | Click/fill/append/check, press a named page key, scroll an exact document/element, send wheel input to an observed target, or navigate within the leased origin; action-specific postconditions; approval follows `approvalMode` |
+| `native_browser_batch` | 1–8 explicit actions in one tab queue slot; shared deadline, approval follows `approvalMode`, stop on failure/uncertainty and whole-plan replay fence |
+| `native_browser_screenshot` | Capture viewport into a Host image attachment; approval follows `approvalMode` |
+| `native_browser_handoff` | Release debugger/control and keep the tab open |
+
+All canonical names use the `native_browser_*` namespace because DSH rejects duplicate tool names within one registration layer and the market has many `browser_*` plugins. `legacyToolNames: true` explicitly registers compatibility aliases; an alias that collides with another plugin is skipped while the canonical name remains available.
 
 The lease lasts up to two minutes in this preview. On expiry/release/disconnect, old commands cannot resume with the old token. The extension Stop button closes its local gate before contacting the Broker. Already-dispatched inputs cannot be undone.
 
@@ -372,7 +378,7 @@ Within each radio action, a read-only remote binding retains the exact input, ro
 
 `scripts/verify-radio.mjs` runs real native controls through direct Chrome and the assembled DSH/native stack: trusted click/input/change, same-group exclusivity, cross-form isolation, nameless independence, no-op/deduplication, transparent-input labels, prevented default activation, disabled/custom-control refusal and stale references. Page-side fault injection changes name/form/value during geometry acquisition without changing the AX identity; a separate real click handler changes the group after input and must produce unknown. Unit tests also check root/form object identity and handle release. Clients now require `runtime.radio.v1`, and Broker provider negotiation requires `input.radio.v1`; restart/upgrade all components together.
 
-Use `browser_act` with `action: { kind: "check", ref, checked: true }` (or `false`) to set an exact checkbox/switch state. The ordinary action approval, lease, document identity, deadline and request-ID fence apply. `NodeRef.checked` exposes boolean or `"mixed"` state when [Chrome Accessibility provides it](https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/#type-AXPropertyName); it is not the input's submission `value` attribute. Native checkboxes and explicit ARIA checkbox/switch widgets are supported. Native radios also support `checked: true`; `false` is rejected even if already unchecked. Select another observed radio to change the group choice. Custom ARIA radios remain unsupported by `check`.
+Use `native_browser_act` with `action: { kind: "check", ref, checked: true }` (or `false`) to set an exact checkbox/switch state. The ordinary action approval, lease, document identity, deadline and request-ID fence apply. `NodeRef.checked` exposes boolean or `"mixed"` state when [Chrome Accessibility provides it](https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/#type-AXPropertyName); it is not the input's submission `value` attribute. Native checkboxes and explicit ARIA checkbox/switch widgets are supported. Native radios also support `checked: true`; `false` is rejected even if already unchecked. Select another observed radio to change the group choice. Custom ARIA radios remain unsupported by `check`.
 
 The provider compares fixed read-only DOM state with browser AX state on the exact backend node. If already correct, it verifies again after observing the result and sends no click or focus request. Otherwise it waits for ordinary click actionability, rechecks whether another actor has already reached the desired state, and sends at most one trusted mouse down/up pair. It waits for the requested checked state, applies any additional text/URL expectation, and rechecks state and identity after result observation. A `value` expectation is rejected. No assignment to `checked`/`aria-checked`, synthetic `click()` or dispatched DOM change events are used by the action.
 
@@ -428,7 +434,7 @@ Clients require `runtime.append.v1`; an older Broker is rejected rather than tre
 
 ### Page keyboard actions
 
-`browser_act` now accepts `{ kind: "press", ref, key, shift?, expected? }`. The reference must name an observed control, not a structural region. Supported keys are `Enter`, `Tab`, `Escape`, `Space`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Home`, `End`, `PageUp`, `PageDown`, `Backspace` and `Delete`. `shift: true` supports combinations such as Shift+Tab; Ctrl/Alt/Command, arbitrary characters, editing commands, repetitions and held-key requests are not exposed. Use `fill` for text content.
+`native_browser_act` now accepts `{ kind: "press", ref, key, shift?, expected? }`. The reference must name an observed control, not a structural region. Supported keys are `Enter`, `Tab`, `Escape`, `Space`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Home`, `End`, `PageUp`, `PageDown`, `Backspace` and `Delete`. `shift: true` supports combinations such as Shift+Tab; Ctrl/Alt/Command, arbitrary characters, editing commands, repetitions and held-key requests are not exposed. Use `fill` for text content.
 
 ```js
 await browserAct({
@@ -531,7 +537,7 @@ The fixed internal `ax.find` uses [Accessibility.queryAXTree](https://chromedevt
 
 ### Incremental observation contract
 
-Call `browser_observe({ leaseId })` for a `format: "full"` snapshot. Keep its opaque `cursor` with that exact snapshot; the next call can pass `{ leaseId, cursor }` (and the same `query`/`rootRef` for a scoped view). Each consumer keeps its own cursor, not a shared global “last observed” position. A response is either a new full snapshot of the requested scope (replace the old one) or `format: "delta"` tied to its exact `baseCursor`, tab, document epoch and scope:
+Call `native_browser_observe({ leaseId })` for a `format: "full"` snapshot. Keep its opaque `cursor` with that exact snapshot; the next call can pass `{ leaseId, cursor }` (and the same `query`/`rootRef` for a scoped view). Each consumer keeps its own cursor, not a shared global “last observed” position. A response is either a new full snapshot of the requested scope (replace the old one) or `format: "delta"` tied to its exact `baseCursor`, tab, document epoch and scope:
 
 - `nodes.upsert` contains added or changed controls; `nodes.remove` contains IDs absent from the new **bounded view**, not proof of DOM deletion. Optional `nodes.order` is the complete new ordering of the returned controls.
 - Optional `text` is one `{ start, deleteCount, insert }` array splice against the baseline's text fragments. When absent, the baseline text is unchanged.
@@ -579,7 +585,7 @@ Tests cover child/Broker processes killed after a side effect but before settlem
 
 ## Images and Vision Router
 
-`browser_screenshot` returns a Host-owned attachment and an image content block; it does not send the image to a separate vision endpoint itself. Text-only DSH models need a separately configured visual tool such as `dsh-vision-router`. Passing the screenshot's authorized attachment ID to its public tools is the planned collaboration route; the complete browser→Vision Router→model task has not passed live acceptance yet.
+`native_browser_screenshot` returns a Host-owned attachment and an image content block; it does not send the image to a separate vision endpoint itself. Text-only DSH models need a separately configured visual tool such as `dsh-vision-router`. Passing the screenshot's authorized attachment ID to its public tools is the planned collaboration route; the complete browser→Vision Router→model task has not passed live acceptance yet.
 
 The result now also includes `screenshot`: an opaque screenshot ID, exact canonical attachment ID/content SHA-256, lease/tab/document identity, capture/expiry times, canonical pixel dimensions and an image-to-CSS-viewport transform. The adapter reads back the Host-normalized bytes to verify that the hash matches the persisted attachment ID. The in-memory registry is per owning DSH turn, limited to 128 metadata entries and 60 seconds per reference; handoff/turn end/disposal removes that scope's references. It does not duplicate pixel storage or delete Host-owned image files. An expired runtime reference is **not** a claim that an independently authorized Host attachment has been erased or made unreadable to other plugins.
 
@@ -623,13 +629,13 @@ The command does **not** delete the shared launcher, combined host allowlist, to
 
 ## Live page windows
 
-`browser_read_page` is an explicit read-only discovery tool, separate from `browser_observe` snapshots/deltas. It starts at the current authorized document or an exact known `rootRef` and walks the currently exposed AX subtree in depth-first order. [Chrome's Accessibility API](https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/) supplies the root, exact backend subtree and child-node reads; `Accessibility.enable` keeps AX identities stable between calls. The default observation/action path is unchanged and does not automatically enumerate the whole page.
+`native_browser_read_page` is an explicit read-only discovery tool, separate from `native_browser_observe` snapshots/deltas. It starts at the current authorized document or an exact known `rootRef` and walks the currently exposed AX subtree in depth-first order. [Chrome's Accessibility API](https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/) supplies the root, exact backend subtree and child-node reads; `Accessibility.enable` keeps AX identities stable between calls. The default observation/action path is unchanged and does not automatically enumerate the whole page.
 
 ```js
-const first = await browser_read_page({ leaseId, rootRef });
+const first = await native_browser_read_page({ leaseId, rootRef });
 // Repeat the exact scope; omit rootRef on both calls for document windows.
 if (first.page.continuation) {
-  const second = await browser_read_page({
+  const second = await native_browser_read_page({
     leaseId, rootRef, continuation: first.page.continuation
   });
 }
@@ -658,11 +664,11 @@ The isolated real DSH → Broker → Chrome-started Native Host → MV3 test rea
 
 ## Bounded action batches
 
-`browser_batch` combines already planned actions into one model tool call, not a JavaScript interpreter. For a currently observed input and a same-document result:
+`native_browser_batch` combines already planned actions into one model tool call, not a JavaScript interpreter. For a currently observed input and a same-document result:
 
 ```js
 // leaseId, documentEpoch and inputRef come from the current approved observation.
-browser_batch({
+native_browser_batch({
   requestId: "unique-search-request",
   leaseId, documentEpoch, timeoutMs: 20000,
   steps: [
@@ -677,7 +683,7 @@ Replace the expected text with a real, independently meaningful page condition. 
 
 The overall deadline defaults to, and cannot exceed, 30 seconds. It includes connection work on the adapter side, queue waiting and all approval/action waits; a step timeout cannot extend it. Steps execute under one tab queue slot, so other queued actions/reads do not interleave between steps, including during approvals. This is not isolation from the human, page scripts or another browser actor. Stop, handoff, turn end, lease expiry and transport cancellation can interrupt the batch; already-dispatched effects cannot be rolled back. Slow filesystem settlement and non-cooperative third-party callbacks are not hard real-time cancellable.
 
-Each step calls the public DSH `approval.request` service with `toolName: "browser_batch"`, the owning agent and the outer tool `callId`. Its reason identifies the exact step index/kind and a digest; review the corresponding full arguments displayed for that call. Reasons do not duplicate entered strings or page payloads. Only `allowed-once` grants that step. Missing/unavailable approval service, denial or cancellation fails closed. There is no blanket approval or fallback auto-approval. This uses the parent `browser_batch` Host tool policy plus the public per-step approval service; it does **not** recursively execute `browser_act` or inherit tool-specific middleware attached only to that other name. Keep the new tool appropriately restricted in DSH. Automatic classification of high-risk business steps remains future work; this preview is still unsuitable for payments/destructive business operations.
+Each step calls the public DSH `approval.request` service with `toolName: "native_browser_batch"`, the owning agent and the outer tool `callId`. Its reason identifies the exact step index/kind and a digest; review the corresponding full arguments displayed for that call. Reasons do not duplicate entered strings or page payloads. Only `allowed-once` grants that step. Missing/unavailable approval service, denial or cancellation fails closed. There is no blanket approval or fallback auto-approval. This uses the parent `native_browser_batch` Host tool policy plus the public per-step approval service; it does **not** recursively execute `native_browser_act` or inherit tool-specific middleware attached only to that other name. Keep the new tool appropriately restricted in DSH. Automatic classification of high-risk business steps remains future work; this preview is still unsuitable for payments/destructive business operations.
 
 The adapter permits at most eight active/queued batch approval contexts. Internal callbacks are bound to the exact connection, turn, private approval ID and next step index. Repeated, skipped or old-connection callbacks are refused, and late grants cannot revive cancelled work. Runtime policy and lease checks run again after each asynchronous approval; the provider retains its normal target/actionability and last-mile input gates.
 

@@ -70,7 +70,7 @@ try {
   broker=await startBroker({directory,allowedOrigins:['https://example.test']});
   const provider=new FakeProvider();broker.runtime.register(provider);
   const shot={tab:'tab-1',documentEpoch:'doc-1',capturedAt:Date.now(),mimeType:'image/jpeg',data:pixels.toString('base64'),
-    viewport:{width:640,height:360,pageX:0,pageY:0}};
+    viewport:{width:640,height:360,pageX:0,pageY:0},redaction:{policy:'cross-origin-frames',frames:0,regions:0}};
   provider.capture=async()=>({...shot,capturedAt:Date.now()});
   originalConnect=Socket.prototype.connect;
   Socket.prototype.connect=function(...args) {
@@ -85,6 +85,7 @@ try {
   await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(LlmRuntime);
   await ctx.plugin(LocalAttachmentStore,{dshHome:path.join(directory,'fixture-host')});
   await ctx.plugin(LocalFileSystem,{cwd:directory});
+  ctx.provide('connection',{rpc:{handle:()=>()=>{}}});
   await ctx.plugin(browserPlugin,{runtimeDirectory:directory});
   await ctx.plugin(router,{tool:true,progressiveTools:false,freeFallback:false,freeCloudFirst:false,
     routing:false,stealth:false,autoWrapProviders:false,wrappedProviders:[],cache:false,instantDescribe:false,
@@ -99,8 +100,8 @@ try {
   const call=(name,args,owner=session)=>ctx.tools.execute({name,callId:`vision-smoke-${++number}`,arguments:args,
     agent:{session:owner,...visionEnabled?{options:{config:{provider:'deepseek-vision',model:'fixture-vl'}}}:{}},signal:AbortSignal.timeout(6000)});
   const resultValue=async(name,args,owner)=>{const result=await call(name,args,owner);assert.equal(result.isError,false,JSON.stringify(result.content));return result;};
-  const lease=(await resultValue('browser_claim',{instanceId:'fake-1',tab:'tab-1'})).value;
-  const capture=await resultValue('browser_screenshot',{leaseId:lease.id});
+  const lease=(await resultValue('native_browser_claim',{instanceId:'fake-1',tab:'tab-1'})).value;
+  const capture=await resultValue('native_browser_screenshot',{leaseId:lease.id});
   const attachment=capture.value.attachment;
   // ToolRuntime returns blocks; the agent loop publishes them as a durable tool result.
   session.append('tool/result',{step:1,message:createToolResultMessage({callId:'browser-capture',content:capture.content,isError:false})},{surfaceOp:'append'});

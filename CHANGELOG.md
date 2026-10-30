@@ -7,15 +7,16 @@ All notable changes will be documented here. The project follows semantic versio
 - Add a one-command `install` flow: stage the Chrome/Edge bundle in a stable private directory, register the Native Messaging host, install and start a macOS user LaunchAgent for the Broker, then open the browser extension page and the staged folder.
 - Keep the sole unavoidable Chrome Stable step explicit: the user confirms **Load unpacked** once. The installer never automates Chrome UI or weakens extension installation security.
 - Add `uninstall` and `service-status`, preserve compatibility with the existing `setup`/`install-host` commands, and derive the extension manifest version from `package.json`.
+- Move all 13 public tools to the collision-resistant `native_browser_*` namespace. Existing `browser_*` names are available only through the explicit `legacyToolNames` config; occupied aliases are skipped rather than overwriting another plugin.
 
 ## 0.1.0-alpha.10 - 2026-10-30
 
-- Add `browser_act` `dialog` handling for pending `alert`, `confirm`, `prompt` and `beforeunload` dialogs: accept or dismiss the exact leased tab's dialog, optionally provide bounded prompt text, return typed dialog evidence, and continue with a text/state postcondition.
+- Add `native_browser_act` `dialog` handling for pending `alert`, `confirm`, `prompt` and `beforeunload` dialogs: accept or dismiss the exact leased tab's dialog, optionally provide bounded prompt text, return typed dialog evidence, and continue with a text/state postcondition.
 - Add `input.dialog.v1` / `runtime.dialog.v1` capability negotiation. Dialog control bypasses the blocked page-command queue so a synchronous `confirm()` cannot deadlock behind the click that opened it.
 
 ## 0.1.0-alpha.9 - 2026-10-30
 
-- Group agent-created tabs into a `DSH Browser` Chrome tab group (blue), and add `browser_close`: only tabs created by `browser_open` can be closed; user tabs are rejected.
+- Group agent-created tabs into a `DSH Browser` Chrome tab group (blue), and add `native_browser_close`: only tabs created by `native_browser_open` can be closed; user tabs are rejected.
 - Add the `tabGroups` permission and `tabs.group` / `tabs.close` capabilities with `runtime.tab-grouping.v1` / `runtime.close-tab.v1` negotiation.
 
 ## 0.1.0-alpha.8 - 2026-10-30
@@ -24,7 +25,7 @@ All notable changes will be documented here. The project follows semantic versio
 - Add `input.visual-click.v1` / `runtime.visual-click.v1` capability negotiation.
 - Add the `tabs` permission so personal-mode discovery can read tab URLs and titles without granting plaintext HTTP host access.
 - Extend the durable action journal's validated kind list to `upload`, `choose`, `download` and `visual-click`, so those actions settle correctly across journal reopen.
-- Add multi-tab workflows: one DSH session can open additional HTTP(S) tabs (`browser_open`), bring any controlled tab to the foreground (`browser_activate`), and release every owned lease at once (`browser_release_all`); agent-created tabs stay open on release.
+- Add multi-tab workflows: one DSH session can open additional HTTP(S) tabs (`native_browser_open`), bring any controlled tab to the foreground (`native_browser_activate`), and release every owned lease at once (`native_browser_release_all`); agent-created tabs stay open on release.
 - Add `tabs.create` / `tabs.activate` provider capabilities and `runtime.open-tab.v1` / `runtime.activate-tab.v1` negotiation.
 
 ## 0.1.0-alpha.7 - 2026-10-29
@@ -33,10 +34,10 @@ All notable changes will be documented here. The project follows semantic versio
 
 ## 0.1.0-alpha.6 - 2026-10-29
 
-- Add verified file upload to `browser_act`: an observed, connected, enabled `<input type=file>` ref receives bounded absolute local paths through `DOM.setFileInputFiles`, keeping the same identity rechecks, approval gate and text/state postconditions as other actions.
+- Add verified file upload to `native_browser_act`: an observed, connected, enabled `<input type=file>` ref receives bounded absolute local paths through `DOM.setFileInputFiles`, keeping the same identity rechecks, approval gate and text/state postconditions as other actions.
 - Add the `DOM.setFileInputFiles` CDP last-mile gate (resolved-object-only dispatch with bounded absolute local files), `runtime.upload.v1` / `input.file-input.v1` capability negotiation, and a real Chrome MV3 upload case.
-- Add native file chooser support to `browser_act`: `choose` clicks an observed chooser trigger under `Page.setInterceptFileChooserDialog`, waits for `Page.fileChooserOpened`, then accepts bounded absolute local files through `Page.handleFileChooser`; `runtime.choose.v1` / `input.file-chooser.v1` negotiate the capability.
-- Add verified downloads to `browser_act`: `download` arms the extension's `chrome.downloads` observer for the exact lease, clicks an observed trigger, and returns the real saved filename, absolute path and byte count once Chrome reports completion; `runtime.download.v1` / `input.download.v1` negotiate the capability.
+- Add native file chooser support to `native_browser_act`: `choose` clicks an observed chooser trigger under `Page.setInterceptFileChooserDialog`, waits for `Page.fileChooserOpened`, then accepts bounded absolute local files through `Page.handleFileChooser`; `runtime.choose.v1` / `input.file-chooser.v1` negotiate the capability.
+- Add verified downloads to `native_browser_act`: `download` arms the extension's `chrome.downloads` observer for the exact lease, clicks an observed trigger, and returns the real saved filename, absolute path and byte count once Chrome reports completion; `runtime.download.v1` / `input.download.v1` negotiate the capability.
 
 ## 0.1.0-alpha.5 - 2026-10-29
 

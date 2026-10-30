@@ -25,14 +25,37 @@ test('exports a loadable development-preview Cordis plugin', () => {
     phase: 'development-preview',
     browser: 'chrome',
     toolsRegistered: true,
+    toolNamespace: 'native_browser',
   })
   const tools = []
   const connection = { rpc: { handle: () => () => {} } }
   assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {}, get: name => name === 'connection' ? connection : undefined }))
   assert.equal(tools.length, 13)
-  for (const name of ['browser_open', 'browser_activate', 'browser_close', 'browser_release_all']) {
+  assert.ok(tools.every(tool => tool.name.startsWith('native_browser_')))
+  assert.ok(tools.every(tool => !tool.name.startsWith('browser_')))
+  for (const name of ['native_browser_open', 'native_browser_activate', 'native_browser_close', 'native_browser_release_all']) {
     assert.ok(tools.some(tool => tool.name === name), name)
   }
+})
+
+test('canonical tools avoid browser_* and optional aliases skip occupied names', () => {
+  const registered = new Map([['browser_claim', { name: 'browser_claim', owner: 'other-plugin' }]])
+  const hooks = new Map(), services = new Map([['connection', { rpc: { handle: () => () => {} } }]])
+  const ctx = {
+    tools: { register(tool) {
+      if (registered.has(tool.name)) throw new Error(`duplicate tool ${tool.name}`)
+      registered.set(tool.name, tool)
+    } },
+    on: (event, handler) => hooks.set(event, handler), effect() {}, get: service => services.get(service),
+  }
+  assert.doesNotThrow(() => apply(ctx, { legacyToolNames: true }))
+  assert.equal(registered.get('browser_claim').owner, 'other-plugin')
+  for (const shortName of ['list', 'claim', 'open', 'activate', 'close', 'release_all', 'observe', 'read_page', 'frames', 'act', 'batch', 'handoff', 'screenshot']) {
+    assert.ok(registered.has(`native_browser_${shortName}`), shortName)
+  }
+  assert.ok(registered.has('browser_open'))
+  assert.equal(registered.has('browser_claim'), true)
+  assert.equal(registered.get('browser_claim').owner, 'other-plugin')
 })
 
 test('bundle patch mounts the published package name', async () => {

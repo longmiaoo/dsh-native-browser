@@ -42,7 +42,7 @@ flowchart LR
     Agent[DSH Agent<br/>ToolRuntime]
 
     subgraph Node[本地 Node.js 控制面]
-        Adapter[DSH Adapter<br/>browser_* tools]
+        Adapter[DSH Adapter<br/>native_browser_* tools]
         Broker[Local Broker<br/>Owner / Lease / Journal]
         Runtime[Runtime Core<br/>策略 / 串行化 / 结果语义]
         Contract{{BrowserProvider<br/>可移植契约}}
@@ -71,7 +71,7 @@ flowchart LR
 | 层 | 当前职责 | 主要代码 |
 |---|---|---|
 | DSH Web Client | 监听 Session Controller 的标准当前会话状态；仅在页面可见时通过受信 Connection RPC 上报 opaque session ID；不接触 lease、截图或页面数据 | <code>client.js</code> |
-| DSH Adapter | 注册 9 个 <code>browser_*</code> 工具；把 DSH session 映射成隔离 owner；在变更动作前接入 ApprovalService；把截图发布为 DSH 可用附件 | <code>packages/dsh-adapter/src/index.ts</code> |
+| DSH Adapter | 注册 13 个独占命名的 <code>native_browser_*</code> 工具；把 DSH session 映射成隔离 owner；在变更动作前接入 ApprovalService；把截图发布为 DSH 可用附件 | <code>packages/dsh-adapter/src/index.ts</code> |
 | Local Broker | Unix socket 本地 RPC、token 握手、连接角色隔离、owner/lease 生命周期、持久化 action journal、Provider 注册 | <code>packages/broker/src/server.ts</code>、<code>ownership.ts</code>、<code>action-journal.ts</code> |
 | Runtime Core | 每标签页串行执行；二次校验 lease/策略；管理批处理、观察、动作、帧与结果状态；统一 fail-closed 语义 | <code>packages/runtime-core/src/runtime.ts</code> |
 | Portable Contracts | 浏览器无关的请求、结果、错误码、能力协商、帧模型、wire 版本和输入校验 | <code>packages/contracts/src/</code> |
@@ -87,15 +87,15 @@ flowchart LR
 
 | 工具 | 作用 |
 |---|---|
-| <code>browser_list</code> | 列出已连接浏览器实例，或扩展中明确允许的标签页 |
-| <code>browser_claim</code> | 经审批后独占控制一个标签页，返回 lease |
-| <code>browser_observe</code> | 读取有界 AX 文本、控件、区域；支持 subtree、精确 query、same-origin child frame |
-| <code>browser_read_page</code> | 按单次 continuation 读取大页面的下一个实时 AX 窗口 |
-| <code>browser_frames</code> | 只返回有界帧结构、opaque frame ID、父子关系、epoch 和 origin relation |
-| <code>browser_act</code> | 单个 click/fill/append/press/scroll/wheel/check/navigate 动作 |
-| <code>browser_batch</code> | 串行批动作；每个变更步骤分别审批；某步不确定时立即停止后续步骤 |
-| <code>browser_handoff</code> | 释放当前控制，让用户接管 |
-| <code>browser_screenshot</code> | 采集当前 viewport，并发布成 DSH 可读的受控附件 |
+| <code>native_browser_list</code> | 列出已连接浏览器实例，或扩展中明确允许的标签页 |
+| <code>native_browser_claim</code> | 经审批后独占控制一个标签页，返回 lease |
+| <code>native_browser_observe</code> | 读取有界 AX 文本、控件、区域；支持 subtree、精确 query、same-origin child frame |
+| <code>native_browser_read_page</code> | 按单次 continuation 读取大页面的下一个实时 AX 窗口 |
+| <code>native_browser_frames</code> | 只返回有界帧结构、opaque frame ID、父子关系、epoch 和 origin relation |
+| <code>native_browser_act</code> | 单个 click/fill/append/press/scroll/wheel/check/navigate 动作 |
+| <code>native_browser_batch</code> | 串行批动作；每个变更步骤分别审批；某步不确定时立即停止后续步骤 |
+| <code>native_browser_handoff</code> | 释放当前控制，让用户接管 |
+| <code>native_browser_screenshot</code> | 采集当前 viewport，并发布成 DSH 可读的受控附件 |
 
 ## 3. 身份、授权与状态模型
 
@@ -130,7 +130,7 @@ flowchart TD
 
 Broker 不直接相信模型传来的 session 字符串。它把“当前 Broker 连接 epoch”和 Adapter 生成的 wire session ID 组合成 owner。不同连接、不同 DSH 会话无法互相使用 lease 或恢复元数据。
 
-<code>browser_claim</code> 只对扩展已经允许的 tab 发放独占 lease。默认 restricted/trusted 路径还要求 origin 在精确 allowlist 中，并发放 <code>scope=origin</code>；显式 personal Broker 则发放 <code>scope=tab</code>，允许同一个已授权 tab 的根页面在 HTTP(S) origin 之间切换。后续每次观察、截图和动作仍重新验证 owner、tab、当前根 origin、lease 状态与 Stop 状态；子帧继续按当前根 origin 做同源祖先链检查。
+<code>native_browser_claim</code> 只对扩展已经允许的 tab 发放独占 lease。默认 restricted/trusted 路径还要求 origin 在精确 allowlist 中，并发放 <code>scope=origin</code>；显式 personal Broker 则发放 <code>scope=tab</code>，允许同一个已授权 tab 的根页面在 HTTP(S) origin 之间切换。后续每次观察、截图和动作仍重新验证 owner、tab、当前根 origin、lease 状态与 Stop 状态；子帧继续按当前根 origin 做同源祖先链检查。
 
 ### 3.2 Document epoch 与 opaque ref
 
@@ -175,7 +175,7 @@ sequenceDiagram
     participant C as Chrome CDP
     participant W as Web Page
 
-    A->>D: browser_observe(leaseId, scope/query/frame/cursor)
+    A->>D: native_browser_observe(leaseId, scope/query/frame/cursor)
     D->>B: RPC + owner scope
     B->>B: 校验 owner、lease、origin；按 tab 串行
     B->>P: observe(lease, options)
@@ -222,9 +222,9 @@ sequenceDiagram
     participant X as AXPager
     participant E as MV3 / CDP
 
-    A->>R: browser_frames(lease)
+    A->>R: native_browser_frames(lease)
     R-->>A: opaque frameId + child documentEpoch
-    A->>R: browser_read_page(frame, rootRef?, continuation?)
+    A->>R: native_browser_read_page(frame, rootRef?, continuation?)
     R->>R: sameOriginFrame：前置校验完整祖先链
     R->>P: readPage(lease, frame scope)
     P->>F: 解析 child session/context/source binding
@@ -258,7 +258,7 @@ sequenceDiagram
     participant E as MV3 Extension
     participant C as Chrome / Page
 
-    A->>D: browser_act(requestId, leaseId, epoch, action)
+    A->>D: native_browser_act(requestId, leaseId, epoch, action)
     D->>A: 请求本次变更审批
     A-->>D: allowed-once
     D->>B: 本地 RPC + owner token
@@ -355,7 +355,7 @@ sequenceDiagram
 
 ## 7. Screenshot 与视觉理解
 
-<code>browser_screenshot</code> 不是绕过权限的备用通道。当前实现会：
+<code>native_browser_screenshot</code> 不是绕过权限的备用通道。当前实现会：
 
 1. 验证 lease 与当前 document；
 2. 读取完整 frame graph，定位包含跨域或 opaque descendant 的最上层 iframe；

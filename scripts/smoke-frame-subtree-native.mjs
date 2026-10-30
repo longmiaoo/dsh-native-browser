@@ -24,7 +24,7 @@ try{
  adapter=await nativeAdapter({hostRoot,executablePath,signal,brand,html});let h=await adapter.prepare({},'frame-subtree');
  await h.page.waitForFunction(()=>document.querySelector('#child')?.contentDocument?.querySelector('#billing'));
  for(const f of h.page.frames())await f.waitForLoadState('load');
- const inventory=await adapter.tool('browser_frames',{leaseId:h.lease.id}),foreign=inventory.frames.find(f=>f.originRelation==='cross-origin');assert.ok(foreign);
+ const inventory=await adapter.tool('native_browser_frames',{leaseId:h.lease.id}),foreign=inventory.frames.find(f=>f.originRelation==='cross-origin');assert.ok(foreign);
  const selected=inventory.frames.find(f=>f.id===foreign.parentId),frame={frameId:selected.id,documentEpoch:selected.documentEpoch};
  const childPage=h.page.frames().find(f=>new URL(f.url()).pathname==='/child'),view=await h.observe({frame});
  const region=name=>{const found=view.nodes.filter(n=>n.name===name&&n.kind==='region');assert.equal(found.length,1);return found[0].id;};
@@ -36,8 +36,8 @@ try{
  const query={name:'保存',role:'button'},all=await h.observe({frame,query});assert.equal(all.nodes.length,2);
  const found=await read(billing,{query});assert.equal(found.nodes.length,1);assert.deepEqual(found.scope,{kind:'query',frameId:frame.frameId,rootRef:billing,query});
  const act={requestId:'billing-save',leaseId:h.lease.id,documentEpoch:frame.documentEpoch,frame,action:{kind:'click',ref:found.nodes[0].id,expected:{kind:'text',text:'Billing saved'}}};
- assert.equal((await adapter.tool('browser_act',act)).outcome,'succeeded');assert.deepEqual(await childPage.evaluate(()=>hits),[{region:'billing',trusted:true}]);
- await adapter.tool('browser_act',act);assert.equal(await childPage.evaluate(()=>hits.length),1);
+ assert.equal((await adapter.tool('native_browser_act',act)).outcome,'succeeded');assert.deepEqual(await childPage.evaluate(()=>hits),[{region:'billing',trusted:true}]);
+ await adapter.tool('native_browser_act',act);assert.equal(await childPage.evaluate(()=>hits.length),1);
  passed.push('A region-scoped exact query disambiguates two Save buttons and clicks only Billing through the public trusted/no-replay path');
  const before=await read(billing);await childPage.locator('#local').evaluate(el=>el.textContent='Updated local text');
  const delta=await read(billing,{cursor:before.cursor});assert.equal(delta.format,'delta');assert.ok(applyObservationUpdate(before,delta).text.includes('Updated local text'));

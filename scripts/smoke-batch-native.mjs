@@ -19,8 +19,8 @@ try {
   const batch=(h,id,steps,timeoutMs=3000)=>({requestId:id,leaseId:h.lease.id,documentEpoch:h.snapshot.documentEpoch,steps,timeoutMs});
   const stepFill=(h,text)=>({action:{kind:'fill',ref:h.ref('Benchmark input'),text}});
   const stepSubmit=h=>({action:{kind:'press',ref:h.ref('Benchmark input'),key:'Enter',expected:{kind:'text',text:'Form submitted'}}});
-  const execute=request=>adapter.tool('browser_batch',request);
-  const batchAsks=()=>requests.filter(r=>r.toolName==='browser_batch');
+  const execute=request=>adapter.tool('native_browser_batch',request);
+  const batchAsks=()=>requests.filter(r=>r.toolName==='native_browser_batch');
   const audit=()=>Array.from({length:session.seq},(_,i)=>session.eventAt(i)).filter(Boolean);
 
   let h=await prepare();let before=batchAsks().length;
@@ -33,7 +33,7 @@ try {
   passed.push('One real DSH batch performs trusted Chinese fill and Enter with two public ApprovalService grants and whole-batch deduplication');
 
   h=await prepare();before=batchAsks().length;
-  handler=async req=>req.toolName==='browser_batch'&&req.reason.includes('step 2/')?'rejected':'allowed-once';
+  handler=async req=>req.toolName==='native_browser_batch'&&req.reason.includes('step 2/')?'rejected':'allowed-once';
   const denied=batch(h,'batch-native-denied',[stepFill(h,'first retained'),stepSubmit(h),stepFill(h,'never')]);
   const partial=await execute(denied);assert.equal(partial.code,'POLICY_DENIED');assert.equal(partial.outcome,'failed');
   assert.deepEqual(partial.steps.map(s=>s.status),['attempted','attempted','notRun']);assert.equal(partial.observation,undefined);
@@ -54,7 +54,7 @@ try {
   passed.push('A real post-dispatch timeout stops the batch and never repeats the click or approves a later step');
 
   h=await prepare();let finish,entered=false;
-  handler=req=>req.toolName==='browser_batch'&&req.reason.includes('step 2/')?new Promise(resolve=>{finish=resolve;entered=true;}):Promise.resolve('allowed-once');
+  handler=req=>req.toolName==='native_browser_batch'&&req.reason.includes('step 2/')?new Promise(resolve=>{finish=resolve;entered=true;}):Promise.resolve('allowed-once');
   const stopRequest=batch(h,'batch-native-stop',[stepFill(h,'before Stop'),stepSubmit(h)]);
   const stopping=execute(stopRequest);await eventual(()=>entered);await adapter.stop();finish('allowed-once');
   const stopped=await stopping;assert.notEqual(stopped.outcome,'succeeded');assert.equal(await h.page.evaluate(()=>bench.counts.submit),0);
@@ -63,7 +63,7 @@ try {
   passed.push('Actual extension Stop cancels a pending real ApprovalService question; a late grant cannot submit the next step');
 
   await adapter.allow();h=await prepare();entered=false;
-  handler=req=>req.toolName==='browser_batch'&&req.reason.includes('step 2/')?new Promise(resolve=>{finish=resolve;entered=true;}):Promise.resolve('allowed-once');
+  handler=req=>req.toolName==='native_browser_batch'&&req.reason.includes('step 2/')?new Promise(resolve=>{finish=resolve;entered=true;}):Promise.resolve('allowed-once');
   const crashRequest=batch(h,'batch-native-crash',[stepFill(h,'before crash'),stepSubmit(h)]);
   const crashing=execute(crashRequest).then(value=>({value}),error=>({error}));await eventual(()=>entered);
   const restart=await adapter.crashAndRestartBroker();assert.equal(restart.recoveredSocket,true);finish('allowed-once');

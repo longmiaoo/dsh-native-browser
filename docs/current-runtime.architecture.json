@@ -39,7 +39,7 @@
       "id": "adapter",
       "type": "frontend",
       "label": "DSH Adapter",
-      "sublabel": "browser_* tools",
+      "sublabel": "native_browser_* tools",
       "pos": [170, 220],
       "size": [135, 64],
       "tag": "approval"

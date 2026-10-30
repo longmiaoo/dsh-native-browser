@@ -119,7 +119,8 @@
         "desktop"
       ],
       "dshReleases": {
-        "0.1.5-rc.1": "compatible"
+        "0.1.5-rc.1": "compatible",
+        "0.2.1-rc.3": "compatible"
       }
     }
   }

@@ -34,7 +34,7 @@ try{
  let h,leaf,target,view,foreign,leafPage;
  const discover=async()=>{
   for(const frame of h.page.frames())await frame.waitForLoadState('load');
-  const inventory=await adapter.tool('browser_frames',{leaseId:h.lease.id});
+  const inventory=await adapter.tool('native_browser_frames',{leaseId:h.lease.id});
   assert.equal(inventory.truncated,false);assert.equal(inventory.frames.length,4);
   const main=inventory.frames.find(f=>f.isMain),parent=inventory.frames.find(f=>f.parentId===main.id&&f.originRelation==='same-origin');assert.ok(parent);
   leaf=inventory.frames.find(f=>f.parentId===parent.id);assert.ok(leaf);
@@ -49,7 +49,7 @@ try{
   return {requestId:'frame-click-'+(++sequence),leaseId:h.lease.id,documentEpoch:target.documentEpoch,frame:{...target},
    action:{kind:'click',ref:nodes[0].id,...(expected===undefined?{}:{expected:{kind:'text',text:expected}})},timeoutMs};
  };
- const execute=request=>adapter.tool('browser_act',request);
+ const execute=request=>adapter.tool('native_browser_act',request);
  const hits=()=>leafPage.evaluate(()=>hits);
  const refused=async request=>{const before=(await hits()).length,result=await execute(request);assert.equal(result.dispatch,'notDispatched',JSON.stringify(result));assert.notEqual(result.outcome,'succeeded');assert.equal((await hits()).length,before);return result;};
  await prepare();
@@ -84,11 +84,11 @@ try{
  assert.notEqual(target.documentEpoch,old.frame.documentEpoch);
  passed.push('Child reload invalidates the old document epoch before any input');
 
- handler=async req=>req.toolName==='browser_act'?'rejected':'allowed-once';
+ handler=async req=>req.toolName==='native_browser_act'?'rejected':'allowed-once';
  await assert.rejects(execute(request('never')),{code:'HOST_TOOL_ERROR'});assert.equal((await hits()).length,0);handler=async()=> 'allowed-once';
  passed.push('The real DSH public ApprovalService can reject child input before dispatch');
 
- let finish,entered=false;handler=req=>req.toolName==='browser_act'?new Promise(resolve=>{entered=true;finish=resolve;}):Promise.resolve('allowed-once');
+ let finish,entered=false;handler=req=>req.toolName==='native_browser_act'?new Promise(resolve=>{entered=true;finish=resolve;}):Promise.resolve('allowed-once');
  const stopping=execute(request('never')).then(value=>({value}),error=>({error}));await eventual(()=>entered);await adapter.stop();finish('allowed-once');
  const stopped=await stopping;assert.ok(stopped.error||stopped.value.outcome!=='succeeded');assert.equal((await hits()).length,0);handler=async()=> 'allowed-once';
  passed.push('Actual extension Stop during pending public approval prevents a late grant from clicking');

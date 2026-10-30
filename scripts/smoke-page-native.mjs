@@ -17,7 +17,7 @@ try {
     document.body.append(region);
   });
   const find=await h.observe({query:{name:'Pagination fixture',role:'region'}}),region=find.nodes.find(n=>n.name==='Pagination fixture');assert.ok(region);
-  const read=(options={})=>adapter.tool('browser_read_page',{leaseId:h.lease.id,...options});
+  const read=(options={})=>adapter.tool('native_browser_read_page',{leaseId:h.lease.id,...options});
   const items=[],ids=new Set();let continuation,index=0,maxBytes=0,last;
   do {
     const window=await read({rootRef:region.id,...(continuation?{continuation}:{})}).catch(error=>{throw new Error('Page window failed at index '+index,{cause:error});});

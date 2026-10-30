@@ -27,6 +27,7 @@ try {
   await ctx.plugin(SystemPrompt);
   await ctx.plugin(ToolRuntime);
   await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'fixture-host') });
+  ctx.provide('connection', { rpc: { handle: () => () => {} } });
   await ctx.plugin(plugin, { runtimeDirectory: directory });
   const session = Session.create(SessionId('browser-smoke'));
   session.append('turn/start', { turn: 1 });
@@ -34,30 +35,31 @@ try {
   const call = (name, args) => ctx.tools.execute({ name, callId: `smoke-${++number}`, arguments: args,
     agent: { session }, signal: AbortSignal.timeout(3000) });
   const names = ctx.tools.schemas().map(tool => tool.name);
-  assert.equal(names.length, 9);
-  assert.ok(names.includes('browser_frames'));
-  assert.ok(names.includes('browser_read_page'));
-  assert.ok(names.includes('browser_batch'));
-  const list = await call('browser_list', {});
+  assert.equal(names.length, 13);
+  assert.ok(names.includes('native_browser_frames'));
+  assert.ok(names.includes('native_browser_read_page'));
+  assert.ok(names.includes('native_browser_batch'));
+  const list = await call('native_browser_list', {});
   assert.equal(list.isError, false);
-  const denied = await call('browser_claim', { instanceId: 'fake-1', tab: 'tab-1' });
+  const denied = await call('native_browser_claim', { instanceId: 'fake-1', tab: 'tab-1' });
   assert.equal(denied.isError, true, 'missing approval channel must deny');
   assert.equal(provider.grants.size, 0);
   ctx.provide('approval', { request: async () => 'allowed-once' });
-  const granted = await call('browser_claim', { instanceId: 'fake-1', tab: 'tab-1' });
+  const granted = await call('native_browser_claim', { instanceId: 'fake-1', tab: 'tab-1' });
   assert.equal(granted.isError, false, JSON.stringify(granted.content));
   const lease = granted.value;
-  const observed = await call('browser_observe', { leaseId: lease.id });
+  const observed = await call('native_browser_observe', { leaseId: lease.id });
   assert.equal(observed.isError, false);
-  const acted = await call('browser_act', { requestId: 'dsh-action', leaseId: lease.id, documentEpoch: 'doc-1',
+  const acted = await call('native_browser_act', { requestId: 'dsh-action', leaseId: lease.id, documentEpoch: 'doc-1',
     action: { kind: 'fill', ref: 'node-1', text: 'DSH integration' } });
   assert.equal(acted.isError, false); assert.equal(acted.value.outcome, 'succeeded');
   // A deterministic 1x1 PNG exercises the actual Host admission/storage/render path.
   const pixels = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#126c55' } }).png().toBuffer();
   provider.capture = async () => ({ tab: lease.tab, documentEpoch: 'doc-1', capturedAt: Date.now(), mimeType: 'image/png',
     data: pixels.toString('base64'),
-    viewport: { width: 1, height: 1, pageX: 0, pageY: 0 } });
-  const screenshot = await call('browser_screenshot', { leaseId: lease.id });
+    viewport: { width: 1, height: 1, pageX: 0, pageY: 0 },
+    redaction: { policy: 'cross-origin-frames', frames: 0, regions: 0 } });
+  const screenshot = await call('native_browser_screenshot', { leaseId: lease.id });
   assert.equal(screenshot.isError, false, JSON.stringify(screenshot.content));
   assert.ok(screenshot.content.some(block => block.type === 'image' && block.attachment));
   const stored = await ctx.attachments.readImage(screenshot.value.attachment);
@@ -66,7 +68,7 @@ try {
   assert.equal(screenshot.value.screenshot.attachmentId, screenshot.value.attachment.attachmentId);
   assert.equal(screenshot.value.screenshot.leaseId, lease.id);
   assert.deepEqual(screenshot.value.screenshot.imageSize, { width: screenshot.value.attachment.width, height: screenshot.value.attachment.height });
-  const handedOff = await call('browser_handoff', { leaseId: lease.id });
+  const handedOff = await call('native_browser_handoff', { leaseId: lease.id });
   assert.equal(handedOff.isError, false); assert.equal(provider.grants.size, 0);
   const host = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
   console.log(JSON.stringify({ hostVersion: host.version, tools: names,

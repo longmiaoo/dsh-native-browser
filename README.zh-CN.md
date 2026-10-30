@@ -59,7 +59,7 @@
 
 ## 项目状态
 
-**公开 alpha——可用于主动选择的 Chrome 测试，尚未达到生产可用。** 包内包含类型化运行时、每用户 Broker、Native Messaging Host、Chrome/Edge 共享扩展构建、Chromium AX/动作 Provider、DSH Web 前台会话桥，以及九个 DSH 工具，覆盖有界实时页面窗口、分步审批的动作批处理和仅元数据的 frame 发现。新安装器会一次完成扩展暂存、Host 注册、macOS 后台 Broker 和安装页面引导；Chrome Stable 仍要求用户确认一次 **Load unpacked**。广泛页面兼容性、视觉模型准确率和生产加固仍是待验收工作，而不是已完成承诺。
+**公开 alpha——可用于主动选择的 Chrome 测试，尚未达到生产可用。** 包内包含类型化运行时、每用户 Broker、Native Messaging Host、Chrome/Edge 共享扩展构建、Chromium AX/动作 Provider、DSH Web 前台会话桥，以及 13 个独占命名的 `native_browser_*` DSH 工具，覆盖有界实时页面窗口、分步审批的动作批处理和仅元数据的 frame 发现。新安装器会一次完成扩展暂存、Host 注册、macOS 后台 Broker 和安装页面引导；Chrome Stable 仍要求用户确认一次 **Load unpacked**。广泛页面兼容性、视觉模型准确率和生产加固仍是待验收工作，而不是已完成承诺。
 
 目前已验证：确定性契约/安全测试；将 npm tarball 精确安装到全新 DSH Profile；在隔离 Chrome-for-Testing Profile 中组装本地全链路；以及在已有本地 Chrome Profile 上针对自有 fixture 的一次端到端运行。真实 MV3 扩展、Chrome 启动的 Native Host、Unix socket、Broker、已安装 DSH ToolRuntime、AX 动作、截图附件和交接路径都已被执行。实时门禁还覆盖延迟结果、取消、Stop、回合结束后的迟到审批，以及 Broker 重启不重放。尚未有敏感业务账号流程或生产级视觉模型准确率通过验收。精确证据与限制见 [开发说明](docs/development.md) 和 [实现进度](docs/implementation-progress.md)。
 
@@ -67,7 +67,7 @@
 
 ## 范围
 
-Frame 发现目前能在真实隔离 Chrome 和 Edge 测试中映射同进程和递归 OOPIF 文档。显式 `browser_observe` frame 读取支持同源祖先链，带独立子文档引用/增量，并可通过 `frame` + `query` + 可选 `rootRef` 在指定子文档或已知区域内精确查询；`browser_read_page({frame,...})` 提供有界子文档/区域窗口；显式同源/同进程子 frame 点击使用 `browser_act({frame,...})` 并做子文档内文本验证，包括默认有界视图之外的反馈。其他子 frame 动作和跨源审批仍待完成。Frame origin 只是元数据，不是权限。截图会检查所有已附加会话；包含外部或不透明子文档的可见顶层 iframe 分支会在 MV3 内被脱敏后才离开 Chrome，几何不完整时仍然失败关闭。详见 [frame 发现](docs/development.md#frame-discovery-foundation)。
+Frame 发现目前能在真实隔离 Chrome 和 Edge 测试中映射同进程和递归 OOPIF 文档。显式 `native_browser_observe` frame 读取支持同源祖先链，带独立子文档引用/增量，并可通过 `frame` + `query` + 可选 `rootRef` 在指定子文档或已知区域内精确查询；`native_browser_read_page({frame,...})` 提供有界子文档/区域窗口；显式同源/同进程子 frame 点击使用 `native_browser_act({frame,...})` 并做子文档内文本验证，包括默认有界视图之外的反馈。其他子 frame 动作和跨源审批仍待完成。Frame origin 只是元数据，不是权限。截图会检查所有已附加会话；包含外部或不透明子文档的可见顶层 iframe 分支会在 MV3 内被脱敏后才离开 Chrome，几何不完整时仍然失败关闭。详见 [frame 发现](docs/development.md#frame-discovery-foundation)。
 
 首个生产版本的范围：
 
@@ -172,7 +172,21 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
 
 1. 执行一次快速安装并完成 Chrome 的 **Load unpacked** 确认；macOS 登录后 Broker 会由 LaunchAgent 自动启动。
 2. 在 Chrome 打开要使用的标签页。Chrome 或扩展询问站点访问时，只授予目标标签页/站点。扩展 popup 同时也是紧急 Stop 控件。
-3. 正常和 DSH 对话。智能体会自动发现 `browser_*` 工具；用户不需要构造 lease ID、元素引用、document epoch 或 request ID。
+3. 正常和 DSH 对话。智能体会自动发现 `native_browser_*` 工具；用户不需要构造 lease ID、元素引用、document epoch 或 request ID。
+
+### 工具命名与插件共存
+
+所有正式工具使用独占的 `native_browser_*` 命名空间，例如 `native_browser_claim`、`native_browser_observe` 和 `native_browser_act`。DSH 对同一工具层中的重名注册 fail closed；使用独占前缀后，可以和其他 `browser_*`、`dsh_browser_*` 或 `bsk_*` 浏览器插件同时安装。
+
+旧版 `browser_*` 名称默认不再注册。确实需要兼容旧提示词或本地自动化时，可在 Profile patch 中显式开启别名：
+
+```yaml
+- id: native-browser
+  config:
+    legacyToolNames: true
+```
+
+如果其他插件已经占用某个旧名，安装器会跳过该别名并保留 `native_browser_*` 正式工具，不会覆盖其他插件。
 
 首次运行的稳妥提示：
 
@@ -182,7 +196,7 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
 在我指定的标签页中填写这个测试表单，提交前先停下来让我确认。
 ```
 
-更长任务请明确目标标签页和停止条件。DSH 会 claim 该标签页、观察语义页面状态、执行支持的动作，并在要求时用 `browser_handoff` 释放。claim 是独占的：另一个 DSH 会话不能复用。切换可见 DSH 会话会有意撤销前一个会话的浏览器控制，因此请让新会话重新 claim。
+更长任务请明确目标标签页和停止条件。DSH 会 claim 该标签页、观察语义页面状态、执行支持的动作，并在要求时用 `native_browser_handoff` 释放。claim 是独占的：另一个 DSH 会话不能复用。切换可见 DSH 会话会有意撤销前一个会话的浏览器控制，因此请让新会话重新 claim。
 
 ### 当前版本能做什么
 
@@ -195,7 +209,7 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
 - 将当前视口捕获为 DSH 附件，并把控制权交还用户；
 - 在经验证的点击或滚轮派发后显示短时虚拟指针。
 
-正常快路径是语义观察而不是截图。像 `DeepSeek-V4.1-Flash` 这样的多模态会话可以直接查看发布的截图附件，并把图像像素框交给 `browser_act` 的 `visual-click`；纯文本会话可以选择性使用 `dsh-vision-router` 之类的视觉工具生成同样的框。本插件自身从不派发视觉模型，浏览器侧点击仍要求 document epoch 匹配、视口未滚动/缩放、命中元素可见且与框有足够重叠。扩展会在截图字节离开 Chrome 前脱敏可安全定位的外部/不透明 frame 区域，但 frame 清单或脱敏几何不完整时仍失败关闭。截图被拒绝时，授权根页面的文本读取和语义动作通常仍可工作。
+正常快路径是语义观察而不是截图。像 `DeepSeek-V4.1-Flash` 这样的多模态会话可以直接查看发布的截图附件，并把图像像素框交给 `native_browser_act` 的 `visual-click`；纯文本会话可以选择性使用 `dsh-vision-router` 之类的视觉工具生成同样的框。本插件自身从不派发视觉模型，浏览器侧点击仍要求 document epoch 匹配、视口未滚动/缩放、命中元素可见且与框有足够重叠。扩展会在截图字节离开 Chrome 前脱敏可安全定位的外部/不透明 frame 区域，但 frame 清单或脱敏几何不完整时仍失败关闭。截图被拒绝时，授权根页面的文本读取和语义动作通常仍可工作。
 
 ### 检查安装
 

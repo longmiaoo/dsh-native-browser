@@ -2,7 +2,7 @@
 
 日期：2026-09-12（2026-10-29 更新）。状态：截图引用、坐标适配与 screenshot-bound `visual-click` 已实现；多模态模型（如 `DeepSeek-V4.1-Flash`，`input: ["text","image"]`）可以直接查看截图并给出图像像素框，浏览器侧再做 epoch/视口/命中/重叠校验后点击；非多模态模型可选择 `dsh-vision-router` 等工具生成同一个框。生产自动派发视觉模型仍不做，保持模型/工具协作驱动。
 
-当前实现见 `packages/vision-adapter/src/`：`ScreenshotRegistry` 保存轮次/租约绑定的规范化截图元数据，`parseRouterGrounding` 严格解析公开 `vision_ground` JSON，`boxToViewport` 执行仿射坐标转换。`browser_screenshot` 已接入真实 Host 图片哈希与尺寸。解析结果仅为不可信候选，不是可执行点击授权；目前没有新增视觉点击工具，也未自动调用 Vision Router。标准测试包含 30 组 DPR/zoom/scroll/规范化几何夹具，但这些不是视觉模型识别正确率或 30 组真实浏览器命中验收。当前整体测试与集成证据见 [实现进度](../implementation-progress.md)。
+当前实现见 `packages/vision-adapter/src/`：`ScreenshotRegistry` 保存轮次/租约绑定的规范化截图元数据，`parseRouterGrounding` 严格解析公开 `vision_ground` JSON，`boxToViewport` 执行仿射坐标转换。`native_browser_screenshot` 已接入真实 Host 图片哈希与尺寸。解析结果仅为不可信候选，不是可执行点击授权；目前没有新增视觉点击工具，也未自动调用 Vision Router。标准测试包含 30 组 DPR/zoom/scroll/规范化几何夹具，但这些不是视觉模型识别正确率或 30 组真实浏览器命中验收。当前整体测试与集成证据见 [实现进度](../implementation-progress.md)。
 
 ## 1. 结论
 
@@ -27,10 +27,10 @@
 
 ### A. 首期：标准工具协作，耦合最小
 
-1. `browser_screenshot({leaseId})` 捕获当前授权标签页，生成 `ScreenshotRef` 与 Host 图片结果。
+1. `native_browser_screenshot({leaseId})` 捕获当前授权标签页，生成 `ScreenshotRef` 与 Host 图片结果。
 2. DSH adapter 将图片交给 Host 的正式附件入口；若当前版本无法把工具生成图注册为会话可读附件，使用明确授权的 workspace 图片路径作为兼容路线。两条路线都需端到端测试，不能只生成 hash 字符串。
 3. 主模型调用 `vision_ground` 或 `vision_describe`。只把此图片与局部问题交给视觉模型，不附送全部浏览器历史。
-4. 视觉适配层将有效结果包装为 `VisualTarget`；`browser_act` 再验证截图、几何、权限、租约与实际命中。
+4. 视觉适配层将有效结果包装为 `VisualTarget`；`native_browser_act` 再验证截图、几何、权限、租约与实际命中。
 5. 动作后重新 observe，根据业务后置条件确认；不以旧图上的框证明新动作成功。
 
 此方案不要求插件之间直接调用私有函数，也不要求首期改造 Vision Router。代价是视觉路径通常多一次模型工具往返，应如实计入延迟。AX 足够时根本不走此路径。

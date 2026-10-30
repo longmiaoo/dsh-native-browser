@@ -62,7 +62,7 @@ Parity claims require evidence. Release gates should track end-to-end action lat
 
 ## Project status
 
-**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. The new installer stages the extension, registers the host, starts the macOS Broker service and opens the setup pages in one command; Chrome Stable still requires one explicit **Load unpacked** confirmation. Broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
+**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and 13 namespace-isolated `native_browser_*` DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. The new installer stages the extension, registers the host, starts the macOS Broker service and opens the setup pages in one command; Chrome Stable still requires one explicit **Load unpacked** confirmation. Broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
 
 Verified so far: deterministic contract/security tests; exact npm tarball installation into a fresh DSH `0.1.5-rc.1` profile; the assembled local stack in isolated Chrome-for-Testing profiles; and one end-to-end run in an existing local Chrome profile on an owned fixture. The real MV3 extension, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime, AX actions, screenshot attachment and handoff paths were exercised. Live gates also cover delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No sensitive business account workflow or production visual-model accuracy claim has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
 
@@ -70,7 +70,7 @@ The early Edge compatibility smoke also passes in an isolated Edge profile with 
 
 ## Scope
 
-Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. See [frame discovery](docs/development.md#frame-discovery-foundation).
+Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `native_browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `native_browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `native_browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. See [frame discovery](docs/development.md#frame-discovery-foundation).
 
 In scope for the first production release:
 
@@ -188,7 +188,21 @@ The currently prepared npm version is `0.1.0-alpha.11`. The examples below use t
 
 1. Run quick install once and complete Chrome's **Load unpacked** confirmation; on macOS the LaunchAgent starts the Broker after future logins.
 2. Open the tab you want to use in Chrome. When Chrome or the extension asks for site access, grant it only to the intended tab/site. The extension popup is also the emergency Stop control.
-3. Talk to DSH normally. The agent discovers the `browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
+3. Talk to DSH normally. The agent discovers the `native_browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
+
+### Tool namespace and coexistence
+
+Every official tool uses the isolated `native_browser_*` namespace, such as `native_browser_claim`, `native_browser_observe` and `native_browser_act`. DSH fails closed on duplicate tool names within one layer; the dedicated prefix allows coexistence with `browser_*`, `dsh_browser_*`, `bsk_*` and other browser plugins.
+
+Legacy `browser_*` names are no longer registered by default. Existing prompts or local automations can explicitly opt in:
+
+```yaml
+- id: native-browser
+  config:
+    legacyToolNames: true
+```
+
+If another plugin already owns one of those legacy names, the alias is skipped while the canonical `native_browser_*` tool remains available. The plugin never overwrites the other registration.
 
 Safe prompts for a first run:
 
@@ -198,7 +212,7 @@ Safe prompts for a first run:
 在我指定的标签页中填写这个测试表单，提交前先停下来让我确认。
 ```
 
-For a longer task, identify the target tab clearly and state the stopping condition. DSH will claim that tab, observe its semantic page state, perform supported actions and release it with `browser_handoff` when asked. A claim is exclusive: another DSH conversation cannot reuse it. Switching the visible DSH conversation intentionally revokes the previous conversation's browser control, so ask the newly selected conversation to claim the tab again.
+For a longer task, identify the target tab clearly and state the stopping condition. DSH will claim that tab, observe its semantic page state, perform supported actions and release it with `native_browser_handoff` when asked. A claim is exclusive: another DSH conversation cannot reuse it. Switching the visible DSH conversation intentionally revokes the previous conversation's browser control, so ask the newly selected conversation to claim the tab again.
 
 ### What this version can do
 
@@ -211,7 +225,7 @@ For a longer task, identify the target tab clearly and state the stopping condit
 - capture the current viewport as a DSH attachment and release control back to the user;
 - show a short-lived virtual pointer after a verified click or wheel dispatch.
 
-The normal fast path is semantic observation rather than screenshots. Multimodal sessions such as `DeepSeek-V4.1-Flash` can view the published screenshot attachment directly and pass an image-pixel box to `browser_act` `visual-click`; text-only sessions can optionally use a vision tool such as `dsh-vision-router` to produce the same box. The plugin never dispatches a vision model itself, and the browser-side click still requires a matching document epoch, unchanged viewport, a visible hit target and sufficient box overlap. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
+The normal fast path is semantic observation rather than screenshots. Multimodal sessions such as `DeepSeek-V4.1-Flash` can view the published screenshot attachment directly and pass an image-pixel box to `native_browser_act` `visual-click`; text-only sessions can optionally use a vision tool such as `dsh-vision-router` to produce the same box. The plugin never dispatches a vision model itself, and the browser-side click still requires a matching document epoch, unchanged viewport, a visible hit target and sufficient box overlap. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
 
 ### Check the installation
 

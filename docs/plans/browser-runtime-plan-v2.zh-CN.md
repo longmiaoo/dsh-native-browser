@@ -222,9 +222,9 @@ interface ActionResult {
 
 ### 7.3 工具设计与减少模型轮次
 
-初始工具保持少量：`browser_list`、`browser_open`、`browser_observe`、`browser_act`、`browser_batch`、`browser_handoff`、`browser_close`。截图通过 observe 的选项请求；后台控制 API 包含 cancel/status/doctor，不必全塞给模型。
+初始工具保持少量：`native_browser_list`、`native_browser_open`、`native_browser_observe`、`native_browser_act`、`native_browser_batch`、`native_browser_handoff`、`native_browser_close`。截图通过 observe 的选项请求；后台控制 API 包含 cancel/status/doctor，不必全塞给模型。
 
-`browser_batch` 首期上限建议 8 步/30 秒；每一步仍检查租约、当前目标、审批与后置条件。禁止一次批准整个不透明脚本。对跨站、高风险动作切断批次、重新审批。典型“搜索框填词 → Enter → 等结果列表 → 返回观察”只需一次模型工具调用。
+`native_browser_batch` 首期上限建议 8 步/30 秒；每一步仍检查租约、当前目标、审批与后置条件。禁止一次批准整个不透明脚本。对跨站、高风险动作切断批次、重新审批。典型“搜索框填词 → Enter → 等结果列表 → 返回观察”只需一次模型工具调用。
 
 DSH 的 `codeRuntime.run` 当前语义是每次运行新上下文，不是 Codex 风格持久 REPL。[^9] 首期直接提供批处理即可；后期若加 JS facade，持久化的是 Broker 里的会话与 opaque handle，不将浏览器对象存在模型全局变量里作为唯一真相。Worker 或 `node:vm` 不能直接被称为安全沙箱；需独立低权限进程、最小 RPC 能力、网络/文件限制和资源配额。[^9][^14]
 

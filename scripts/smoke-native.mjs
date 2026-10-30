@@ -102,6 +102,7 @@ try {
   ctx = new Context();
   await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime);
   await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'dsh-test-home') });
+  ctx.provide('connection', { rpc: { handle: () => () => {} } });
   await ctx.plugin(plugin, { runtimeDirectory: directory });
   const session = Session.create(SessionId('native-smoke')), otherSession = Session.create(SessionId('other-session'));
   session.append('turn/start', { turn: 1 });
@@ -113,42 +114,42 @@ try {
     assert.equal(result.isError, false, `${name}: ${JSON.stringify(result.content)}`);
     return result.value;
   };
-  const instances = await value('browser_list', {}); assert.equal(instances.length, 1);
+  const instances = await value('native_browser_list', {}); assert.equal(instances.length, 1);
   const instance = instances[0];
-  const tabs = await value('browser_list', { instanceId: instance.id }); assert.equal(tabs.length, 1);
+  const tabs = await value('native_browser_list', { instanceId: instance.id }); assert.equal(tabs.length, 1);
   const tab = tabs[0]; assert.equal(tab.url, `${origin}/`);
-  const denied = await call('browser_claim', { instanceId: instance.id, tab: tab.id });
+  const denied = await call('native_browser_claim', { instanceId: instance.id, tab: tab.id });
   assert.equal(denied.isError, true);
   let approvalHandler = async () => 'allowed-once';
   ctx.provide('approval', { request: (...args) => approvalHandler(...args) });
-  let lease = await value('browser_claim', { instanceId: instance.id, tab: tab.id });
-  let observation = await value('browser_observe', { leaseId: lease.id });
+  let lease = await value('native_browser_claim', { instanceId: instance.id, tab: tab.id });
+  let observation = await value('native_browser_observe', { leaseId: lease.id });
   passed.push('Real DSH registry, approval denial, approved tab claim and AX observation');
   assert.equal((await diagnose(diagnosticOptions)).status, 'ready');
-  await value('browser_observe', { leaseId: lease.id });
+  await value('native_browser_observe', { leaseId: lease.id });
   passed.push('Doctor connection teardown preserves the active DSH tab lease');
   assert.equal(observation.format, 'full'); assert.equal(typeof observation.cursor, 'string');
   const initial = observation;
-  const unchanged = await value('browser_observe', { leaseId: lease.id, cursor: initial.cursor });
+  const unchanged = await value('native_browser_observe', { leaseId: lease.id, cursor: initial.cursor });
   assert.equal(unchanged.format, 'delta'); assert.equal(unchanged.baseCursor, initial.cursor);
   assert.deepEqual(unchanged.nodes, { upsert: [], remove: [] }); assert.equal(unchanged.text, undefined);
   observationMetrics.fullBytes = serializedBytes(initial);
   observationMetrics.unchangedDeltaBytes = serializedBytes(unchanged);
   assert.ok(observationMetrics.unchangedDeltaBytes < observationMetrics.fullBytes * 0.85);
   await page.locator('#result').evaluate(element => { element.textContent = '增量观察：正文已更新'; });
-  const changed = await value('browser_observe', { leaseId: lease.id, cursor: unchanged.cursor });
+  const changed = await value('native_browser_observe', { leaseId: lease.id, cursor: unchanged.cursor });
   assert.equal(changed.format, 'delta'); assert.ok(changed.text.insert.includes('增量观察：正文已更新'));
   observation = applyObservationUpdate(applyObservationUpdate(initial, unchanged), changed);
   // An independent consumer can still advance from its own older baseline.
-  const olderConsumer = await value('browser_observe', { leaseId: lease.id, cursor: initial.cursor });
+  const olderConsumer = await value('native_browser_observe', { leaseId: lease.id, cursor: initial.cursor });
   assert.deepEqual(pageContent(applyObservationUpdate(initial, olderConsumer)), pageContent(observation));
-  const fresh = await value('browser_observe', { leaseId: lease.id });
+  const fresh = await value('native_browser_observe', { leaseId: lease.id });
   assert.deepEqual(pageContent(observation), pageContent(fresh));
   observationMetrics.textDeltaBytes = serializedBytes(changed);
   observationMetrics.scope = 'UTF-8 JSON response bytes for document-scope views from bounded AX traversal; no token/latency claim';
   passed.push('Real DSH/native observation deltas reconstruct current text and independent consumer cursors');
   const region = fresh.nodes.find(n => n.kind === 'region' && n.name === '搜索表单'); assert.ok(region);
-  const local = await value('browser_observe', { leaseId: lease.id, rootRef: region.id, cursor: fresh.cursor });
+  const local = await value('native_browser_observe', { leaseId: lease.id, rootRef: region.id, cursor: fresh.cursor });
   assert.equal(local.format, 'full'); assert.equal(local.resyncReason, 'scope-changed');
   assert.deepEqual(local.scope, { kind: 'subtree', rootRef: region.id });
   assert.ok(local.text.includes('增量观察：正文已更新'));
@@ -156,10 +157,10 @@ try {
   assert.equal(local.nodes.some(n => n.name === '页底输入'), false);
   assert.equal(local.nodes.find(n => n.name === '搜索词').id, fresh.nodes.find(n => n.name === '搜索词').id);
   passed.push('Real scoped AX query returns only the selected named region, retaining current control identities');
-  const localDelta = await value('browser_observe', { leaseId: lease.id, rootRef: region.id, cursor: local.cursor });
+  const localDelta = await value('native_browser_observe', { leaseId: lease.id, rootRef: region.id, cursor: local.cursor });
   assert.equal(localDelta.format, 'delta');
   assert.deepEqual(pageContent(applyObservationUpdate(local, localDelta)), pageContent(local));
-  const whole = await value('browser_observe', { leaseId: lease.id, cursor: localDelta.cursor });
+  const whole = await value('native_browser_observe', { leaseId: lease.id, cursor: localDelta.cursor });
   assert.equal(whole.format, 'full'); assert.equal(whole.resyncReason, 'scope-changed');
   assert.deepEqual(whole.scope, { kind: 'document' });
   passed.push('Scoped deltas stay in their region; omitting rootRef explicitly resyncs the whole-document view');
@@ -169,12 +170,12 @@ try {
     while (element.firstChild) replacement.append(element.firstChild);
     element.replaceWith(replacement);
   });
-  assert.equal((await call('browser_observe', { leaseId: lease.id, rootRef: region.id })).isError, true);
-  observation = await value('browser_observe', { leaseId: lease.id });
+  assert.equal((await call('native_browser_observe', { leaseId: lease.id, rootRef: region.id })).isError, true);
+  observation = await value('native_browser_observe', { leaseId: lease.id });
   assert.notEqual(observation.nodes.find(n => n.kind === 'region' && n.name === '搜索表单').id, region.id);
   passed.push('A replaced region cannot silently rebind an old root reference to its lookalike');
   const act = async (requestId, action, options = {}) => {
-    const result = await value('browser_act', { requestId, leaseId: lease.id, documentEpoch: observation.documentEpoch,
+    const result = await value('native_browser_act', { requestId, leaseId: lease.id, documentEpoch: observation.documentEpoch,
       action, timeoutMs: options.timeoutMs ?? 4000 }, options);
     if (result.observation) observation = result.observation;
     return result;
@@ -182,32 +183,32 @@ try {
   const field = observation.nodes.find(n => n.name === '搜索词'); assert.ok(field);
   assert.equal((await act('native-fill', { kind: 'fill', ref: field.id, text: '原生通信 · DSH' })).outcome, 'succeeded');
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
-  passed.push(...await verifyKeyboard({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyEditable({ page, observe: options => value('browser_observe', { leaseId: lease.id, ...options }), act }));
-  passed.push(...await verifyAppend({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyElementState({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyChecked({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyCheckLabels({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyRadio({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyWheel({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyScroll({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
-  passed.push(...await verifyActionability({ page, observe: () => value('browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyKeyboard({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyEditable({ page, observe: options => value('native_browser_observe', { leaseId: lease.id, ...options }), act }));
+  passed.push(...await verifyAppend({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyElementState({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyChecked({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyCheckLabels({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyRadio({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyWheel({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyScroll({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
+  passed.push(...await verifyActionability({ page, observe: () => value('native_browser_observe', { leaseId: lease.id }), act }));
   const large = await verifyLargeObservation({ page,
-    observe: options => value('browser_observe', { leaseId: lease.id, ...options }), act });
+    observe: options => value('native_browser_observe', { leaseId: lease.id, ...options }), act });
   passed.push(...large.passed); observationMetrics.largePage = large.metrics;
   passed.push(...await verifySemanticQuery({ page,
-    observe: options => value('browser_observe', { leaseId: lease.id, ...options }), act }));
-  observation = await value('browser_observe', { leaseId: lease.id });
+    observe: options => value('native_browser_observe', { leaseId: lease.id, ...options }), act }));
+  observation = await value('native_browser_observe', { leaseId: lease.id });
   const delayed = observation.nodes.find(n => n.name === '延迟反馈'); assert.ok(delayed);
   assert.equal((await act('native-click', { kind: 'click', ref: delayed.id, expected: { kind: 'text', text: '延迟保存成功' } })).outcome, 'succeeded');
   passed.push('Verified Chinese input and delayed text through the complete local stack');
-  const afterAction = await value('browser_observe', { leaseId: lease.id, cursor: observation.cursor });
+  const afterAction = await value('native_browser_observe', { leaseId: lease.id, cursor: observation.cursor });
   assert.equal(afterAction.format, 'delta'); assert.equal(afterAction.baseCursor, observation.cursor);
   assert.deepEqual(afterAction.nodes, { upsert: [], remove: [] }); assert.equal(afterAction.text, undefined);
   observation = applyObservationUpdate(observation, afterAction);
   passed.push('Action result supplies a valid cursor for the next incremental observation');
 
-  const screenshot = await call('browser_screenshot', { leaseId: lease.id });
+  const screenshot = await call('native_browser_screenshot', { leaseId: lease.id });
   assert.equal(screenshot.isError, false, JSON.stringify(screenshot.content));
   assert.ok(screenshot.content.some(block => block.type === 'image' && block.attachment));
   const image = await ctx.attachments.readImage(screenshot.value.attachment);
@@ -218,7 +219,7 @@ try {
   assert.equal(screenshot.value.screenshot.leaseId, lease.id);
   assert.deepEqual(screenshot.value.screenshot.imageSize, { width: screenshot.value.attachment.width, height: screenshot.value.attachment.height });
   passed.push('Screenshot reference binds canonical Host pixels, dimensions and owning lease');
-  const foreign = await call('browser_observe', { leaseId: lease.id }, { session: otherSession });
+  const foreign = await call('native_browser_observe', { leaseId: lease.id }, { session: otherSession });
   assert.equal(foreign.isError, true);
   passed.push('Different DSH session cannot use another session lease');
 
@@ -232,29 +233,29 @@ try {
 
   await page.evaluate(() => { document.querySelector('#cover').style.display = 'block'; });
   const cancel = new AbortController();
-  const cancelling = call('browser_act', { requestId: 'cancel-native', leaseId: lease.id, documentEpoch: observation.documentEpoch,
+  const cancelling = call('native_browser_act', { requestId: 'cancel-native', leaseId: lease.id, documentEpoch: observation.documentEpoch,
     action: { kind: 'fill', ref: field.id, text: 'must not type' }, timeoutMs: 3000 }, { signal: cancel.signal });
   const timer = setTimeout(() => cancel.abort(), 120);
   const cancelled = await cancelling; clearTimeout(timer);
   assert.ok(cancelled.isError || cancelled.value?.outcome === 'cancelled');
   // A queued observe only resolves after the cancelled operation is quiescent.
-  await value('browser_observe', { leaseId: lease.id });
+  await value('native_browser_observe', { leaseId: lease.id });
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
   passed.push('DSH cancellation propagates across RPC/native bridge before input');
 
-  const stopping = call('browser_act', { requestId: 'stop-native', leaseId: lease.id, documentEpoch: observation.documentEpoch,
+  const stopping = call('native_browser_act', { requestId: 'stop-native', leaseId: lease.id, documentEpoch: observation.documentEpoch,
     action: { kind: 'fill', ref: field.id, text: 'must not type either' }, timeoutMs: 3000 });
   await popupCommand('stop');
   const stopped = await stopping;
   assert.ok(stopped.isError || stopped.value?.outcome === 'cancelled' || stopped.value?.outcome === 'failed');
-  assert.equal((await call('browser_observe', { leaseId: lease.id })).isError, true);
+  assert.equal((await call('native_browser_observe', { leaseId: lease.id })).isError, true);
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
   await page.evaluate(() => { document.querySelector('#cover').style.display = 'none'; });
   passed.push('Popup Stop revokes the Broker lease and blocks pending input');
 
   await popupCommand('allow');
-  lease = await value('browser_claim', { instanceId: instance.id, tab: tab.id });
-  const afterStop = await value('browser_observe', { leaseId: lease.id, cursor: observation.cursor });
+  lease = await value('native_browser_claim', { instanceId: instance.id, tab: tab.id });
+  const afterStop = await value('native_browser_observe', { leaseId: lease.id, cursor: observation.cursor });
   assert.equal(afterStop.format, 'full'); assert.equal(afterStop.resyncRequired, true);
   assert.equal(afterStop.resyncReason, 'cursor-unavailable');
   assert.notEqual(afterStop.nodes.find(n => n.name === '搜索词').id, field.id);
@@ -263,13 +264,13 @@ try {
     lease,instanceId:instance.id,tabId:tab.id});
   lease=publication.lease;passed.push(...publication.passed);
   ctx.emit('session/event', session, { type: 'turn/end' });
-  await eventually(async () => (await call('browser_observe', { leaseId: lease.id })).isError, 'turn-end lease release');
+  await eventually(async () => (await call('native_browser_observe', { leaseId: lease.id })).isError, 'turn-end lease release');
   passed.push('Canonical DSH turn/end event releases native tab control');
 
   let finishApproval, approvalStarted;
   const started = new Promise(resolve => { approvalStarted = resolve; });
   approvalHandler = () => new Promise(resolve => { finishApproval = resolve; approvalStarted(); });
-  const lateClaim = call('browser_claim', { instanceId: instance.id, tab: tab.id });
+  const lateClaim = call('native_browser_claim', { instanceId: instance.id, tab: tab.id });
   await started;
   ctx.emit('session/event', session, { type: 'turn/end' });
   finishApproval('allowed-once');
@@ -278,14 +279,14 @@ try {
   approvalHandler = async () => 'allowed-once';
   passed.push('Late approval cannot grant browser authority after its DSH turn ended');
 
-  lease = await value('browser_claim', { instanceId: instance.id, tab: tab.id });
+  lease = await value('native_browser_claim', { instanceId: instance.id, tab: tab.id });
   const oldLease = lease;
-  const recoveryObservation = await value('browser_observe', { leaseId: lease.id });
+  const recoveryObservation = await value('native_browser_observe', { leaseId: lease.id });
   const recoveryButton = recoveryObservation.nodes.find(n => n.name === '提交测试'); assert.ok(recoveryButton);
   const recoveryRequest = { requestId: 'durable-before-restart', leaseId: lease.id, documentEpoch: recoveryObservation.documentEpoch,
     action: { kind: 'click', ref: recoveryButton.id, expected: { kind: 'text', text: '已提交：原生通信 · DSH' } } };
   const beforeRecoveryClick = await page.evaluate(() => window.fixtureClicks.submit);
-  assert.equal((await value('browser_act', recoveryRequest)).outcome, 'succeeded');
+  assert.equal((await value('native_browser_act', recoveryRequest)).outcome, 'succeeded');
   assert.equal(await page.evaluate(() => window.fixtureClicks.submit), beforeRecoveryClick + 1);
   const killed = await broker.kill(); broker = undefined;
   assert.equal(killed.signal, 'SIGKILL');
@@ -296,39 +297,39 @@ try {
   assert.equal(broker.recoveredSocket, true);
   passed.push('A replacement CLI Broker safely recovers the stale socket left by SIGKILL');
   await eventually(async () => {
-    const result = await call('browser_list', {}); return !result.isError && result.value.length === 0;
+    const result = await call('native_browser_list', {}); return !result.isError && result.value.length === 0;
   }, 'Broker restart without extension auto-reconnect');
-  assert.equal((await call('browser_observe', { leaseId: oldLease.id })).isError, true);
-  const recoveredAction = await value('browser_act', recoveryRequest);
+  assert.equal((await call('native_browser_observe', { leaseId: oldLease.id })).isError, true);
+  const recoveredAction = await value('native_browser_act', recoveryRequest);
   assert.equal(recoveredAction.code, 'RECOVERY_REQUIRED'); assert.equal(recoveredAction.outcome, 'unknown');
   assert.equal(recoveredAction.recovery.priorOutcome, 'succeeded'); assert.equal(recoveredAction.observation, undefined);
   assert.equal(await page.evaluate(() => window.fixtureClicks.submit), beforeRecoveryClick + 1);
   passed.push('Same DSH turn recovers private action metadata after Broker restart without restoring a lease or clicking again');
   await popupCommand('allow');
   const reconnected = await eventually(async () => {
-    const result = await call('browser_list', {}); return !result.isError && result.value.length === 1 && result.value[0];
+    const result = await call('native_browser_list', {}); return !result.isError && result.value.length === 1 && result.value[0];
   }, 'explicit reconnect');
   assert.notEqual(reconnected.id, instance.id);
   assert.equal(await page.locator('#query').inputValue(), '原生通信 · DSH');
   passed.push('Broker restart does not restore a lease or replay input; explicit reconnect gets a new instance');
 
-  const reconnectedTabs = await value('browser_list', { instanceId: reconnected.id });
-  lease = await value('browser_claim', { instanceId: reconnected.id, tab: reconnectedTabs[0].id });
-  assert.equal((await call('browser_act', { ...recoveryRequest, leaseId: lease.id })).isError, true);
+  const reconnectedTabs = await value('native_browser_list', { instanceId: reconnected.id });
+  lease = await value('native_browser_claim', { instanceId: reconnected.id, tab: reconnectedTabs[0].id });
+  assert.equal((await call('native_browser_act', { ...recoveryRequest, leaseId: lease.id })).isError, true);
   assert.equal(await page.evaluate(() => window.fixtureClicks.submit), beforeRecoveryClick + 1);
   passed.push('Reclaiming a tab cannot reuse the old request ID with a changed lease payload');
-  observation = await value('browser_observe', { leaseId: lease.id });
+  observation = await value('native_browser_observe', { leaseId: lease.id });
   const beforeNavigation = observation;
   const nextUrl = `${origin}/next-document`;
   const navigation = await act('cursor-document-replacement', { kind: 'navigate', url: nextUrl,
     expected: { kind: 'url', url: nextUrl } });
   assert.equal(navigation.outcome, 'succeeded');
-  const afterNavigation = await value('browser_observe', { leaseId: lease.id, cursor: beforeNavigation.cursor });
+  const afterNavigation = await value('native_browser_observe', { leaseId: lease.id, cursor: beforeNavigation.cursor });
   assert.equal(afterNavigation.format, 'full'); assert.equal(afterNavigation.resyncRequired, true);
   assert.equal(afterNavigation.resyncReason, 'document-changed');
   assert.notEqual(afterNavigation.documentEpoch, beforeNavigation.documentEpoch);
   assert.deepEqual(pageContent(afterNavigation), pageContent(navigation.observation));
-  await value('browser_handoff', { leaseId: lease.id });
+  await value('native_browser_handoff', { leaseId: lease.id });
   passed.push('Real document navigation returns a full resync instead of a cross-document delta');
 
   // A control-free native hello probe: Chrome performs fresh host discovery and
@@ -346,7 +347,7 @@ try {
   assert.equal(removed.manifestRemoved,true);assert.equal(removed.runningConnectionsStopped,false);
   assert.ok((await readFile(removed.backup)).equals(oldManifest));
   assert.match((await probeNativeRegistration()).error,/Specified native messaging host not found/);
-  assert.ok((await value('browser_list',{})).some(i=>i.id===reconnected.id));
+  assert.ok((await value('native_browser_list',{})).some(i=>i.id===reconnected.id));
   passed.push('Unregistering the isolated host blocks fresh Chrome native messaging, preserves backup and does not claim to stop existing connections');
   await installHost(installOptions);
   assert.equal((await probeNativeRegistration()).response?.ok,true);

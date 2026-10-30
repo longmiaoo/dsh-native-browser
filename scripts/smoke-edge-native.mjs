@@ -26,14 +26,14 @@ try {
   assert.equal(casesPassed.length,20);
   passed.push('All 20 existing Chrome L1 executor fixture oracles pass unchanged on Edge, including AX/deltas/query, Chinese/editor input, scrolling/wheel, stale/origin refusal and Host image hashing');
 
-  let h=await adapter.prepare({},'edge-batch');const before=asks.filter(a=>a.toolName==='browser_batch').length;
+  let h=await adapter.prepare({},'edge-batch');const before=asks.filter(a=>a.toolName==='native_browser_batch').length;
   const batch={requestId:'edge-batch',leaseId:h.lease.id,documentEpoch:h.snapshot.documentEpoch,steps:[
     {action:{kind:'fill',ref:h.ref('Benchmark input'),text:'Edge 中文🙂'}},
     {action:{kind:'press',ref:h.ref('Benchmark input'),key:'Enter',expected:{kind:'text',text:'Form submitted'}}}]};
-  const complete=await adapter.tool('browser_batch',batch);assert.equal(complete.outcome,'succeeded');
+  const complete=await adapter.tool('native_browser_batch',batch);assert.equal(complete.outcome,'succeeded');
   assert.equal(await h.page.locator('#input').inputValue(),'Edge 中文🙂');assert.equal(await h.page.evaluate(()=>bench.counts.submit),1);
-  assert.equal(asks.filter(a=>a.toolName==='browser_batch').length-before,2);
-  assert.deepEqual(await adapter.tool('browser_batch',batch),complete);assert.equal(await h.page.evaluate(()=>bench.counts.submit),1);
+  assert.equal(asks.filter(a=>a.toolName==='native_browser_batch').length-before,2);
+  assert.deepEqual(await adapter.tool('native_browser_batch',batch),complete);assert.equal(await h.page.evaluate(()=>bench.counts.submit),1);
   passed.push('Edge executes a Chinese fill/Enter batch with separate real ApprovalService grants and no whole-batch replay');
 
   h=await adapter.prepare({},'edge-pages');
@@ -41,7 +41,7 @@ try {
     for(let i=0;i<220;i++){const button=document.createElement('button');button.textContent='Edge page '+i;region.append(button);}document.body.append(region);});
   const roots=await h.observe({query:{name:'Edge paging region',role:'region'}});const rootRef=roots.nodes.find(n=>n.name==='Edge paging region').id;
   const names=[];let continuation,windows=0;
-  do{const page=await adapter.tool('browser_read_page',{leaseId:h.lease.id,rootRef,...(continuation?{continuation}:{})});
+  do{const page=await adapter.tool('native_browser_read_page',{leaseId:h.lease.id,rootRef,...(continuation?{continuation}:{})});
     assert.equal(page.page.index,windows++);assert.equal(page.page.incomplete,false);names.push(...page.nodes.filter(n=>n.role==='button').map(n=>n.name));continuation=page.page.continuation;
   }while(continuation);
   assert.deepEqual(names,Array.from({length:220},(_,i)=>'Edge page '+i));
@@ -61,7 +61,7 @@ try {
   passed.push('The real Edge extension Stop blocks pending covered input and subsequent reads on the revoked lease');
 
   await adapter.allow();h=await adapter.prepare({},'edge-handoff');assert.equal((await h.act({kind:'fill',ref:h.ref('Benchmark input'),text:'new approved lease'})).outcome,'succeeded');
-  await adapter.tool('browser_handoff',{leaseId:h.lease.id});await assert.rejects(h.observe());assert.equal(h.page.isClosed(),false);
+  await adapter.tool('native_browser_handoff',{leaseId:h.lease.id});await assert.rejects(h.observe());assert.equal(h.page.isClosed(),false);
   passed.push('Explicit Edge re-consent establishes fresh authority; handoff releases it and leaves the page open');
   const events=Array.from({length:session.seq},(_,i)=>session.eventAt(i)).filter(Boolean),asked=events.filter(e=>e.type==='approval/asked'),decided=events.filter(e=>e.type==='approval/decided');
   assert.equal(asked.length,decided.length);for(const ask of asked)assert.equal(decided.filter(d=>d.data.id===ask.data.id).length,1);

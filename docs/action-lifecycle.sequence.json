@@ -94,7 +94,7 @@
       "from": "agent",
       "to": "adapter",
       "y": 160,
-      "label": "browser_act(requestId, ref, action)",
+      "label": "native_browser_act(requestId, ref, action)",
       "variant": "emphasis"
     },
     {

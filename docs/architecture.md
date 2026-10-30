@@ -234,7 +234,7 @@ Handoff is not an error. It is a first-class state with a reason, visible UI, re
 
 The long-term API should keep the permanently visible tool count small. Two candidate shapes will be benchmarked:
 
-- a compact family of typed tools such as `browser_connect`, `browser_observe`, `browser_act`, `browser_handoff`;
+- a compact family of typed tools such as `browser_connect`, `native_browser_observe`, `native_browser_act`, `native_browser_handoff`;
 - a single sandboxed, persistent JavaScript tool over frozen capability objects.
 
 The JS shape is closer to Codex and enables local batching, but it creates a second security boundary. If chosen, the evaluator must expose no Node globals, module loading, filesystem, raw network, dynamic import, prototypes that escape the sandbox or unbounded serialization. Read-only page evaluation is separate from host-side control code.

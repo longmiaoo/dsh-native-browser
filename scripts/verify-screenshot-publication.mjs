@@ -21,9 +21,9 @@ export async function verifyScreenshotPublication({attachments,call,value,popupC
       return result;
     };
     try {
-      const pending=call('browser_screenshot',{leaseId:lease.id});
+      const pending=call('native_browser_screenshot',{leaseId:lease.id});
       await Promise.race([entered,pending.then(result=>{throw new Error(`Screenshot ended before Host hold: ${JSON.stringify(result.content)}`);})]);
-      if(stage==='save') await value('browser_handoff',{leaseId:lease.id});
+      if(stage==='save') await value('native_browser_handoff',{leaseId:lease.id});
       else {
         await popupCommand('stop');
         await eventually(async()=>readSignal?.aborted===true,'Broker revocation event cancels the Host read signal');
@@ -37,9 +37,9 @@ export async function verifyScreenshotPublication({attachments,call,value,popupC
         : 'Actual popup Stop propagates a scoped Broker event into Host read cancellation and returns no image');
     } finally {finish();attachments.saveImage=save;attachments.readImage=read;}
     await popupCommand('allow');
-    lease=await value('browser_claim',{instanceId,tab:tabId});
+    lease=await value('native_browser_claim',{instanceId,tab:tabId});
   }
-  const fresh=await call('browser_screenshot',{leaseId:lease.id});
+  const fresh=await call('native_browser_screenshot',{leaseId:lease.id});
   assert.equal(fresh.isError,false,JSON.stringify(fresh.content));
   assert.ok(fresh.content.some(block=>block.type==='image'));
   assert.equal(fresh.value.screenshot.leaseId,lease.id);

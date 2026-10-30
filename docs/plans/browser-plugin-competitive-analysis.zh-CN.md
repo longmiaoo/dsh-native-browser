@@ -15,7 +15,7 @@
   - 市场索引仍停在 `0.1.0-alpha.7`，能力扫描停在 2026-10-30，仍带旧红线 `uses plaintext http:// to *`；
   - 之前没有 `engines.dsh`，市场显示“未声明宿主要求”；
   - 安装已收敛为一条命令，但 Chrome Stable 仍要求一次手工 Load unpacked；
-  - 工具名仍是通用 `browser_*`，存在命名冲突风险；
+  - 通用 `browser_*` 命名冲突已经修复，13 个工具迁移到独占的 `native_browser_*`；
   - 功能广度落后于 BrowserSkill / dsh-builtin-browser。
 
 ## 2. 市场全景（browser category，按近 30 天下载）
@@ -141,7 +141,7 @@
 
 ### 5.3 必须补的短板
 
-- 工具名 `browser_*` 是通用词，竞品已迁移到 `dsh_browser_*` / `bsk_*`；建议 0.1.0 前换成独立前缀并保留兼容别名。
+- 工具名已从通用 `browser_*` 迁移到独占的 `native_browser_*`；旧名默认关闭，可通过 `legacyToolNames` 显式开启，并在冲突时安全跳过。
 - 安装已自动完成扩展暂存、Native Host、macOS Broker 和页面引导；Chrome Stable 仍要求一次 Load unpacked，这是当前不可绕过的转化门槛。
 - 缺 hover/drag/select/evaluate/network/console/video/extract。
 - 缺 UI 面板/实时状态。
@@ -219,7 +219,7 @@
 - 会话切换撤销 ≤1s；
 - visual-click 滚动/缩放/遮挡/低重叠全部拒绝；
 - 跨源截图脱敏真实 iframe 验证；
-- 决定工具命名迁移并保留别名；
+- 工具命名迁移已完成：`native_browser_*` 为正式名，`browser_*` 仅作显式兼容别名；
 - 一键安装器/签名方案评估。
 
 **验收**：每个安全卖点都有可复现测试。
@@ -249,7 +249,7 @@
 ## 9. 风险
 
 1. 功能广度：BrowserSkill/dsh-builtin 工具多；我们先补高频，不追全量。
-2. 命名冲突：`browser_*` 通用名；0.1.0 前必须迁移/别名。
+2. 命名冲突：已完成 `native_browser_*` 迁移，并验证 DSH 同层重名 fail-closed 行为与别名冲突跳过。
 3. 市场滞后：rescan issue 已开；alpha.8 发布后复查。
 4. 视觉兜底：自定义 `sd` 路由需声明 `input: ["text","image"]`；否则 `read_image` 被 DSH 拒绝。
 5. 安装摩擦：Load unpacked 是最大转化损失；W1 脚本化，W5 评估签名安装器。

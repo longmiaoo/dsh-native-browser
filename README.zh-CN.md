@@ -59,7 +59,7 @@
 
 ## 项目状态
 
-**公开 alpha——可用于主动选择的 Chrome 测试，尚未达到生产可用。** 包内包含类型化运行时、每用户 Broker、Native Messaging Host、Chrome/Edge 共享扩展构建、Chromium AX/动作 Provider、DSH Web 前台会话桥，以及九个 DSH 工具，覆盖有界实时页面窗口、分步审批的动作批处理和仅元数据的 frame 发现。Chrome 安装仍需手动加载 unpacked 扩展，广泛页面兼容性、视觉模型准确率和生产加固仍是待验收工作，而不是已完成承诺。
+**公开 alpha——可用于主动选择的 Chrome 测试，尚未达到生产可用。** 包内包含类型化运行时、每用户 Broker、Native Messaging Host、Chrome/Edge 共享扩展构建、Chromium AX/动作 Provider、DSH Web 前台会话桥，以及九个 DSH 工具，覆盖有界实时页面窗口、分步审批的动作批处理和仅元数据的 frame 发现。新安装器会一次完成扩展暂存、Host 注册、macOS 后台 Broker 和安装页面引导；Chrome Stable 仍要求用户确认一次 **Load unpacked**。广泛页面兼容性、视觉模型准确率和生产加固仍是待验收工作，而不是已完成承诺。
 
 目前已验证：确定性契约/安全测试；将 npm tarball 精确安装到全新 DSH Profile；在隔离 Chrome-for-Testing Profile 中组装本地全链路；以及在已有本地 Chrome Profile 上针对自有 fixture 的一次端到端运行。真实 MV3 扩展、Chrome 启动的 Native Host、Unix socket、Broker、已安装 DSH ToolRuntime、AX 动作、截图附件和交接路径都已被执行。实时门禁还覆盖延迟结果、取消、Stop、回合结束后的迟到审批，以及 Broker 重启不重放。尚未有敏感业务账号流程或生产级视觉模型准确率通过验收。精确证据与限制见 [开发说明](docs/development.md) 和 [实现进度](docs/implementation-progress.md)。
 
@@ -111,30 +111,29 @@ flowchart LR
 
 运行时把活跃浏览器对象和事件订阅隔离在模型上下文之外。模型只收到紧凑、类型化的观察和稳定引用；运行时在动作前立即完成新鲜度、可见性、稳定性和命中目标校验。能力路由对 DSH 暴露很小的表面，因此未来增加 DevTools 或 Edge/Firefox Provider 时，不会把几十个厂商工具灌进模型上下文。
 
-## 安装 alpha
+## 快速安装 alpha
 
 前置条件：macOS、Google Chrome、DSH `0.1.5-rc.1`、Node.js 22.19 或更新版本、pnpm 11。npm 包已经包含构建好的 JavaScript，安装时不会执行构建脚本。
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.10
-dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.11
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-`setup` 会打印打包扩展目录和稳定扩展 ID，并注册 Native Messaging Host。打开 `chrome://extensions`，启用开发者模式，选择 **Load unpacked**，选中打印出来的目录。如果之前加载过旧的 unpacked 构建，请先移除，再加载当前版本。
+`install` 会自动完成以下工作：
 
-带精确允许列表启动本地 Broker。Origin 必须精确并包含端口；多个站点重复传 `--allow-origin`：
+- 将扩展复制到运行时目录下的稳定路径，后续 npm 升级不改变 Chrome 里选中的目录；
+- 使用打包扩展的稳定公钥注册 Native Messaging Host；
+- 在 macOS 以当前用户身份安装并启动 LaunchAgent Broker，默认使用 personal 标签页授权模式；
+- 打开 Chrome 扩展管理页，并在 Finder 中选中扩展目录。
 
-```bash
-dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://example.com
-```
+你只需要完成一次 Chrome Stable 强制保留的安全确认：开启 **开发者模式**，点击 **加载已解压的扩展程序**，选择终端输出的稳定扩展目录。安装器不会模拟点击 Chrome UI，也不会通过企业策略绕过浏览器安装确认。
 
-在 Chrome 中打开允许的页面，点击扩展，批准该标签页，然后重启 DSH Profile。`approvalMode` 默认是 `per-action`。进阶测试者可以在 Profile patch 的 `native-browser` 行选择 `per-lease`，或使用非空精确 `trustedOrigins` 的 `trusted`。Trusted 只对精确 origin 去掉重复 DSH 提示；扩展同意、实时租约、Stop 和 origin 检查仍然生效。使用已登录页面前，请先看 [显式安装与诊断指南](docs/development.md#explicit-chromeprofile-setup)。
+升级包后再次执行同一条 `install` 命令，会替换稳定扩展副本并刷新 Host/Broker；然后在 `chrome://extensions` 点击一次扩展的“重新加载”。`dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome` 会停止后台 Broker 并移除 Native Host 注册，Chrome 中已加载的扩展仍需由用户在扩展页删除。
 
-对于个人 Chrome Profile，显式 personal 模式会让已允许的标签页免提示，并在无凭据的 HTTP(S) 根导航中跟随同一个标签页：
+### 审批模式
 
-```bash
-dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
-```
+快速安装默认启动 personal Broker，因此扩展可以列出用户允许标签页，不需要每次点击 popup；DSH 插件默认审批模式仍是 `per-action`，每个动作继续由 DSH 审批。希望日常对话减少重复确认时，可在 Profile patch 中显式设置：
 
 ```yaml
 - id: native-browser
@@ -142,34 +141,38 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
     approvalMode: personal
 ```
 
-Broker 和适配器设置必须同时存在，否则 claim 会失败关闭。扩展启动时协商 Broker 的显式 personal 模式能力，之后无需点击 popup 就能暴露普通 HTTP(S) 标签页；claim 仍只选一个标签页，每个操作仍受短标签页租约约束。扩展默认只需要 HTTPS host 访问，并用仅元数据的 `tabs` 权限读取标签页 URL/标题；明文 HTTP 是可选权限，通过 popup 里的“允许 HTTP 页面显示虚拟指针（可选）”按钮申请。没有这个可选授权时，浏览器控制仍通过 debugger 门禁正常工作，只是明文页面不渲染虚拟指针。前台会话切换、租约过期、交接、断连和扩展 Stop 都会撤销控制。alpha 没有针对支付、发布或破坏性动作的可靠语义分类器，不要在这些流程里使用 personal 模式。
+修改后重启 DSH Profile。personal 仍保留扩展标签页授权、标签页租约、前台会话切换撤销、Stop 和 origin 检查；alpha 仍不适合支付、发布或破坏性业务动作。
+
+### 受限或手动安装
+
+需要精确站点允许列表时：
+
+```bash
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome \
+  --access-mode=restricted --allow-origin=https://example.com
+```
+
+受限模式要求至少一个精确 origin，端口也属于 origin。无后台服务或远程/SSH 环境可以使用兼容的底层命令：
+
+```bash
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome --no-service --no-open
+dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
+dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
+```
+
+真正必须完全手动处理扩展文件时，仍可使用 `setup` 和 `extension-path`。使用已登录页面前，请先看 [显式安装与诊断指南](docs/development.md#explicit-chromeprofile-setup)。
 
 当可见 DSH 界面切换会话时，客户端桥会先释放其他会话拥有的浏览器作用域，再让新会话 claim。新会话永远不会继承旧租约。切走会有意中断正在进行的浏览器任务，而不是让后台聊天继续驱动 Chrome。
 
 ## 使用当前 alpha
 
-当前 npm 版本是 `0.1.0-alpha.10`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
+当前 npm 版本是 `0.1.0-alpha.11`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
 
 ### 开始一次浏览会话
 
-1. 确认已按上面的说明安装 unpacked 扩展和 Native Messaging Host。升级 npm 包后，在 `chrome://extensions` 重新加载扩展；扩展文件来自已安装包版本，不会在运行中自动更新。
-2. 在终端启动一个 Broker 并保持运行。普通个人浏览：
-
-   ```bash
-   dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
-   ```
-
-   DSH Profile patch 中匹配的 `native-browser` 行必须是：
-
-   ```yaml
-   - id: native-browser
-     config:
-       approvalMode: personal
-   ```
-
-   修改 patch 后重启该 DSH Profile。若要保留显式 per-action 或 per-lease 审批，则用精确 `--allow-origin=` 启动 Broker，并使用对应的适配器审批模式。不要对同一个运行时目录同时运行受限和 personal Broker。
-3. 在 Chrome 打开要使用的标签页。Chrome 或扩展询问站点访问时，只授予目标标签页/站点。扩展 popup 同时也是紧急 Stop 控件。
-4. 正常和 DSH 对话。智能体会自动发现 `browser_*` 工具；用户不需要构造 lease ID、元素引用、document epoch 或 request ID。
+1. 执行一次快速安装并完成 Chrome 的 **Load unpacked** 确认；macOS 登录后 Broker 会由 LaunchAgent 自动启动。
+2. 在 Chrome 打开要使用的标签页。Chrome 或扩展询问站点访问时，只授予目标标签页/站点。扩展 popup 同时也是紧急 Stop 控件。
+3. 正常和 DSH 对话。智能体会自动发现 `browser_*` 工具；用户不需要构造 lease ID、元素引用、document epoch 或 request ID。
 
 首次运行的稳妥提示：
 

@@ -12,9 +12,9 @@
   - tab lease、动作 journal、命中/重叠校验、visual-click 新鲜度校验；
   - 会话切换撤销、Stop、handoff、多标签 release-all。
 - 当前最大的非技术短板：
-  - 市场索引仍停在 `0.1.0-alpha.2`，能力扫描停在 2026-09-24，仍带旧红线 `uses plaintext http:// to *`；
+  - 市场索引仍停在 `0.1.0-alpha.7`，能力扫描停在 2026-10-30，仍带旧红线 `uses plaintext http:// to *`；
   - 之前没有 `engines.dsh`，市场显示“未声明宿主要求”；
-  - 安装仍需手动 Load unpacked；
+  - 安装已收敛为一条命令，但 Chrome Stable 仍要求一次手工 Load unpacked；
   - 工具名仍是通用 `browser_*`，存在命名冲突风险；
   - 功能广度落后于 BrowserSkill / dsh-builtin-browser。
 
@@ -36,7 +36,7 @@
 | dsh-browser-control | dsh-browser-control | 0.1.0 | 548 | 48 | CDP/Playwright + WebSocket |
 | dsh-browser4 | dsh-browser4 | 0.0.1 | 934 | 10 | Browser4 CLI 技能包 |
 | dsh-aginxbrowser | dsh-aginxbrowser | 0.1.1 | ~1,000 | 55 | JS 渲染抓取/搜索（相邻） |
-| **dsh-native-browser（我们）** | **dsh-native-browser** | **0.1.0-alpha.2（索引）/ alpha.10（npm latest）** | **910** | **4** | **真实用户 Chrome + 严格租约** |
+| **dsh-native-browser（我们）** | **dsh-native-browser** | **0.1.0-alpha.7（索引）/ alpha.11（准备发布）** | **910** | **4** | **真实用户 Chrome + 严格租约** |
 
 ## 3. 竞品分层
 
@@ -142,13 +142,14 @@
 ### 5.3 必须补的短板
 
 - 工具名 `browser_*` 是通用词，竞品已迁移到 `dsh_browser_*` / `bsk_*`；建议 0.1.0 前换成独立前缀并保留兼容别名。
-- 安装仍需 Load unpacked；这是转化率最大的损失。
+- 安装已自动完成扩展暂存、Native Host、macOS Broker 和页面引导；Chrome Stable 仍要求一次 Load unpacked，这是当前不可绕过的转化门槛。
 - 缺 hover/drag/select/evaluate/network/console/video/extract。
 - 缺 UI 面板/实时状态。
 - 市场索引/能力扫描滞后，旧红线未清。
 
-### 5.4 当前已实现（alpha.10 基线）
+### 5.4 当前已实现（alpha.11 基线）
 
+- 一条命令安装：稳定扩展目录、Native Host、macOS LaunchAgent Broker、自动打开扩展页和 Finder；
 - visual-click、上传/下载/选择框、多标签 open/activate/release-all、agent tab 分组/关闭；
 - agent tab 分组（`DSH Browser` 蓝组）与 only-agent close；
 - JavaScript `alert` / `confirm` / `prompt` / `beforeunload` 对话框处理；
@@ -169,7 +170,7 @@
 
 ### L3 Codex 用户无缝切换
 
-- 一键安装（不再手动 Load unpacked）；
+- 一条命令安装 + 一次 Chrome 安全确认；正式版进一步评估 Chrome Web Store 与签名安装器；
 - 同一套心智模型 + 迁移指南；
 - 20 个 Codex 风格任务对标；
 - 不需要重新登录、不需要第二套浏览器。
@@ -180,12 +181,12 @@
 
 ### W1（10/30–11/05）：让优势可见
 
-- `0.1.0-alpha.10` 已在 npm；本周期做市场 rescan/图标、pointer demo、one-click install；
+- `0.1.0-alpha.11` 已准备一条命令安装；本周期做发布、市场 rescan/图标、pointer demo；
 - README/市场：Codex-like 标题、虚拟鼠标 GIF/短视频、三行卖点；
 - 合并市场 rescan issue #10507 + 图标 PR；
-- 安装脚本化（先做 3 步一键路径）。
+- 安装脚本化：已完成稳定扩展暂存、Host、macOS 后台 Broker 和自动页面引导。
 
-**验收**：新用户 5 分钟装好；市场显示宿主要求/新图标；README 首屏看懂“为什么丝滑”。
+**验收**：新用户一次命令 + 一次 Chrome 确认装好；市场显示宿主要求/新图标；README 首屏看懂“为什么丝滑”。
 
 ### W2（11/06–11/12）：日常动作补齐
 

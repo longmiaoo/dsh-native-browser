@@ -62,7 +62,7 @@ Parity claims require evidence. Release gates should track end-to-end action lat
 
 ## Project status
 
-**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. Chrome setup is still manual, the extension is loaded unpacked, and broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
+**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and nine DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. The new installer stages the extension, registers the host, starts the macOS Broker service and opens the setup pages in one command; Chrome Stable still requires one explicit **Load unpacked** confirmation. Broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
 
 Verified so far: deterministic contract/security tests; exact npm tarball installation into a fresh DSH `0.1.5-rc.1` profile; the assembled local stack in isolated Chrome-for-Testing profiles; and one end-to-end run in an existing local Chrome profile on an owned fixture. The real MV3 extension, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime, AX actions, screenshot attachment and handoff paths were exercised. Live gates also cover delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No sensitive business account workflow or production visual-model accuracy claim has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
 
@@ -127,30 +127,29 @@ The package is structured as a DSH bundle and includes the discovery terms used 
 - bundle declaration: `dsh.bundle.patch` in `package.json`;
 - compatibility declaration for DSH `0.1.5` release candidates and the `web`/`desktop` profiles.
 
-## Install the alpha
+## Quick install the alpha
 
 Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.10
-dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.11
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-`setup` prints the packaged extension directory and its stable extension ID, then registers the Native Messaging host. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. If you previously loaded an older unpacked build, remove it before loading the current version.
+`install` performs the non-interactive setup:
 
-Start the local Broker with an explicit allowlist. Origins are exact and include the port; repeat `--allow-origin` for additional sites:
+- copies the extension to a stable private path that survives npm upgrades;
+- registers the Native Messaging host with the packaged extension's stable public key;
+- installs and starts a per-user macOS LaunchAgent Broker in personal tab-consent mode;
+- opens the browser's extension page and reveals the staged directory in Finder.
 
-```bash
-dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://example.com
-```
+The only remaining manual step is the security confirmation Chrome Stable intentionally requires: enable **Developer mode**, choose **Load unpacked**, and select the printed stable extension directory. The installer never automates Chrome UI or bypasses extension trust with managed policy.
 
-Open an allowed page in Chrome, click the extension, approve that tab, then restart the DSH profile. `approvalMode` defaults to `per-action`. Advanced testers can choose `per-lease`, or `trusted` with a non-empty exact `trustedOrigins` list, in the `native-browser` row of their profile patch. Trusted mode removes repeated DSH prompts only for those exact origins; extension consent, live lease checks, Stop and origin checks still apply. See the [explicit setup and diagnostic guide](docs/development.md#explicit-chromeprofile-setup) before using a signed-in page.
+Rerun the same `install` command after upgrading the npm package; it refreshes the staged files, host and Broker. Then click **Reload** once for the extension on `chrome://extensions`. `dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome` stops the Broker and removes the Native Host registration; remove the extension itself from the browser's extension page when desired.
 
-For a personal Chrome profile, the explicit personal mode makes an allowed tab prompt-free and follows that same tab across credential-free HTTP(S) root navigations:
+### Approval mode
 
-```bash
-dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
-```
+Quick install uses a personal Broker, so allowed tabs do not require a popup click on every discovery. The DSH adapter still defaults to `per-action`, preserving one DSH approval per action. To reduce repeated confirmations in everyday personal browsing, explicitly set:
 
 ```yaml
 - id: native-browser
@@ -158,34 +157,38 @@ dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
     approvalMode: personal
 ```
 
-The Broker and adapter settings must both be present or the claim fails closed. The extension negotiates the Broker's explicit personal-mode capability at startup and then exposes ordinary HTTP(S) tabs without a popup click; a claim still selects one tab and every operation remains fenced by its short tab-scoped lease. The extension requires host access for HTTPS only and the metadata-only `tabs` permission for tab URLs/titles; plaintext HTTP is an optional host permission requested from the popup's optional HTTP-pointer button. Without that optional grant, browser control still works through the debugger gate, but the virtual pointer is not rendered on plaintext pages. Foreground-conversation switching, lease expiry, handoff, disconnect and the extension Stop button revoke control. This alpha has no reliable semantic classifier for payments, publishing or destructive actions, so do not use personal mode for those workflows.
+Restart the DSH profile after the change. Personal mode still enforces extension tab consent, tab-scoped leases, foreground-conversation revocation, Stop and origin checks; this alpha is still unsuitable for payments, publishing or destructive business actions.
+
+### Restricted or manual setup
+
+For an exact site allowlist, install a restricted Broker:
+
+```bash
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome \
+  --access-mode=restricted --allow-origin=https://example.com
+```
+
+Restricted mode requires at least one exact origin, including any port. For headless or remote environments that cannot install a macOS service, the compatible lower-level path remains available:
+
+```bash
+dsh plugin --profile web exec dsh-native-browser install --browser=chrome --no-service --no-open
+dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
+dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
+```
+
+`setup` and `extension-path` remain available for fully manual extension handling. See the [explicit setup and diagnostic guide](docs/development.md#explicit-chromeprofile-setup) before using a signed-in page.
 
 When the visible DSH UI changes conversations, the client bridge releases browser scopes owned by other conversations before the newly selected conversation can claim control. A new conversation never inherits the previous lease. Switching away therefore intentionally interrupts an in-flight browser task instead of letting a background chat keep driving Chrome.
 
 ## Use the current alpha
 
-The currently published npm version is `0.1.0-alpha.10`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+The currently prepared npm version is `0.1.0-alpha.11`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
 
 ### Start a browsing session
 
-1. Make sure the unpacked extension and Native Messaging host were installed as described above. After upgrading the npm package, reload the unpacked extension on `chrome://extensions`; the extension files are served from the installed package version and are not updated inside an already running Chrome extension automatically.
-2. Start one Broker in a terminal and leave it running. For ordinary personal browsing:
-
-   ```bash
-   dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
-   ```
-
-   The matching `native-browser` row in the DSH profile patch must use:
-
-   ```yaml
-   - id: native-browser
-     config:
-       approvalMode: personal
-   ```
-
-   Restart that DSH profile after changing the patch. To retain explicit per-action or per-lease approval instead, start the Broker with exact `--allow-origin=` entries and use the corresponding adapter approval mode described above. Do not run restricted and personal Brokers against the same runtime directory.
-3. Open the tab you want to use in Chrome. When Chrome or the extension asks for site access, grant it only to the intended tab/site. The extension popup is also the emergency Stop control.
-4. Talk to DSH normally. The agent discovers the `browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
+1. Run quick install once and complete Chrome's **Load unpacked** confirmation; on macOS the LaunchAgent starts the Broker after future logins.
+2. Open the tab you want to use in Chrome. When Chrome or the extension asks for site access, grant it only to the intended tab/site. The extension popup is also the emergency Stop control.
+3. Talk to DSH normally. The agent discovers the `browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
 
 Safe prompts for a first run:
 

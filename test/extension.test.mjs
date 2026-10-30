@@ -17,7 +17,7 @@ test('built extension keeps HTTPS host access required and plaintext HTTP option
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
-  assert.equal(manifest.version, '0.1.0.10');
+  assert.equal(manifest.version, '0.1.0.11');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('downloads'));
   assert.ok(manifest.permissions.includes('tabs'));

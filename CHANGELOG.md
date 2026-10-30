@@ -2,6 +2,12 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.0-alpha.11 - 2026-10-30
+
+- Add a one-command `install` flow: stage the Chrome/Edge bundle in a stable private directory, register the Native Messaging host, install and start a macOS user LaunchAgent for the Broker, then open the browser extension page and the staged folder.
+- Keep the sole unavoidable Chrome Stable step explicit: the user confirms **Load unpacked** once. The installer never automates Chrome UI or weakens extension installation security.
+- Add `uninstall` and `service-status`, preserve compatibility with the existing `setup`/`install-host` commands, and derive the extension manifest version from `package.json`.
+
 ## 0.1.0-alpha.10 - 2026-10-30
 
 - Add `browser_act` `dialog` handling for pending `alert`, `confirm`, `prompt` and `beforeunload` dialogs: accept or dismiss the exact leased tab's dialog, optionally provide bounded prompt text, return typed dialog evidence, and continue with a text/state postcondition.

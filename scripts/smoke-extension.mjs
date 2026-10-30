@@ -206,6 +206,19 @@ try {
   const multiObsA = await runtime.observe(owner, multiA.id, signal);
   const multiObsB = await runtime.observe(owner, multiB.id, signal);
   assert.equal(multiObsA.tab, multiA.tab); assert.equal(multiObsB.tab, multiB.tab);
+  const workerTabId = tabHandle => Number(tabHandle.slice(`${instance.id}:`.length));
+  const grouped = await worker.evaluate(async ids => {
+    const tabs = await Promise.all(ids.map(id => chrome.tabs.get(id)));
+    const groupId = tabs[0].groupId;
+    const group = groupId >= 0 ? await chrome.tabGroups.get(groupId) : { title: '' };
+    return { groupIds: tabs.map(tab => tab.groupId), title: group.title };
+  }, [workerTabId(multiA.tab), workerTabId(multiB.tab)]);
+  assert.notEqual(grouped.groupIds[0], -1);
+  assert.deepEqual(grouped.groupIds, [grouped.groupIds[0], grouped.groupIds[0]]);
+  assert.equal(grouped.title, 'DSH Browser');
+  await runtime.close(owner, multiB.id, signal);
+  await assert.rejects(runtime.observe(owner, multiB.id, signal), error => error.code === 'LEASE_REVOKED');
+  assert.equal((await runtime.observe(owner, multiA.id, signal)).tab, multiA.tab);
   await runtime.activate(owner, lease.id, signal);
   await popup.evaluate(() => document.querySelector('#stop').click());
   // Wait for the actual popup response, not a fixed delay.
@@ -230,6 +243,7 @@ try {
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
       'Real visual-click from a screenshot box after hit-test and viewport checks',
       'Real multi-tab open, activate and release-all across two tabs',
+      'Agent-created tabs are grouped and close removes only agent tabs',
       'Real file input upload via DOM.setFileInputFiles', 'Real attachment download via chrome.downloads',
       'Same-origin navigation', 'JPEG capture',
       'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',

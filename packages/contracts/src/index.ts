@@ -212,6 +212,7 @@ export interface BrowserProvider {
   listTabs(signal: AbortSignal): Promise<TabSummary[]>;
   open?(url: string, signal: AbortSignal): Promise<TabSummary>;
   activate?(lease: Lease, signal: AbortSignal): Promise<void>;
+  close?(lease: Lease, signal: AbortSignal): Promise<void>;
   grant(lease: Lease, signal: AbortSignal): Promise<void>;
   revoke(lease: Lease): Promise<void>;
   observe(lease: Lease, signal: AbortSignal): Promise<Observation>;

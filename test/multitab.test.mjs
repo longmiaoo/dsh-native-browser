@@ -36,3 +36,18 @@ test('open authorizes the exact origin before creating a tab', async () => {
     assert.equal(provider.opened.length, 0);
   } finally { await runtime.dispose(); }
 });
+
+test('close removes only agent-created tabs and releases their lease', async () => {
+  const provider = new FakeProvider();
+  const runtime = new BrowserRuntime(async request => request.tab.url.startsWith('https://example.test'));
+  runtime.register(provider);
+  try {
+    const opened = await runtime.open('owner', 'fake-1', 'https://example.test/close-me', signal());
+    await runtime.close('owner', opened.id, signal());
+    assert.equal(provider.opened.length, 0);
+    await assert.rejects(runtime.observe('owner', opened.id, signal()), error => error.code === 'LEASE_REVOKED');
+    const existing = await runtime.claim('owner', 'fake-1', 'tab-1', signal());
+    await assert.rejects(runtime.close('owner', existing.id, signal()), error => error.code === 'POLICY_DENIED');
+    assert.equal(provider.grants.get('tab-1'), existing.token);
+  } finally { await runtime.dispose(); }
+});

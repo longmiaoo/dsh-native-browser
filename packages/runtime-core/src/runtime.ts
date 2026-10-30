@@ -147,6 +147,16 @@ export class BrowserRuntime {
     this.entry(owner, leaseId);
   }
 
+  async close(owner: string, leaseId: string, signal: AbortSignal): Promise<void> {
+    const entry = this.entry(owner, leaseId);
+    const linked = AbortSignal.any([signal, entry.controller.signal]);
+    await this.authorized(entry, 'observe', linked);
+    if (!entry.provider.close) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot close tabs');
+    await entry.provider.close(entry.lease, linked);
+    this.entry(owner, leaseId);
+    await this.release(owner, leaseId).catch(() => {});
+  }
+
   private async claimWithin(owner: string, instanceId: string, tabId: string, signal: AbortSignal, scope: string): Promise<Lease> {
     const provider = this.provider(instanceId);
     const tab = (await provider.listTabs(signal)).find(t => t.id === tabId && t.instanceId === instanceId);

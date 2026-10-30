@@ -120,6 +120,9 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       if (method === 'browser.activate') {
         return runtime.activate(owner, string(p.leaseId), signal);
       }
+      if (method === 'browser.close') {
+        return runtime.close(owner, string(p.leaseId), signal);
+      }
       if (method === 'browser.observe') return runtime.observe(owner, string(p.leaseId), signal, observeOptions(p));
       if (method === 'browser.readPage') return runtime.readPage(owner, string(p.leaseId), pageReadOptions(p.options), signal);
       if (method === 'browser.frames') return runtime.frames(owner, string(p.leaseId), signal);

@@ -24,7 +24,7 @@ type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortCo
 type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
 type BatchApproval = { scope: TurnScope; request: BatchRequest; exec: Execution; peer: RpcPeer; signal: AbortSignal; next: number };
 const schemaString = { type: 'string' };
-const tools = new Set(['browser_list', 'browser_claim', 'browser_open', 'browser_activate', 'browser_release_all',
+const tools = new Set(['browser_list', 'browser_claim', 'browser_open', 'browser_activate', 'browser_close', 'browser_release_all',
   'browser_observe', 'browser_read_page', 'browser_frames', 'browser_act', 'browser_batch', 'browser_handoff', 'browser_screenshot']);
 
 /** Uses the public raw ToolDefinition seam. No DSH internal module imports. */
@@ -222,6 +222,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     });
   register('browser_activate', 'Bring a controlled tab to the foreground. The lease and origin checks still apply; this only changes visible focus and does not grant new authority.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.activate', { leaseId: string(args.leaseId) }, exec));
+  register('browser_close', 'Close a tab created by browser_open. User tabs can never be closed by this tool; the extension rejects them. The lease is released after the close.',
+    { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.close', { leaseId: string(args.leaseId) }, exec));
   register('browser_release_all', 'Release every browser lease owned by this DSH session. Tabs stay open; screenshots for this session are revoked. Use this when a multi-tab workflow ends instead of calling browser_handoff for each lease.',
     {}, [], async (_args, exec) => {
       const { scope } = executionScope(exec);
@@ -409,7 +411,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (!exec.agent?.session.id) return { kind: 'deny', reason: 'Browser tools require an owning DSH session.' };
     if (disposed) return { kind: 'deny', reason: 'Browser plugin has been disposed.' };
     bind(exec);
-    if ((approvalMode === 'per-action' && (exec.name === 'browser_claim' || exec.name === 'browser_open' || exec.name === 'browser_act' || exec.name === 'browser_screenshot'))
+    if ((approvalMode === 'per-action' && (exec.name === 'browser_claim' || exec.name === 'browser_open' || exec.name === 'browser_close' || exec.name === 'browser_act' || exec.name === 'browser_screenshot'))
       || (approvalMode === 'per-lease' && (exec.name === 'browser_claim' || exec.name === 'browser_open'))) {
       return { kind: 'ask', reason: 'Allow this browser control action on the selected signed-in page?' };
     }

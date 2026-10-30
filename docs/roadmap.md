@@ -41,7 +41,7 @@ Exit: representative multi-step Chrome tasks work in an authenticated profile wi
 - Stop/takeover/resume controls.
 - First-class handoff for login, CAPTCHA and user choices.
 - Turn completion cleanup and deliverable preservation.
-- Tab grouping for agent-created tabs. (Agent-created tabs are tracked and allowed for the extension session; visual grouping remains to do.)
+- Tab grouping for agent-created tabs. (Implemented: agent tabs join a blue `DSH Browser` group, and only agent-created tabs can be closed.)
 - DSH UI cards for active tab, observation and interruption state.
 
 Exit: a human can intervene at any action boundary and resume without restarting the browser session.

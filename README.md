@@ -203,7 +203,7 @@ For a longer task, identify the target tab clearly and state the stopping condit
 - claim one tab and read bounded accessible text, controls and named regions;
 - navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>`, accept a native file chooser, capture a page-triggered download and click a screenshot-bound visual box after hit-test and viewport checks;
 - run a bounded batch of up to eight explicit actions, stopping on denial, uncertainty or failed verification;
-- open additional HTTP(S) tabs, hold independent leases for several tabs in one session, bring a controlled tab to the foreground and release all leases together;
+- open additional HTTP(S) tabs, group agent-created tabs into a `DSH Browser` group, close only agent-created tabs, hold independent leases for several tabs in one session, bring a controlled tab to the foreground and release all leases together;
 - page through large semantic documents and read supported same-origin child frames;
 - capture the current viewport as a DSH attachment and release control back to the user;
 - show a short-lived virtual pointer after a verified click or wheel dispatch.

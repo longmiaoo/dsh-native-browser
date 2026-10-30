@@ -33,6 +33,7 @@ test('built extension keeps HTTPS host access required and plaintext HTTP option
 
 async function fixture({ handshake = true, timers = { setTimeout, clearTimeout } } = {}) {
   const responses = new Map(), sent = [], commands = [], scripts = [], tabMessages = [], redactions = [];
+  const grouped = [], removed = [], groupUpdates = [];
   const tab = { id: 7, url: 'https://example.test/form', title: 'Fixture' };
   const ports = [];
   const makePort = () => {
@@ -45,7 +46,10 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
   const chrome = { runtime: { id: 'a'.repeat(32), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
     tabs: { query: async () => [tab], get: async () => ({ ...tab }),
       create: async ({ url }) => ({ id: 9, url, title: 'New Tab' }), update: async (id, properties) => ({ id, ...properties }),
+      group: async ({ tabIds }) => { grouped.push(...tabIds); return 42; },
+      remove: async id => { removed.push(id); },
       sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
+    tabGroups: { update: async (id, properties) => { groupUpdates.push({ id, ...properties }); } },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     downloads: { onCreated: event(), onChanged: event(),
       search: async ({ id }) => id === 5 ? [{ id: 5, filename: '/tmp/report.pdf', bytesReceived: 10, totalBytes: 10,
@@ -77,7 +81,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
     const id = `r-${++counter}`; responses.set(id, resolve);
     ports.at(-1).onMessage.emit({ type: 'request', id, method, params });
   });
-  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, redactions, tab, sent };
+  return { chrome, port, ports, welcome, hello, ui, call, lease, commands, scripts, tabMessages, redactions, tab, sent, grouped, removed, groupUpdates };
 }
 
 test('file selection is allowlisted, resolved-object-only and bounded to absolute local paths', async () => {
@@ -159,6 +163,21 @@ test('tabs.create is HTTP(S)-only and tabs.activate is lease-gated', async () =>
   await f.call('lease.grant', { lease: f.lease });
   assert.equal((await f.call('tabs.activate', { lease: f.lease })).value.active, true);
   assert.equal((await f.call('tabs.activate', { lease: f.lease, extra: true })).code, 'INVALID_REQUEST');
+  await f.ui('stop');
+});
+
+test('agent-created tabs are grouped and only agent tabs can be closed', async () => {
+  const f = await fixture();
+  const created = await f.call('tabs.create', { url: 'https://example.test/new' });
+  assert.equal(created.ok, true);
+  assert.deepEqual(f.grouped, [9]);
+  assert.deepEqual(f.groupUpdates, [{ id: 42, title: 'DSH Browser', color: 'blue' }]);
+  const lease9 = { ...f.lease, tab: `${f.hello.params.instance.id}:9`, origin: 'https://example.test' };
+  assert.equal((await f.call('lease.grant', { lease: lease9 })).ok, true);
+  assert.equal((await f.call('tabs.close', { lease: lease9 })).value.closed, true);
+  assert.deepEqual(f.removed, [9]);
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('tabs.close', { lease: f.lease })).code, 'POLICY_DENIED');
   await f.ui('stop');
 });
 

@@ -29,8 +29,8 @@ test('exports a loadable development-preview Cordis plugin', () => {
   const tools = []
   const connection = { rpc: { handle: () => () => {} } }
   assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {}, get: name => name === 'connection' ? connection : undefined }))
-  assert.equal(tools.length, 12)
-  for (const name of ['browser_open', 'browser_activate', 'browser_release_all']) {
+  assert.equal(tools.length, 13)
+  for (const name of ['browser_open', 'browser_activate', 'browser_close', 'browser_release_all']) {
     assert.ok(tools.some(tool => tool.name === name), name)
   }
 })

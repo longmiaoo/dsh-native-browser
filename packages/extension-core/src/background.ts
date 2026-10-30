@@ -25,6 +25,7 @@ const frameSessions = new Map<number, FrameSessions>();
 const attached = new Set<number>();
 const pendingDownloads: Lease[] = [];
 const agentTabs = new Set<number>();
+let agentGroupId: number | undefined;
 const queues = new Map<number, Promise<unknown>>();
 const changeTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const changeSequences = new Map<number, number>();
@@ -169,6 +170,14 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     // An agent-created tab is explicitly allowed for this extension session;
     // the Broker's exact-origin/personal policy remains the authority above it.
     allowed.set(tab.id, { origin: originOf(tab.url || url.href), scope: 'tab' });
+    try {
+      try {
+        agentGroupId = await chrome.tabs.group({ tabIds: [tab.id], ...(agentGroupId === undefined ? {} : { groupId: agentGroupId }) });
+      } catch {
+        agentGroupId = await chrome.tabs.group({ tabIds: [tab.id] });
+      }
+      await chrome.tabGroups.update(agentGroupId, { title: 'DSH Browser', color: 'blue' }).catch(() => {});
+    } catch { /* Grouping is presentation-only. */ }
     return { id: `${instanceId}:${tab.id}`, instanceId, url: tab.url || url.href, title: tab.title || '' };
   }
   const lease = leaseOf(p.lease), id = tabIdOf(lease);
@@ -203,6 +212,14 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     await ensure(lease, signal); checkGate(lease, signal);
     await chrome.tabs.update(id, { active: true });
     return { active: true };
+  }
+  if (method === 'tabs.close') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab close only accepts its lease');
+    await ensure(lease, signal); checkGate(lease, signal);
+    if (!agentTabs.has(id)) throw new BrowserError('POLICY_DENIED', 'Only agent-created tabs can be closed');
+    await chrome.tabs.remove(id);
+    agentTabs.delete(id); allowed.delete(id);
+    return { closed: true };
   }
   if (method === 'downloads.arm') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Download arming only accepts its lease');

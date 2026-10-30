@@ -97,6 +97,10 @@ export class ChromiumProvider implements BrowserProvider {
     const result = await this.channel.call('tabs.activate', { lease }, signal) as Dict;
     if (!result || result.active !== true) throw new BrowserError('NOT_ACTIONABLE', 'Tab activation was not confirmed');
   }
+  async close(lease: Lease, signal: AbortSignal): Promise<void> {
+    const result = await this.channel.call('tabs.close', { lease }, signal) as Dict;
+    if (!result || result.closed !== true) throw new BrowserError('NOT_ACTIONABLE', 'Tab close was not confirmed');
+  }
   async grant(lease: Lease, signal: AbortSignal): Promise<void> {
     await this.channel.call('lease.grant', { lease }, signal);
   }

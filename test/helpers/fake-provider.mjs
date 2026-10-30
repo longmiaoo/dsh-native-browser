@@ -26,6 +26,14 @@ export class FakeProvider {
     if (this.grants.get(lease.tab) !== lease.token) throw new BrowserError('LEASE_REVOKED', 'stale lease');
     this.activeTab = lease.tab;
   }
+  async close(lease, signal) {
+    checkAbort(signal);
+    if (this.grants.get(lease.tab) !== lease.token) throw new BrowserError('LEASE_REVOKED', 'stale lease');
+    const index = this.opened.findIndex(tab => tab.id === lease.tab);
+    if (index < 0) throw new BrowserError('POLICY_DENIED', 'Only agent-created tabs can be closed');
+    this.opened.splice(index, 1);
+    this.grants.delete(lease.tab);
+  }
   async grant(lease, signal) { checkAbort(signal); this.grants.set(lease.tab, lease.token); }
   async revoke(lease) { if (this.grants.get(lease.tab) === lease.token) this.grants.delete(lease.tab); }
   async observe(lease, signal) {

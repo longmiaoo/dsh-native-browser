@@ -2,6 +2,13 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Add a DSH settings page for explicit Chrome setup, connection diagnostics, extension path copying and reopening the extension manager. Use the running plugin's package and runtime directory without asking users for a Profile name.
+- Keep setup on authenticated trusted-host RPC, outside model-facing browser tools. Validate fixed request shapes, deduplicate concurrent installs, retain read-only status checks and reject unsupported automatic platforms before writes.
+- Verify Desktop's Electron Node mode and persist it in Native Messaging launchers and LaunchAgents; retain compatibility with existing standalone Node registrations.
+- Correct documentation that previously suggested substituting `desktop` into the public DSH CLI. The settings flow is unreleased; Chrome Web Store distribution is still pending.
+
 ## 0.1.0 - 2026-10-30
 
 First stable release, scoped to macOS + Google Chrome. DSH host-component validation covers 0.1.5-rc.1 and 0.2.1-rc.3; Edge and complete Linux/Windows installation remain experimental.

@@ -26,7 +26,7 @@ export function setupOpenCommands(options: { platform?: NodeJS.Platform; brand: 
 export async function openSetup(options: { platform?: NodeJS.Platform; brand: 'chrome' | 'edge'; extensionPath: string;
   runner?: (command: SetupOpenCommand) => Promise<void> }): Promise<{ openedBrowser: boolean; revealedExtension: boolean }> {
   const commands = setupOpenCommands(options);
-  const runner = options.runner ?? (async command => { await execFileAsync(command.file, command.args); });
+  const runner = options.runner ?? (async command => { await execFileAsync(command.file, command.args, { timeout: 5000, maxBuffer: 16384 }); });
   await runner(commands[0]!);
   await runner(commands[1]!);
   return { openedBrowser: true, revealedExtension: true };

@@ -14,6 +14,7 @@ export interface QuickInstallOptions {
   directory: string;
   cliPath: string;
   nodePath?: string;
+  electronRunAsNode?: boolean;
   manifestDir?: string;
   accessMode?: 'restricted' | 'personal';
   allowedOrigins?: string[];
@@ -45,11 +46,13 @@ export async function quickInstall(options: QuickInstallOptions) {
   const extension = await stageExtension(options.extensionSource, path.join(directory, 'extension', options.browser));
   const host = await installHost({ directory, brand: options.browser, extensionId: options.extensionId,
     ...(options.manifestDir ? { manifestDir: options.manifestDir } : {}), cliPath: options.cliPath,
+    electronRunAsNode: options.electronRunAsNode ?? Boolean(process.versions.electron),
     ...(options.nodePath ? { nodePath: options.nodePath } : {}) });
   let service: BrokerServiceResult | undefined;
   if (options.service !== false) {
     service = await installBrokerService({ directory, cliPath: options.cliPath, accessMode, allowedOrigins,
-      ...(options.nodePath ? { nodePath: options.nodePath } : {}),
+      electronRunAsNode: options.electronRunAsNode ?? Boolean(process.versions.electron),
+    ...(options.nodePath ? { nodePath: options.nodePath } : {}),
       ...(options.plistDirectory ? { plistDirectory: options.plistDirectory } : {}),
       ...(options.launchctl ? { launchctl: options.launchctl } : {}) });
     if (options.serviceReady) await options.serviceReady();

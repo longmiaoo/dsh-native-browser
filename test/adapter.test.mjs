@@ -32,12 +32,22 @@ async function fixture(t, config = {}, brokerOptions = {}) {
     return { exec, decision, run: () => definitions.get(name).execute(args, exec) };
   };
   return { provider, broker, prepare, definitions, services,
+    rpc: (endpoint, payload) => foregroundHandler(endpoint, payload, AbortSignal.timeout(3000)),
     foreground: (payload, signal = AbortSignal.timeout(3000)) => foregroundHandler('foreground', payload, signal),
     end: (id = 'session') => hooks.get('session/event')({ id }, { type: 'turn/end' }),
     disposeSession: id => hooks.get('session/disposed')({ id }),
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('setup uses the authenticated Host RPC channel and registers no model installation tool', async t => {
+  const f = await fixture(t);
+  assert.equal([...f.definitions.keys()].some(name => /setup|install/.test(name)), false);
+  const status = await f.rpc('setup.status', {});
+  assert.equal(status.ok, true);
+  assert.equal(status.value.report.connection.connected, true);
+  assert.equal((await f.rpc('setup.install', {})).error.code, 'gateway/bad-request');
+  assert.equal((await f.rpc('setup.status', { directory: '/other' })).ok, false);
+});
 test('optional legacy aliases retain approval ownership without replacing canonical names', async t => {
   const f = await fixture(t, { legacyToolNames: true });
   assert.ok(f.definitions.has('native_browser_claim'));

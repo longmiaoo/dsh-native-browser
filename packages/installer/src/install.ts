@@ -17,7 +17,7 @@ export function manifestDirectory(brand: 'chrome' | 'edge', platform = process.p
 }
 
 export async function installHost(options: { directory: string; extensionId: string; brand: 'chrome' | 'edge';
-  cliPath: string; manifestDir?: string; nodePath?: string }) {
+  cliPath: string; manifestDir?: string; nodePath?: string; electronRunAsNode?: boolean }) {
   if (options.brand !== 'chrome' && options.brand !== 'edge') throw new BrowserError('INVALID_REQUEST', 'Browser must be chrome or edge');
   if (!/^[a-p]{32}$/.test(options.extensionId)) throw new BrowserError('INVALID_REQUEST', 'Invalid Chromium extension ID');
   const directory = path.resolve(options.directory), cli = path.resolve(options.cliPath), node = path.resolve(options.nodePath ?? process.execPath);
@@ -28,7 +28,7 @@ export async function installHost(options: { directory: string; extensionId: str
   await mkdir(manifestDir, { recursive: true });
   await nativeDirectory(manifestDir);
   return withInstallationLocks(directory, manifestDir, () =>
-    installLocked({ directory, cli, node, manifestDir, extensionId: options.extensionId, brand: options.brand }));
+    installLocked({ directory, cli, node, manifestDir, extensionId: options.extensionId, brand: options.brand, electronRunAsNode: options.electronRunAsNode ?? false }));
 }
 
 export async function nativeDirectory(directory: string): Promise<boolean> {
@@ -80,7 +80,7 @@ export function ownedManifest(value: FileSnapshot, directory: string): Record<st
     || Object.keys(m).some(key => !['name', 'description', 'path', 'type', 'allowed_origins'].includes(key))) throw invalid();
   return { ...m, allowed_origins: origins(m.allowed_origins) };
 }
-async function installLocked(options: { directory: string; cli: string; node: string; manifestDir: string; extensionId: string; brand: 'chrome' | 'edge' }) {
+async function installLocked(options: { directory: string; cli: string; node: string; manifestDir: string; extensionId: string; brand: 'chrome' | 'edge'; electronRunAsNode: boolean }) {
   const { directory, manifestDir } = options;
   const callerOrigin = `chrome-extension://${options.extensionId}/`;
   const configPath = path.join(directory, 'native-host.json'), launcher = path.join(directory, 'native-host');
@@ -105,7 +105,7 @@ async function installLocked(options: { directory: string; cli: string; node: st
   if (allowedOrigins.size > 64 || browserOrigins.size > 64) throw new BrowserError('INVALID_REQUEST', 'Native host origin limit reached');
   const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
   await commitFiles([
-    { file: launcher, before: oldLauncher, bytes: Buffer.from(launcherText(options.node, options.cli, directory)), mode: 0o700 },
+    { file: launcher, before: oldLauncher, bytes: Buffer.from(launcherText(options.node, options.cli, directory, options.electronRunAsNode)), mode: 0o700 },
     { file: configPath, before: oldConfig, bytes: json({ allowedOrigins: [...allowedOrigins].sort() }), mode: 0o600 },
     { file: manifest, before: oldManifest, bytes: json({ name: HOST_NAME, description: 'DSH user-authorized browser bridge',
       path: launcher, type: 'stdio', allowed_origins: [...browserOrigins].sort() }), mode: 0o600 },

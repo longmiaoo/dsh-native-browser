@@ -53,7 +53,13 @@ Results depend on the page, model and permission configuration. Start with the p
 
 Version **0.1.0 supports macOS + Google Chrome**. You need Node.js ≥ 22.19, pnpm 11 and a working DSH installation. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-### 1 Configure the local components
+### Coming next: setup inside DSH
+
+The development branch adds **Settings → Browser setup → Set up Chrome**. This entry is **not yet included in npm 0.1.0**. After the next release, install from the plugin market in the DSH app you use, reload as instructed by DSH, then use this settings page. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
+
+The extension is not on the Chrome Web Store yet, so initial unpacked loading remains. A future store release can replace directory selection with the user's **Add to Chrome** confirmation and automatic extension updates; that distribution path has not shipped. See the [setup design and validation](docs/setup-ui.zh-CN.md).
+
+### 1 Released 0.1.0 CLI installation
 
 Paste this entire line into a terminal:
 
@@ -61,7 +67,7 @@ Paste this entire line into a terminal:
 dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-Replace **both** occurrences of `web` with your actual DSH profile, such as `desktop` or `browser-lab`. Installing into a different profile does not register tools in your current chat.
+Use this only for a known CLI/Web profile such as `web` or `browser-lab`, with the same name in both places. `web` is not a universal default. **Desktop users should manage plugins through the Desktop plugin market, not substitute `desktop` into the public CLI**, which restricts management of Desktop-owned profiles. Installing into a different profile does not register tools in the current chat.
 
 The installer stages the extension in a stable private directory, registers Native Messaging, starts and checks a macOS background Broker, and opens Chrome extensions plus Finder. The service continues after you close the terminal.
 

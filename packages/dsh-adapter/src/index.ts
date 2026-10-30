@@ -6,6 +6,7 @@ import { defaultDirectory } from '../../broker/src/local-state.js';
 import type { RpcPeer } from '../../transport-native/src/rpc.js';
 import { ScreenshotRegistry } from '../../vision-adapter/src/screenshots.js';
 import { visualActionFromScreenshot } from '../../vision-adapter/src/grounding.js';
+import { createSetupController } from './setup.js';
 
 export const name = 'dsh-native-browser';
 export const inject = ['tools', 'connection'];
@@ -408,9 +409,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     throw new BrowserError('UNSUPPORTED_CAPABILITY', 'DSH Connection RPC is required for foreground conversation handoff');
   }
   const clientRevisions = new Map<string, number>();
+  const setup = createSetupController(config.runtimeDirectory);
   let latestIssuedAt = 0;
   ctx.effect(() => connectionService.rpc.handle('/dsh-native-browser', async (endpoint: string, raw: unknown, signal: AbortSignal) => {
     checkAbort(signal);
+    if (disposed) throw new BrowserError('CONNECTION_LOST', 'Plugin disposed');
+    if (endpoint.startsWith('setup.')) return setup(endpoint, raw, signal);
     if (endpoint !== 'foreground') return { ok: false, error: { code: 'gateway/not-found', message: 'Unknown browser endpoint', details: {} } };
     const p = record(raw);
     if (Object.keys(p).some(key => !['clientId', 'revision', 'issuedAt', 'sessionId'].includes(key))

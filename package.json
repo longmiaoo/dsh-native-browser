@@ -88,7 +88,8 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=22.19"
+    "node": ">=22.19",
+    "dsh": ">=0.1.5-rc.1 <0.3.0"
   },
   "packageManager": "pnpm@11.1.1",
   "devDependencies": {
@@ -112,7 +113,7 @@
       "patch": "./cordis.patch.yml"
     },
     "compatibility": {
-      "dsh": ">=0.1.5-rc.1 <0.2.0",
+      "dsh": ">=0.1.5-rc.1 <0.3.0",
       "profiles": [
         "web",
         "desktop"

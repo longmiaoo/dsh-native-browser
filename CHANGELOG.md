@@ -2,7 +2,7 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.1.0-alpha.9 - 2026-10-30
 
 - Group agent-created tabs into a `DSH Browser` Chrome tab group (blue), and add `browser_close`: only tabs created by `browser_open` can be closed; user tabs are rejected.
 - Add the `tabGroups` permission and `tabs.group` / `tabs.close` capabilities with `runtime.tab-grouping.v1` / `runtime.close-tab.v1` negotiation.

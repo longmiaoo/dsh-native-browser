@@ -116,7 +116,7 @@ flowchart LR
 前置条件：macOS、Google Chrome、DSH `0.1.5-rc.1`、Node.js 22.19 或更新版本、pnpm 11。npm 包已经包含构建好的 JavaScript，安装时不会执行构建脚本。
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.8
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.9
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
 ```
 
@@ -148,7 +148,7 @@ Broker 和适配器设置必须同时存在，否则 claim 会失败关闭。扩
 
 ## 使用当前 alpha
 
-当前 npm 版本是 `0.1.0-alpha.8`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
+当前 npm 版本是 `0.1.0-alpha.9`。以下示例使用 DSH `web` Profile；如果安装到其他 Profile，请保持一致替换。
 
 ### 开始一次浏览会话
 

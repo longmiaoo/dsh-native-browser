@@ -177,6 +177,33 @@ try {
   assert.equal(downloaded.outcome, 'succeeded');
   assert.equal(downloaded.download.filename, 'fixture.txt');
   assert.equal(await readFile(downloaded.download.path, 'utf8'), 'downloaded fixture');
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'dialogButton'; button.textContent = '确认弹窗'; button.setAttribute('aria-label', '确认弹窗');
+    const status = document.createElement('div'); status.id = 'dialogStatus'; status.textContent = '等待确认';
+    button.addEventListener('click', () => {
+      window.fixtureDialogs = window.fixtureDialogs || {};
+      window.fixtureDialogs.confirm = confirm('确认继续？');
+      status.textContent = `确认结果：${window.fixtureDialogs.confirm}`;
+    });
+    document.body.append(button, status);
+  });
+  observation = await runtime.observe(owner, lease.id, signal);
+  const dialogButton = observation.nodes.find(node => node.name === '确认弹窗'); assert.ok(dialogButton, 'dialog trigger is observable');
+  const playwrightDialogs = [];
+  page.on('dialog', dialog => playwrightDialogs.push(dialog));
+  const clickAttempt = runtime.act(owner, { requestId: 'mv3-dialog-click', leaseId: lease.id,
+    documentEpoch: observation.documentEpoch, timeoutMs: 500, action: { kind: 'click', ref: dialogButton.id } }, signal).catch(() => undefined);
+  await clickAttempt;
+  const handledDialog = await runtime.act(owner, { requestId: 'mv3-dialog', leaseId: lease.id,
+    documentEpoch: observation.documentEpoch, timeoutMs: 5000,
+    action: { kind: 'dialog', accept: true, expected: { kind: 'text', text: '确认结果：true' } } }, signal);
+  assert.equal(handledDialog.outcome, 'succeeded');
+  assert.equal(handledDialog.dialog.type, 'confirm');
+  assert.equal(handledDialog.dialog.message, '确认继续？');
+  assert.equal(handledDialog.dialog.accepted, true);
+  assert.equal(await page.evaluate(() => window.fixtureDialogs.confirm), true);
+  assert.equal(playwrightDialogs[0]?.type(), 'confirm');
   assert.equal((await act('mv3-nav', { kind: 'navigate', url: `${origin}/next` })).outcome, 'succeeded');
   const cleanScreenshot = await runtime.capture(owner, lease.id, signal); assert.ok(cleanScreenshot.data.length > 100);
   assert.deepEqual(cleanScreenshot.redaction, { policy: 'cross-origin-frames', frames: 0, regions: 0 });
@@ -245,6 +272,7 @@ try {
       'Real multi-tab open, activate and release-all across two tabs',
       'Agent-created tabs are grouped and close removes only agent tabs',
       'Real file input upload via DOM.setFileInputFiles', 'Real attachment download via chrome.downloads',
+      'Real JavaScript confirm dialog handled after a blocked click deadline',
       'Same-origin navigation', 'JPEG capture',
       'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',
       ...frameGeometry.checks,'Popup Stop denies subsequent bound frame geometry'],

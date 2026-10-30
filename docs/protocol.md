@@ -41,7 +41,7 @@ Client hello payload (placeholder token):
 {
   "bootstrap":1,"versions":[1],"role":"client","token":"<private IPC token>",
   "journalKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "requiredCapabilities":["runtime.v1","runtime.personal-tab-scope.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1","runtime.upload.v1","runtime.choose.v1","runtime.download.v1","runtime.visual-click.v1","runtime.open-tab.v1","runtime.activate-tab.v1","runtime.tab-grouping.v1","runtime.close-tab.v1"]
+  "requiredCapabilities":["runtime.v1","runtime.personal-tab-scope.v1","observe.query.v1","journal.recovery.v1","runtime.check.v1","runtime.wheel.v1","runtime.radio.v1","runtime.capture-publication.v1","runtime.contenteditable-fill.v1","runtime.append.v1","runtime.element-state.v1","runtime.batch.v1","runtime.page.v1","runtime.frames.v1","observe.frame.v1","runtime.frame-click.v1","observe.frame-query.v1","observe.frame-subtree.v1","observe.frame-page.v1","runtime.upload.v1","runtime.choose.v1","runtime.download.v1","runtime.visual-click.v1","runtime.open-tab.v1","runtime.activate-tab.v1","runtime.tab-grouping.v1","runtime.close-tab.v1","runtime.dialog.v1"]
 }
 ```
 
@@ -50,7 +50,7 @@ Provider hello payload before token injection:
 ```json
 {
   "bootstrap":1,"versions":[1],"role":"provider",
-  "capabilities":["lease.fencing.v1","lease.tab-scope.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1","ax.frame-page.v1","ax.frame-text.v1","input.file-input.v1","input.file-chooser.v1","input.download.v1","input.visual-click.v1","tabs.create.v1","tabs.activate.v1","tabs.group.v1","tabs.close.v1"],
+  "capabilities":["lease.fencing.v1","lease.tab-scope.v1","ax.read.v1","ax.find.v1","input.named-keys.v1","scroll.dom.v1","ax.checked-state.v1","input.wheel.v1","input.radio.v1","ax.editable-state.v1","ax.page.v1","frame.sessions.v1","ax.frame.v1","input.frame-click.v1","ax.frame-find.v1","ax.frame-subtree.v1","ax.frame-page.v1","ax.frame-text.v1","input.file-input.v1","input.file-chooser.v1","input.download.v1","input.visual-click.v1","tabs.create.v1","tabs.activate.v1","tabs.group.v1","tabs.close.v1","input.dialog.v1"],
   "requiredCapabilities":["runtime.v1","provider.ax-read.v1","provider.ax-find.v1"],
   "instance":{"id":"opaque-instance","family":"chromium","brand":"chrome","version":"browser user agent","profileLabel":"User-authorized profile"}
 }
@@ -139,7 +139,7 @@ Completed full action payloads have a separate 128-entry/8 MiB/120-second cache.
 
 ## Events and freshness
 
-Current extension events are `lease.revoked` (lease ID) and `page.changed` (tab, lease ID, per-lease sequence). Coalesced page-change hints contain no page content and wake current-state observation/waiting. They are not an authoritative DOM stream. Observation cursors/deltas have separate scope/freshness checks. There is no general resumable event stream, wire observation-diff stream or comprehensive event-gap recovery protocol. Dialog/download/handoff event families in the original design are not implemented.
+Current extension events are `lease.revoked` (lease ID), payload-free `page.changed` freshness hints, and transient lease-scoped `dialog.opened` / `download.*` events used only to complete the corresponding action. Coalesced page-change hints contain no page content and wake current-state observation/waiting. They are not an authoritative DOM stream. Observation cursors/deltas have separate scope/freshness checks. There is no general resumable event stream, wire observation-diff stream or comprehensive event-gap recovery protocol. A general handoff event family remains unimplemented.
 
 ## Framing and budgets
 

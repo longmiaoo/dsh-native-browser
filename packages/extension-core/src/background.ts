@@ -26,6 +26,7 @@ const attached = new Set<number>();
 const pendingDownloads: Lease[] = [];
 const agentTabs = new Set<number>();
 let agentGroupId: number | undefined;
+const pendingDialogs = new Map<number, Record<string, unknown>>();
 const queues = new Map<number, Promise<unknown>>();
 const changeTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const changeSequences = new Map<number, number>();
@@ -38,7 +39,7 @@ const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocumen
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
   'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
-  'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser']);
+  'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -110,6 +111,7 @@ function stop(id: number, forget = true): Promise<void> {
   if (lease) pager.revoke(lease.token + '|');
   clearTimeout(changeTimers.get(id)); changeTimers.delete(id);
   changeSequences.delete(id);
+  pendingDialogs.delete(id);
   const pendingTab = `${instanceId}:${id}`;
   for (let index = pendingDownloads.length - 1; index >= 0; index--) {
     if (pendingDownloads[index]!.tab === pendingTab) pendingDownloads.splice(index, 1);
@@ -212,6 +214,11 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     await ensure(lease, signal); checkGate(lease, signal);
     await chrome.tabs.update(id, { active: true });
     return { active: true };
+  }
+  if (method === 'dialog.pending') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Dialog lookup only accepts its lease');
+    await ensure(lease, signal); checkGate(lease, signal);
+    return pendingDialogs.get(id) ?? null;
   }
   if (method === 'tabs.close') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab close only accepts its lease');
@@ -368,6 +375,25 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       try { files.forEach(uploadFile); }
       catch { throw new BrowserError('POLICY_DENIED', 'Chosen files must be absolute local paths'); }
     }
+    if (command === 'Page.handleJavaScriptDialog') {
+      if (typeof params.accept !== 'boolean' || Object.keys(params).some(key => !['accept', 'promptText'].includes(key))
+        || params.promptText !== undefined && (typeof params.promptText !== 'string' || params.promptText.length > 1000 || !params.accept)) {
+        throw new BrowserError('POLICY_DENIED', 'JavaScript dialogs accept only a boolean and bounded prompt text');
+      }
+      const pending = pendingDialogs.get(id);
+      if (!pending) throw new BrowserError('NOT_ACTIONABLE', 'No JavaScript dialog is pending on the leased tab');
+      if (params.promptText !== undefined && pending.type !== 'prompt') {
+        throw new BrowserError('POLICY_DENIED', 'Prompt text is only valid for a JavaScript prompt dialog');
+      }
+      // A synchronous page dialog can keep the originating Runtime.callFunctionOn
+      // command pending. Dispatch this control command outside the per-tab queue
+      // so it can unblock that command instead of deadlocking behind it.
+      await ensure(lease, signal);
+      checkGate(lease, signal);
+      const result = await chrome.debugger.sendCommand({ tabId: id }, command, params);
+      pendingDialogs.delete(id);
+      return result;
+    }
     return enqueue(id, async () => {
       if (command === 'Page.navigate' && (lease.scope ?? 'origin') === 'tab') {
         checkGate(lease, signal);
@@ -398,6 +424,7 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
       const result = await chrome.debugger.sendCommand({ tabId: id }, command, params);
+      if (command === 'Page.handleJavaScriptDialog') pendingDialogs.delete(id);
       if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);
       return result;
     });
@@ -518,6 +545,15 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
       try { port?.postMessage({ type: 'event', event: 'fileChooser.opened', value: { tab: lease.tab, leaseId: lease.id, backendNodeId } }); } catch {}
     }
   }
+  if (id !== undefined && gates.has(id) && method === 'Page.javascriptDialogOpening') {
+    const lease = gates.get(id), p = params as { type?: unknown; message?: unknown };
+    if (lease && ['alert', 'confirm', 'prompt', 'beforeunload'].includes(String(p.type)) && typeof p.message === 'string') {
+      const dialog = { type: p.type as string, message: p.message.slice(0, 2000) };
+      pendingDialogs.set(id, dialog);
+      try { port?.postMessage({ type: 'event', event: 'dialog.opened', value: { tab: lease.tab, leaseId: lease.id, ...dialog } }); } catch {}
+    }
+  }
+  if (id !== undefined && method === 'Page.javascriptDialogClosed') pendingDialogs.delete(id);
   if (id === undefined || !gates.has(id) || !changeEvents.has(method) || changeTimers.has(id)) return;
   changeTimers.set(id, setTimeout(() => {
     changeTimers.delete(id);

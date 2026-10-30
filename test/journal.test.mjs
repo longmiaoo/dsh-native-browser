@@ -41,7 +41,7 @@ test('durable journal reopens metadata without persisting page payloads or raw i
   assert.throws(() => journal.lookup('private-owner/request', 'changed'), e => e.code === 'REQUEST_ID_CONFLICT');
 });
 
-test('durable journal accepts every portable action kind, including upload/choose/download/visual-click, across reopen', async t => {
+test('durable journal accepts every portable action kind, including file, visual and dialog actions, across reopen', async t => {
   const dir = await directory(t);
   let journal = await FileActionJournal.open(dir, secret);
   for (const [index, kind] of journalKinds.entries()) {

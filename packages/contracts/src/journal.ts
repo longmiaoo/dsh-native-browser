@@ -1,6 +1,6 @@
 import type { Action, ActionResult } from './index.js';
 export const journalKinds = ['click', 'fill', 'append', 'press', 'scroll', 'navigate', 'check', 'wheel',
-  'upload', 'choose', 'download', 'visual-click', 'batch'] as const satisfies readonly (Action['kind'] | 'batch')[];
+  'upload', 'choose', 'download', 'visual-click', 'dialog', 'batch'] as const satisfies readonly (Action['kind'] | 'batch')[];
 export type JournalKind = typeof journalKinds[number];
 
 /** No page contents, input values, URLs, tokens, or observations cross this seam. */

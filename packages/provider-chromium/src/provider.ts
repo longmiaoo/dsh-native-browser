@@ -817,6 +817,39 @@ export class ChromiumProvider implements BrowserProvider {
       viewportBox: action.box, viewportPoint: action.point } };
   }
 
+  private async dialog(lease: Lease, request: ActionRequest, action: Extract<Action, { kind: 'dialog' }>,
+    execution: ProviderExecution, clock: ChangeClock, stateBinding?: StateBinding): Promise<ProviderResult> {
+    const { signal } = execution;
+    let opened: Dict | null = null;
+    const unsubscribe = this.channel.onEvent?.((event, raw) => {
+      if (event !== 'dialog.opened' || !raw || typeof raw !== 'object') return;
+      const value = raw as Dict;
+      if (value.tab === lease.tab && value.leaseId === lease.id && typeof value.type === 'string') {
+        opened = value; clock.pulse();
+      }
+    });
+    try {
+      const pending = await this.channel.call('dialog.pending', { lease }, signal) as Dict | null;
+      if (!opened && pending && typeof pending.type === 'string') opened = pending;
+      if (!opened) {
+        try { await waitUntil(async () => opened ? true : undefined, { signal, clock }); }
+        catch (error) {
+          if (error instanceof BrowserError && error.code === 'DEADLINE_EXCEEDED') throw new BrowserError('NOT_ACTIONABLE', 'No JavaScript dialog is open');
+          throw error;
+        }
+      }
+      execution.onDispatch();
+      await this.cdp(lease, 'Page.handleJavaScriptDialog', { accept: action.accept,
+        ...(action.accept && action.promptText !== undefined ? { promptText: action.promptText } : {}) }, signal);
+      const evidence = { type: opened!.type, message: String(opened!.message ?? ''), accepted: action.accept,
+        ...(action.promptText === undefined ? {} : { promptText: action.promptText }) };
+      const result = action.expected
+        ? await this.result(lease, action.expected, undefined, signal, clock, undefined, stateBinding)
+        : { observation: await this.observe(lease, signal), postcondition: 'unverified' as const };
+      return { ...result, dialog: evidence };
+    } finally { unsubscribe?.(); }
+  }
+
   async actFrame(lease:Lease,raw:ActionRequest,execution:ProviderExecution):Promise<ProviderResult>{
     const request=actionRequest(raw),frame=request.frame,action=request.action;
     if(!frame||action.kind!=='click')throw new BrowserError('INVALID_REQUEST','Explicit child click scope is required');
@@ -920,6 +953,7 @@ export class ChromiumProvider implements BrowserProvider {
       if (action.kind === 'choose') return await this.choose(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       if (action.kind === 'download') return await this.download(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       if (action.kind === 'visual-click') return await this.visualClick(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
+      if (action.kind === 'dialog') return await this.dialog(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);
       const original = this.pages.get(lease.tab)?.byRef.get(action.ref);
       if (!original || original.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale target');
       if (!controlRoles.has(original.role) && !original.editable && !(action.kind === 'wheel' && regionRoles.has(original.role))) {

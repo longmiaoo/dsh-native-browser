@@ -49,7 +49,7 @@ Exit: a human can intervene at any action boundary and resume without restarting
 ## Phase 4 — production browser workflows
 
 - Semantic select/check/clear/fill and keyboard operations.
-- Dialog, download and file-chooser flows.
+- Dialog, download and file-chooser flows. (Implemented: pending JavaScript dialogs, downloads and native chooser/file input are lease/origin gated and verified; broader workflow hardening remains.)
 - Screenshot fallback and visual verification: multimodal sessions can view a published screenshot and use the screenshot-bound `visual-click` after epoch/viewport/hit-test checks.
 - Multi-frame and Shadow DOM hardening.
 - Site access gate and DSH approval integration.

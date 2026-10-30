@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Add `browser_act` `dialog` handling for pending `alert`, `confirm`, `prompt` and `beforeunload` dialogs: accept or dismiss the exact leased tab's dialog, optionally provide bounded prompt text, return typed dialog evidence, and continue with a text/state postcondition.
+- Add `input.dialog.v1` / `runtime.dialog.v1` capability negotiation. Dialog control bypasses the blocked page-command queue so a synchronous `confirm()` cannot deadlock behind the click that opened it.
+
 ## 0.1.0-alpha.9 - 2026-10-30
 
 - Group agent-created tabs into a `DSH Browser` Chrome tab group (blue), and add `browser_close`: only tabs created by `browser_open` can be closed; user tabs are rejected.

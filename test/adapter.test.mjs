@@ -394,3 +394,18 @@ test('at most eight Host screenshot publications remain pending, including cance
   const store=captureStore(f);const restored=f.prepare('browser_screenshot',{leaseId:next.id}).run();
   await store.entered;store.finish();assert.equal((await restored).screenshot.leaseId,next.id);
 });
+
+test('browser_act advertises a bounded JavaScript dialog action and postcondition schema', async t => {
+  const f = await fixture(t), lease = await f.prepare('browser_claim', claimArgs).run();
+  const validate = new Ajv({ strict: false }).compile(f.definitions.get('browser_act').parameters);
+  const base = { requestId: 'dialog-schema', leaseId: lease.id, documentEpoch: 'doc-1',
+    action: { kind: 'dialog', accept: true, promptText: 'Longmiaoo', expected: { kind: 'text', text: 'Accepted' } } };
+  assert.equal(validate(base), true);
+  assert.equal(validate({ ...base, action: { kind: 'dialog', accept: false } }), true);
+  for (const action of [
+    { kind: 'dialog' }, { kind: 'dialog', accept: 'yes' }, { kind: 'dialog', accept: true, promptText: 'x'.repeat(1001) },
+    { kind: 'dialog', accept: true, expected: { kind: 'value', value: 'x' } },
+    { kind: 'dialog', accept: true, expected: { kind: 'url', url: 'https://example.test/' } },
+    { kind: 'dialog', accept: true, extra: true },
+  ]) assert.equal(validate({ ...base, action }), false);
+});

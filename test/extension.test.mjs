@@ -117,6 +117,69 @@ test('file chooser interception and accept are allowlisted, enabled-only and bou
   await f.ui('stop');
 });
 
+test('JavaScript dialogs are lease-scoped, bounded and cannot deadlock behind a blocking page command', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal(await f.call('dialog.pending', { lease: f.lease }).then(r => r.value), null);
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleJavaScriptDialog', params: { accept: true } })).code,
+    'NOT_ACTIONABLE');
+  const send = f.chrome.debugger.sendCommand;
+  let releaseRuntime;
+  f.chrome.debugger.sendCommand = async (target, method, params) => {
+    f.commands.push({ method, params });
+    if (method === 'Runtime.evaluate') return new Promise(resolve => { releaseRuntime = () => resolve({ result: { value: 'complete' } }); });
+    return send(target, method, params);
+  };
+  const blocked = f.call('cdp', { lease: f.lease, method: 'Runtime.evaluate',
+    params: { expression: 'document.readyState', returnByValue: true } });
+  await new Promise(resolve => setImmediate(resolve));
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.javascriptDialogOpening',
+    { type: 'confirm', message: 'ContinueAContinue'.repeat(150) });
+  const opened = f.sent.find(message => message.type === 'event' && message.event === 'dialog.opened');
+  assert.ok(opened, 'dialog.opened reached the native port');
+  assert.equal(opened.value.tab, f.lease.tab);
+  assert.equal(opened.value.leaseId, f.lease.id);
+  assert.equal(opened.value.type, 'confirm');
+  assert.equal(opened.value.message.length, 2000);
+  const pending = await f.call('dialog.pending', { lease: f.lease });
+  assert.equal(pending.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(pending.value)),
+    { type: 'confirm', message: 'ContinueAContinue'.repeat(150).slice(0, 2000) });
+  for (const params of [{}, { accept: 'yes' }, { accept: true, extra: true },
+    { accept: false, promptText: 'ignored' }, { accept: true, promptText: 'x'.repeat(1001) },
+    { accept: true, promptText: 'not-a-prompt' }]) {
+    assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleJavaScriptDialog', params })).code, 'POLICY_DENIED');
+  }
+  const handled = f.call('cdp', { lease: f.lease, method: 'Page.handleJavaScriptDialog', params: { accept: true } });
+  const quick = await Promise.race([handled, new Promise(resolve => setTimeout(() => resolve('blocked'), 500))]);
+  assert.notEqual(quick, 'blocked', 'dialog handling bypasses a waiting per-tab command');
+  assert.equal(quick.ok, true);
+  releaseRuntime();
+  assert.equal((await blocked).ok, true);
+  assert.deepEqual(f.commands.filter(command => command.method === 'Page.handleJavaScriptDialog')[0].params, { accept: true });
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.javascriptDialogClosed', { result: true, userInput: '' });
+  assert.equal(await f.call('dialog.pending', { lease: f.lease }).then(r => r.value), null);
+  await f.ui('stop');
+});
+
+test('dialog events ignore unknown types and are cleared by Stop', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.javascriptDialogOpening', { type: 'script-created', message: 'unknown' });
+  assert.equal(await f.call('dialog.pending', { lease: f.lease }).then(r => r.value), null);
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.javascriptDialogOpening', { type: 'alert', message: 'Saved' });
+  assert.equal((await f.call('dialog.pending', { lease: f.lease })).value.message, 'Saved');
+  f.chrome.debugger.onEvent.emit({ tabId: 7 }, 'Page.javascriptDialogOpening', { type: 'prompt', message: 'Name?' });
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Page.handleJavaScriptDialog',
+    params: { accept: true, promptText: 'Longmiaoo' } })).ok, true);
+  await f.ui('stop');
+  assert.equal((await f.call('dialog.pending', { lease: f.lease })).code, 'LEASE_REVOKED');
+  await f.ui('allow');
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal(await f.call('dialog.pending', { lease: f.lease }).then(r => r.value), null);
+  await f.ui('stop');
+});
+
 test('file chooser opened events forward tab, lease and backend node metadata', async () => {
   const f = await fixture();
   await f.call('lease.grant', { lease: f.lease });

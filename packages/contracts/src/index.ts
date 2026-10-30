@@ -141,6 +141,12 @@ export interface VisualEvidence {
   viewportBox: { x1: number; y1: number; x2: number; y2: number };
   viewportPoint: { x: number; y: number };
 }
+export interface DialogEvidence {
+  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+  message: string;
+  accepted: boolean;
+  promptText?: string;
+}
 export type Action =
   | { kind: 'check'; ref: string; checked: boolean; expected?: Expected }
   | { kind: 'click'; ref: string; expected?: Expected }
@@ -156,7 +162,8 @@ export type Action =
   | { kind: 'visual-click'; screenshotId: string; screenshotSha256: string; target: string;
       viewport: { width: number; height: number; pageX: number; pageY: number };
       box: { x1: number; y1: number; x2: number; y2: number };
-      point: { x: number; y: number }; expected?: Expected };
+      point: { x: number; y: number }; expected?: Expected }
+  | { kind: 'dialog'; accept: boolean; promptText?: string; expected?: Expected };
 export interface ActionRequest {
   requestId: string;
   leaseId: string;
@@ -192,6 +199,7 @@ export interface ActionResult {
   scroll?: ScrollEvidence;
   download?: DownloadEvidence;
   visual?: VisualEvidence;
+  dialog?: DialogEvidence;
   /** Historical metadata only. Never an assertion about the current page or restored authority. */
   recovery?: import('./journal.js').RecoveryRecord;
 }
@@ -206,6 +214,7 @@ export interface ProviderResult {
   scroll?: ScrollEvidence;
   download?: DownloadEvidence;
   visual?: VisualEvidence;
+  dialog?: DialogEvidence;
 }
 export interface BrowserProvider {
   readonly instance: BrowserInstance;

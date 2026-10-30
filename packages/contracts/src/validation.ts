@@ -64,6 +64,14 @@ export function visualEvidence(value: unknown): import('./index.js').VisualEvide
   return { screenshotId: string(v.screenshotId, 128), target: string(v.target, 500),
     viewportBox: visualBox(v.viewportBox), viewportPoint: visualPoint(v.viewportPoint) };
 }
+export function dialogEvidence(value: unknown): import('./index.js').DialogEvidence {
+  const v = record(value);
+  if (!['alert', 'confirm', 'prompt', 'beforeunload'].includes(String(v.type))) throw new BrowserError('INVALID_REQUEST', 'Invalid dialog type');
+  if (typeof v.message !== 'string' || v.message.length > 2000 || typeof v.accepted !== 'boolean') throw new BrowserError('INVALID_REQUEST', 'Invalid dialog evidence');
+  if (v.promptText !== undefined && (typeof v.promptText !== 'string' || v.promptText.length > 1000)) throw new BrowserError('INVALID_REQUEST', 'Invalid dialog prompt text');
+  return { type: v.type as import('./index.js').DialogEvidence['type'], message: v.message, accepted: v.accepted,
+    ...(v.promptText === undefined ? {} : { promptText: v.promptText }) };
+}
 export function scrollDelta(value: unknown): { deltaX: number; deltaY: number } {
   const v = record(value);
   const valid = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && Math.abs(n) <= 10_000;
@@ -191,6 +199,15 @@ export function actionRequest(value: unknown): ActionRequest {
     action = { kind: 'visual-click', screenshotId: string(a.screenshotId, 128), screenshotSha256: sha256,
       target: string(a.target, 500), viewport, box, point };
   }
+  else if (a.kind === 'dialog') {
+    if (Object.keys(a).some(key => !['kind', 'accept', 'promptText', 'expected'].includes(key)) || typeof a.accept !== 'boolean') {
+      throw new BrowserError('INVALID_REQUEST', 'Dialog requires a boolean accept and optional prompt text');
+    }
+    if (a.promptText !== undefined && (typeof a.promptText !== 'string' || a.promptText.length > 1000 || !a.accept)) {
+      throw new BrowserError('INVALID_REQUEST', 'Dialog prompt text requires accept=true and at most 1000 characters');
+    }
+    action = { kind: 'dialog', accept: a.accept, ...(a.promptText === undefined ? {} : { promptText: a.promptText }) };
+  }
   else throw new BrowserError('INVALID_REQUEST', 'Unsupported browser action');
   if (a.expected !== undefined) {
     const e = record(a.expected);
@@ -207,6 +224,7 @@ export function actionRequest(value: unknown): ActionRequest {
     if (action.kind === 'check' && action.expected.kind === 'value') throw new BrowserError('INVALID_REQUEST', 'Check verifies checked state, not the input value attribute');
     if ((action.kind === 'upload' || action.kind === 'choose' || action.kind === 'download') && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'File actions verify page text or node state, not input value or navigation');
     if (action.kind === 'visual-click' && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'Visual click verifies page text or node state, not input value or navigation');
+    if (action.kind === 'dialog' && (action.expected.kind === 'value' || action.expected.kind === 'url')) throw new BrowserError('INVALID_REQUEST', 'Dialog verifies page text or node state, not input value or navigation');
   }
   const result: ActionRequest = { requestId: string(v.requestId, 128), leaseId: string(v.leaseId),
     documentEpoch: string(v.documentEpoch,512), action };

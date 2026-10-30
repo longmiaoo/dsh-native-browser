@@ -107,6 +107,46 @@ export class BrowserRuntime {
     } finally { clearTimeout(timer); this.claims.delete(claim); }
   }
 
+  async open(owner: string, instanceId: string, url: string, signal: AbortSignal, scope = owner): Promise<Lease> {
+    checkAbort(signal);
+    const provider = this.provider(instanceId);
+    if (!provider.open) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot create tabs');
+    const target = new URL(url);
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      throw new BrowserError('INVALID_REQUEST', 'Only HTTP(S) tabs can be opened');
+    }
+    // Authorize the exact origin before creating anything.
+    if (!await this.authorize({ owner, tab: { id: 'pending', instanceId, url: target.href, title: '' }, operation: 'claim' }, signal)) {
+      throw new BrowserError('POLICY_DENIED', 'New tab creation was not authorized');
+    }
+    checkAbort(signal);
+    const tab = await provider.open(target.href, signal);
+    checkAbort(signal);
+    // Chrome can acknowledge tabs.create before the new tab has a URL in the
+    // inventory. Wait for the exact created handle rather than claiming a
+    // not-yet-visible tab.
+    let visible = false;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      checkAbort(signal);
+      const listed = await provider.listTabs(signal);
+      if (listed.some(item => item.id === tab.id && item.instanceId === instanceId)) { visible = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!visible) throw new BrowserError('STALE_TARGET', 'Created tab did not appear in the inventory');
+    const lease = await this.claim(owner, instanceId, tab.id, signal, scope);
+    return lease;
+  }
+
+  async activate(owner: string, leaseId: string, signal: AbortSignal): Promise<void> {
+    const entry = this.entry(owner, leaseId);
+    const linked = AbortSignal.any([signal, entry.controller.signal]);
+    await this.authorized(entry, 'observe', linked);
+    if (!entry.provider.activate) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider cannot activate tabs');
+    await entry.provider.activate(entry.lease, linked);
+    checkAbort(linked);
+    this.entry(owner, leaseId);
+  }
+
   private async claimWithin(owner: string, instanceId: string, tabId: string, signal: AbortSignal, scope: string): Promise<Lease> {
     const provider = this.provider(instanceId);
     const tab = (await provider.listTabs(signal)).find(t => t.id === tabId && t.instanceId === instanceId);

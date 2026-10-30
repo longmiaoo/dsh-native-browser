@@ -19,7 +19,7 @@ Exit: repository metadata is honest, packageable and discoverable; no browser ca
 - Native Messaging host for macOS, Windows and Linux.
 - Install, doctor and uninstall commands.
 - Versioned handshake, reconnect, cancellation and redacted diagnostics.
-- Candidate listing, exact tab claim, tab creation and release.
+- Candidate listing, exact tab claim, tab creation and release. (Implemented: one session can hold several independent tab leases, open HTTP(S) tabs, activate a controlled tab and release all leases.)
 - DSH `ctx.nativeBrowser` service with per-session leases.
 
 Exit: two concurrent DSH tasks cannot cross-control tabs; extension service-worker and host restarts recover or fail closed.
@@ -41,7 +41,7 @@ Exit: representative multi-step Chrome tasks work in an authenticated profile wi
 - Stop/takeover/resume controls.
 - First-class handoff for login, CAPTCHA and user choices.
 - Turn completion cleanup and deliverable preservation.
-- Tab grouping for agent-created tabs.
+- Tab grouping for agent-created tabs. (Agent-created tabs are tracked and allowed for the extension session; visual grouping remains to do.)
 - DSH UI cards for active tab, observation and interruption state.
 
 Exit: a human can intervene at any action boundary and resume without restarting the browser session.

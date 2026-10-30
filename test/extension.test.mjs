@@ -39,6 +39,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
   };
   const chrome = { runtime: { id: 'a'.repeat(32), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
     tabs: { query: async () => [tab], get: async () => ({ ...tab }),
+      create: async ({ url }) => ({ id: 9, url, title: 'New Tab' }), update: async (id, properties) => ({ id, ...properties }),
       sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     downloads: { onCreated: event(), onChanged: event(),
@@ -138,6 +139,21 @@ test('download arming is lease-gated and chrome.downloads events forward real fi
   assert.equal(completed.value.state, 'complete');
   assert.equal(completed.value.filename, '/tmp/report.pdf');
   assert.equal(completed.value.receivedBytes, 10);
+  await f.ui('stop');
+});
+
+test('tabs.create is HTTP(S)-only and tabs.activate is lease-gated', async () => {
+  const f = await fixture();
+  const created = await f.call('tabs.create', { url: 'https://example.test/new' });
+  assert.equal(created.ok, true);
+  assert.equal(created.value.url, 'https://example.test/new');
+  assert.equal(created.value.id, `${f.hello.params.instance.id}:9`);
+  assert.equal((await f.call('tabs.create', { url: 'file:///tmp/x' })).code, 'POLICY_DENIED');
+  assert.equal((await f.call('tabs.create', { url: 'https://example.test/new', extra: true })).code, 'INVALID_REQUEST');
+  assert.equal((await f.call('tabs.activate', { lease: f.lease })).code, 'LEASE_REVOKED');
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('tabs.activate', { lease: f.lease })).value.active, true);
+  assert.equal((await f.call('tabs.activate', { lease: f.lease, extra: true })).code, 'INVALID_REQUEST');
   await f.ui('stop');
 });
 

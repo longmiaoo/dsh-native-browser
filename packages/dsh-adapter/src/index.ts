@@ -24,7 +24,8 @@ type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortCo
 type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
 type BatchApproval = { scope: TurnScope; request: BatchRequest; exec: Execution; peer: RpcPeer; signal: AbortSignal; next: number };
 const schemaString = { type: 'string' };
-const tools = new Set(['browser_list', 'browser_claim', 'browser_observe', 'browser_read_page', 'browser_frames', 'browser_act', 'browser_batch', 'browser_handoff', 'browser_screenshot']);
+const tools = new Set(['browser_list', 'browser_claim', 'browser_open', 'browser_activate', 'browser_release_all',
+  'browser_observe', 'browser_read_page', 'browser_frames', 'browser_act', 'browser_batch', 'browser_handoff', 'browser_screenshot']);
 
 /** Uses the public raw ToolDefinition seam. No DSH internal module imports. */
 export function apply(ctx: Context, config: Config = {}): void {
@@ -205,6 +206,31 @@ export function apply(ctx: Context, config: Config = {}): void {
       ? run('browser.instances', {}, exec) : run('browser.tabs', { instanceId: string(args.instanceId) }, exec));
   register('browser_claim', 'Request exclusive control of one user-authorized tab under the configured approval policy; preserve existing user pages. scope=origin is exact-site authority; scope=tab is returned only by the explicit personal Broker and follows that same allowed tab across HTTP(S) root navigations. Use the returned leaseId (not any other field) as leaseId for every later browser tool. Internal capability tokens are never exposed.',
     { instanceId: schemaString, tab: schemaString }, ['instanceId', 'tab'], claim);
+  register('browser_open', 'Open a new HTTP(S) tab and claim it for this DSH session. The tab is created in the background and returned as a normal lease; use browser_activate to bring it to the foreground. The Broker must authorize the exact origin first. Tabs opened this way stay open on handoff so the user can inspect them.',
+    { instanceId: schemaString, url: schemaString }, ['instanceId', 'url'], async (args, exec) => {
+      const instanceId = string(args.instanceId), url = string(args.url, 8192);
+      if (approvalMode === 'trusted' && !trustedOrigins.has(originOf(url))) {
+        throw new BrowserError('POLICY_DENIED', 'Trusted mode only opens exact trusted origins');
+      }
+      const raw = await run('browser.open', { instanceId, url }, exec);
+      const lease = publicLease(raw);
+      if (approvalMode === 'personal' && lease.scope !== 'tab') {
+        await run('browser.release', { leaseId: lease.leaseId }, exec).catch(() => {});
+        throw new BrowserError('POLICY_DENIED', 'Personal approval mode requires a Broker started with --access-mode=personal');
+      }
+      return lease;
+    });
+  register('browser_activate', 'Bring a controlled tab to the foreground. The lease and origin checks still apply; this only changes visible focus and does not grant new authority.',
+    { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.activate', { leaseId: string(args.leaseId) }, exec));
+  register('browser_release_all', 'Release every browser lease owned by this DSH session. Tabs stay open; screenshots for this session are revoked. Use this when a multi-tab workflow ends instead of calling browser_handoff for each lease.',
+    {}, [], async (_args, exec) => {
+      const { scope } = executionScope(exec);
+      screenshots.revokeOwner(scope.wireSessionId);
+      for (const capture of [...captures]) if (capture.scope === scope) {
+        capture.controller.abort(new BrowserError('LEASE_REVOKED', 'Browser control was released'));
+      }
+      return run('browser.releaseSession', {}, exec);
+    });
   register('browser_observe', 'Read bounded, untrusted AX text, controls and named regions. Optional rootRef reads only that known subtree. Optional query finds an EXACT case-sensitive accessible name and optional role, beyond the default discovery bounds; combine rootRef to restrict the search. It returns candidates, never chooses or clicks a match: duplicate names require contextual disambiguation, not picking the first. Repeat query/rootRef on each scoped call; query results and subtrees are not whole pages. A generic node marked editable:true is an observed editing host, not an invented textbox role; use its exact ref for fill/append/press. kind=region refs are read roots/scroll targets, not click/fill/append/press targets. Omit cursor for a full view; use its cursor for exact-base changes. delta contains node upsert/remove, optional order and text splice; full replaces your bounded view. resyncRequired means changed/missing base, document or scope. Use current documentEpoch/refs; truncated means incomplete. Optional frame:{frameId,documentEpoch} explicitly reads one current child from browser_frames. The target and ALL ancestors must share the leased origin; foreign/opaque frames are denied. Repeat frame on each cursor call; changed epochs require fresh discovery. Frame views have separate node identities and delta scopes; use their refs/epochs only with explicit browser_act frame for supported child clicks; use browser_read_page with the same explicit frame for live windows. Combine frame with query for exact-name/optional-role lookup only in that child document, including controls omitted from its default view. Query deltas are scoped to both frame and filters. Repeat frame and query with the cursor. Combine frame with a rootRef observed in that child for a local subtree or contextual query. Repeat frame/rootRef/query with cursors. A removed, replaced or wrong-document root fails; it never widens to the whole frame. Regex, substring and cross-frame search remain unsupported.',
     { leaseId: schemaString, cursor: schemaString, rootRef: schemaString,
       frame: { type: 'object', properties: { frameId: { type: 'string', minLength: 1, maxLength: 128 },
@@ -383,8 +409,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (!exec.agent?.session.id) return { kind: 'deny', reason: 'Browser tools require an owning DSH session.' };
     if (disposed) return { kind: 'deny', reason: 'Browser plugin has been disposed.' };
     bind(exec);
-    if ((approvalMode === 'per-action' && (exec.name === 'browser_claim' || exec.name === 'browser_act' || exec.name === 'browser_screenshot'))
-      || (approvalMode === 'per-lease' && exec.name === 'browser_claim')) {
+    if ((approvalMode === 'per-action' && (exec.name === 'browser_claim' || exec.name === 'browser_open' || exec.name === 'browser_act' || exec.name === 'browser_screenshot'))
+      || (approvalMode === 'per-lease' && (exec.name === 'browser_claim' || exec.name === 'browser_open'))) {
       return { kind: 'ask', reason: 'Allow this browser control action on the selected signed-in page?' };
     }
     return next();

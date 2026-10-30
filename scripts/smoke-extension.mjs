@@ -199,6 +199,14 @@ try {
   assert.equal(foreignDetached, true, 'Foreign fixture detached before the same-origin frame geometry check');
   assert.ok(capturedEvents.some(e => e.event === 'page.changed'), 'Real debugger event reached the bridge');
   const frameGeometry=await verifyFrameGeometryExtension({page,worker,channel,lease,origin,signal});
+  const multiA = await runtime.open(owner, instance.id, `${origin}/form.html?multi=a`, signal);
+  const multiB = await runtime.open(owner, instance.id, `${origin}/form.html?multi=b`, signal);
+  assert.notEqual(multiA.id, multiB.id);
+  await runtime.activate(owner, multiA.id, signal);
+  const multiObsA = await runtime.observe(owner, multiA.id, signal);
+  const multiObsB = await runtime.observe(owner, multiB.id, signal);
+  assert.equal(multiObsA.tab, multiA.tab); assert.equal(multiObsB.tab, multiB.tab);
+  await runtime.activate(owner, lease.id, signal);
   await popup.evaluate(() => document.querySelector('#stop').click());
   // Wait for the actual popup response, not a fixed delay.
   await popup.waitForFunction(() => document.querySelector('#status').textContent.includes('未授权'));
@@ -214,11 +222,14 @@ try {
   }, Number(lease.tab.slice(`${instance.id}:`.length)));
   assert.equal(detached, true);
   await assert.rejects(channel.call('frame.geometry',{lease,request:frameGeometry.request},signal),{code:'LEASE_REVOKED'});
-  await runtime.release(owner, lease.id);
+  await runtime.releaseOwner(owner);
+  await assert.rejects(runtime.observe(owner, multiA.id, signal), error => error.code === 'LEASE_REVOKED');
+  await assert.rejects(runtime.observe(owner, multiB.id, signal), error => error.code === 'LEASE_REVOKED');
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
     passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
       'Real visual-click from a screenshot box after hit-test and viewport checks',
+      'Real multi-tab open, activate and release-all across two tabs',
       'Real file input upload via DOM.setFileInputFiles', 'Real attachment download via chrome.downloads',
       'Same-origin navigation', 'JPEG capture',
       'Cross-origin iframe redacted inside MV3', 'Real debugger page change events', 'Popup Stop detaches and blocks later input',

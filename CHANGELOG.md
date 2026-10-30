@@ -8,6 +8,8 @@ All notable changes will be documented here. The project follows semantic versio
 - Add `input.visual-click.v1` / `runtime.visual-click.v1` capability negotiation.
 - Add the `tabs` permission so personal-mode discovery can read tab URLs and titles without granting plaintext HTTP host access.
 - Extend the durable action journal's validated kind list to `upload`, `choose`, `download` and `visual-click`, so those actions settle correctly across journal reopen.
+- Add multi-tab workflows: one DSH session can open additional HTTP(S) tabs (`browser_open`), bring any controlled tab to the foreground (`browser_activate`), and release every owned lease at once (`browser_release_all`); agent-created tabs stay open on release.
+- Add `tabs.create` / `tabs.activate` provider capabilities and `runtime.open-tab.v1` / `runtime.activate-tab.v1` negotiation.
 
 ## 0.1.0-alpha.7 - 2026-10-29
 

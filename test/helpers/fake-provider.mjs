@@ -7,17 +7,33 @@ export class FakeProvider {
   epoch = 'doc-1';
   revision = 1;
   grants = new Map();
+  opened = [];
+  activeTab = 'tab-1';
   calls = [];
   delay = 0;
   failAfterDispatch = false;
   postcondition = 'passed';
-  async listTabs(signal) { checkAbort(signal); return [structuredClone(this.tab)]; }
+  tabById(id) { return id === this.tab.id ? this.tab : this.opened.find(tab => tab.id === id); }
+  async listTabs(signal) { checkAbort(signal); return [structuredClone(this.tab), ...structuredClone(this.opened)]; }
+  async open(url, signal) {
+    checkAbort(signal);
+    const tab = { id: `tab-${this.opened.length + 2}`, instanceId: this.instance.id, url, title: `Opened ${this.opened.length + 2}` };
+    this.opened.push(tab);
+    return structuredClone(tab);
+  }
+  async activate(lease, signal) {
+    checkAbort(signal);
+    if (this.grants.get(lease.tab) !== lease.token) throw new BrowserError('LEASE_REVOKED', 'stale lease');
+    this.activeTab = lease.tab;
+  }
   async grant(lease, signal) { checkAbort(signal); this.grants.set(lease.tab, lease.token); }
   async revoke(lease) { if (this.grants.get(lease.tab) === lease.token) this.grants.delete(lease.tab); }
   async observe(lease, signal) {
     checkAbort(signal);
     if (this.grants.get(lease.tab) !== lease.token) throw new BrowserError('LEASE_REVOKED', 'stale');
-    return { tab: lease.tab, url: this.tab.url, title: this.tab.title, documentEpoch: this.epoch,
+    const tab = this.tabById(lease.tab);
+    if (!tab) throw new BrowserError('STALE_TARGET', 'unknown tab');
+    return { tab: lease.tab, url: tab.url, title: tab.title, documentEpoch: this.epoch,
       revision: this.revision++, nodes: structuredClone(this.nodes), text: ['Fixture'], truncated: false };
   }
   async act(lease, request, execution) {

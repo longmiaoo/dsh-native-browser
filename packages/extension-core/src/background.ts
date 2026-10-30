@@ -24,6 +24,7 @@ const pager = new AXPager();
 const frameSessions = new Map<number, FrameSessions>();
 const attached = new Set<number>();
 const pendingDownloads: Lease[] = [];
+const agentTabs = new Set<number>();
 const queues = new Map<number, Promise<unknown>>();
 const changeTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const changeSequences = new Map<number, number>();
@@ -156,6 +157,20 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
     }
     return result;
   }
+  if (method === 'tabs.create') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab creation only accepts a URL');
+    const url = new URL(string(p.url, 8192));
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new BrowserError('POLICY_DENIED', 'Only HTTP(S) tabs can be created');
+    }
+    const tab = await chrome.tabs.create({ url: url.href, active: false });
+    if (tab.id === undefined) throw new BrowserError('INTERNAL_ERROR', 'Chrome did not return a tab ID');
+    agentTabs.add(tab.id);
+    // An agent-created tab is explicitly allowed for this extension session;
+    // the Broker's exact-origin/personal policy remains the authority above it.
+    allowed.set(tab.id, { origin: originOf(tab.url || url.href), scope: 'tab' });
+    return { id: `${instanceId}:${tab.id}`, instanceId, url: tab.url || url.href, title: tab.title || '' };
+  }
   const lease = leaseOf(p.lease), id = tabIdOf(lease);
   if (method === 'lease.grant') {
     if (gates.has(id)) throw new BrowserError('LEASE_BUSY', 'Tab already controlled');
@@ -182,6 +197,12 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
   if (method === 'lease.revoke') {
     if (gates.get(id)?.token === lease.token) await stop(id, false);
     return { released: true };
+  }
+  if (method === 'tabs.activate') {
+    if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab activation only accepts its lease');
+    await ensure(lease, signal); checkGate(lease, signal);
+    await chrome.tabs.update(id, { active: true });
+    return { active: true };
   }
   if (method === 'downloads.arm') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Download arming only accepts its lease');

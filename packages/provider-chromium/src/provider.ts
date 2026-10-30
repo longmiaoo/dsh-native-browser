@@ -81,6 +81,22 @@ export class ChromiumProvider implements BrowserProvider {
   async listTabs(signal: AbortSignal): Promise<TabSummary[]> {
     return await this.channel.call('tabs.list', {}, signal) as TabSummary[];
   }
+  async open(url: string, signal: AbortSignal): Promise<TabSummary> {
+    const target = new URL(url);
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      throw new BrowserError('POLICY_DENIED', 'Only HTTP(S) tabs can be opened');
+    }
+    const tab = await this.channel.call('tabs.create', { url: target.href }, signal) as TabSummary;
+    if (!tab || typeof tab.id !== 'string' || tab.instanceId !== this.instance.id
+      || typeof tab.url !== 'string' || originOf(tab.url) !== target.origin) {
+      throw new BrowserError('INTERNAL_ERROR', 'Created tab metadata is invalid');
+    }
+    return tab;
+  }
+  async activate(lease: Lease, signal: AbortSignal): Promise<void> {
+    const result = await this.channel.call('tabs.activate', { lease }, signal) as Dict;
+    if (!result || result.active !== true) throw new BrowserError('NOT_ACTIONABLE', 'Tab activation was not confirmed');
+  }
   async grant(lease: Lease, signal: AbortSignal): Promise<void> {
     await this.channel.call('lease.grant', { lease }, signal);
   }

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { once } from 'node:events';
 import { fork } from 'node:child_process';
 import { FileActionJournal } from '../dist/packages/broker/src/action-journal.js';
+import { journalKinds } from '../dist/packages/contracts/src/journal.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
@@ -38,6 +39,22 @@ test('durable journal reopens metadata without persisting page payloads or raw i
   assert.deepEqual(journal.lookup('private-owner/request', 'private-payload-digest'), {
     state: 'settled', dispatch: 'dispatched', priorOutcome: 'succeeded', recordedAt: journal.lookup('private-owner/request', 'private-payload-digest').recordedAt });
   assert.throws(() => journal.lookup('private-owner/request', 'changed'), e => e.code === 'REQUEST_ID_CONFLICT');
+});
+
+test('durable journal accepts every portable action kind, including upload/choose/download/visual-click, across reopen', async t => {
+  const dir = await directory(t);
+  let journal = await FileActionJournal.open(dir, secret);
+  for (const [index, kind] of journalKinds.entries()) {
+    const key = `kind-${index}`, hash = `hash-${index}`;
+    assert.equal(await journal.reserve(key, hash, kind), true);
+    await journal.settle(key, { outcome: 'succeeded', dispatch: 'observed' });
+  }
+  await journal.close();
+  journal = await FileActionJournal.open(dir, secret);
+  t.after(() => journal.close());
+  for (const [index, kind] of journalKinds.entries()) {
+    assert.equal(journal.lookup(`kind-${index}`, `hash-${index}`).state, 'settled', kind);
+  }
 });
 
 test('expired fences compact atomically while unexpired records are not evicted for capacity', async t => {

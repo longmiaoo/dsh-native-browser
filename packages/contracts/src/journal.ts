@@ -1,5 +1,7 @@
 import type { Action, ActionResult } from './index.js';
-export type JournalKind = Action['kind'] | 'batch';
+export const journalKinds = ['click', 'fill', 'append', 'press', 'scroll', 'navigate', 'check', 'wheel',
+  'upload', 'choose', 'download', 'visual-click', 'batch'] as const satisfies readonly (Action['kind'] | 'batch')[];
+export type JournalKind = typeof journalKinds[number];
 
 /** No page contents, input values, URLs, tokens, or observations cross this seam. */
 export interface RecoveryRecord {

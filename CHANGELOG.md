@@ -6,6 +6,8 @@ All notable changes will be documented here. The project follows semantic versio
 
 - Add `visual-click`: a screenshot-bound image-pixel box from a multimodal model (or an optional vision tool) is mapped to the CSS viewport and clicked only after document-epoch, viewport scroll/size, hit-target and box-overlap checks.
 - Add `input.visual-click.v1` / `runtime.visual-click.v1` capability negotiation.
+- Add the `tabs` permission so personal-mode discovery can read tab URLs and titles without granting plaintext HTTP host access.
+- Extend the durable action journal's validated kind list to `upload`, `choose`, `download` and `visual-click`, so those actions settle correctly across journal reopen.
 
 ## 0.1.0-alpha.7 - 2026-10-29
 

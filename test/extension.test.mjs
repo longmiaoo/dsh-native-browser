@@ -20,6 +20,7 @@ test('built extension keeps HTTPS host access required and plaintext HTTP option
   assert.equal(manifest.version, '0.1.0.7');
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('downloads'));
+  assert.ok(manifest.permissions.includes('tabs'));
   assert.deepEqual(manifest.host_permissions, ['https://*/*']);
   assert.deepEqual(manifest.optional_host_permissions, ['http://*/*']);
   assert.deepEqual(manifest.content_scripts, [{ matches: ['https://*/*'], js: ['pointer.js'], run_at: 'document_start', all_frames: false }]);

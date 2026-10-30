@@ -3,7 +3,7 @@ import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { createHmac, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { BrowserError, type ActionResult } from '../../contracts/src/index.js';
-import type { ActionJournal, JournalKind, RecoveryRecord } from '../../contracts/src/journal.js';
+import { journalKinds, type ActionJournal, type JournalKind, type RecoveryRecord } from '../../contracts/src/journal.js';
 
 type Stored = { v: 1; key: string; hash: string; kind: JournalKind; at: number; expires: number;
   state: 'reserved' | 'settled'; dispatch: 'notDispatched' | 'dispatched'; priorOutcome?: ActionResult['outcome'] };
@@ -80,7 +80,7 @@ export class FileActionJournal implements ActionJournal {
   private validate(v: any): void {
     const fields = ['v', 'key', 'hash', 'kind', 'at', 'expires', 'state', 'dispatch', ...(v?.state === 'settled' ? ['priorOutcome'] : [])];
     if (!v || typeof v !== 'object' || Object.keys(v).length !== fields.length || Object.keys(v).some(k => !fields.includes(k))
-      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !['click', 'fill', 'append', 'press', 'scroll', 'navigate', 'check', 'wheel', 'batch'].includes(v.kind)
+      || v.v !== 1 || !hex.test(v.key) || !hex.test(v.hash) || !journalKinds.includes(v.kind)
       || !Number.isSafeInteger(v.at) || v.at < 0 || !Number.isSafeInteger(v.expires) || v.expires <= v.at
       || !['reserved', 'settled'].includes(v.state) || !['notDispatched', 'dispatched'].includes(v.dispatch)
       || v.state === 'reserved' && v.dispatch !== 'dispatched'

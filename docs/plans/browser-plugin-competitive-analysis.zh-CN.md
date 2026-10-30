@@ -36,7 +36,7 @@
 | dsh-browser-control | dsh-browser-control | 0.1.0 | 548 | 48 | CDP/Playwright + WebSocket |
 | dsh-browser4 | dsh-browser4 | 0.0.1 | 934 | 10 | Browser4 CLI 技能包 |
 | dsh-aginxbrowser | dsh-aginxbrowser | 0.1.1 | ~1,000 | 55 | JS 渲染抓取/搜索（相邻） |
-| **dsh-native-browser（我们）** | **dsh-native-browser** | **0.1.0-alpha.7（索引）/ alpha.11（准备发布）** | **910** | **4** | **真实用户 Chrome + 严格租约** |
+| **dsh-native-browser（我们）** | **dsh-native-browser** | **0.1.0-alpha.7（索引）/ alpha.12（准备发布）** | **910** | **4** | **真实用户 Chrome + 严格租约** |
 
 ## 3. 竞品分层
 
@@ -147,7 +147,7 @@
 - 缺 UI 面板/实时状态。
 - 市场索引/能力扫描滞后，旧红线未清。
 
-### 5.4 当前已实现（alpha.11 基线）
+### 5.4 当前已实现（alpha.12 基线）
 
 - 一条命令安装：稳定扩展目录、Native Host、macOS LaunchAgent Broker、自动打开扩展页和 Finder；
 - visual-click、上传/下载/选择框、多标签 open/activate/release-all、agent tab 分组/关闭；
@@ -181,7 +181,7 @@
 
 ### W1（10/30–11/05）：让优势可见
 
-- `0.1.0-alpha.11` 已准备一条命令安装；本周期做发布、市场 rescan/图标、pointer demo；
+- `0.1.0-alpha.12` 已准备一条命令安装；本周期做发布、市场 rescan/图标、pointer demo；
 - README/市场：Codex-like 标题、虚拟鼠标 GIF/短视频、三行卖点；
 - 合并市场 rescan issue #10507 + 图标 PR；
 - 安装脚本化：已完成稳定扩展暂存、Host、macOS 后台 Broker 和自动页面引导。

@@ -47,7 +47,7 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-These instructions pin the published `0.1.0-alpha.10` and use the DSH `web` profile. The [development version](#develop-the-next-version) prepares `alpha.11` with a one-command installer and isolated tool names. For `desktop`, replace `web` consistently in every command. Install separately into each profile you use.
+These instructions pin the published `0.1.0-alpha.10` and use the DSH `web` profile. The [development version](#develop-the-next-version) prepares `alpha.12` with a one-command installer and isolated tool names. For `desktop`, replace `web` consistently in every command. Install separately into each profile you use.
 
 **macOS + Google Chrome** is the primary validation target. You need Node.js ≥ 22.19, a working DSH installation and pnpm 11. Recorded DSH validation uses `0.1.5-rc.1`; the published package declares `>=0.1.5-rc.1 <0.3.0`. Reports from other versions are welcome.
 
@@ -166,7 +166,7 @@ These directions welcome proposals; use discussions in concrete issues and repro
 
 ## Develop the next version
 
-This checkout prepares `0.1.0-alpha.11`. Its metadata records compatibility with DSH `0.1.5-rc.1` and `0.2.1-rc.3`, within the declared `>=0.1.5-rc.1 <0.3.0` range. Use its local-plugin installation instructions when developing from source; the published `alpha.10` quickstart above remains a separate route.
+This checkout prepares `0.1.0-alpha.12`. Its metadata records compatibility with DSH `0.1.5-rc.1` and `0.2.1-rc.3`, within the declared `>=0.1.5-rc.1 <0.3.0` range. Use its local-plugin installation instructions when developing from source; the published `alpha.10` quickstart above remains a separate route.
 
 The development version adds a one-command installer. From a built local checkout:
 
@@ -180,7 +180,7 @@ The installer starts a personal Broker while the adapter retains its default `pe
 
 ### Tool names and coexistence
 
-`alpha.11` uses `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix permits coexistence with other browser plugins. Published `alpha.10` uses the earlier `browser_*` names.
+`alpha.12` uses `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix permits coexistence with other browser plugins. Published `alpha.10` uses the earlier `browser_*` names.
 
 For an older prompt or automation that needs the aliases, opt in explicitly:
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.0-alpha.11",
+  "version": "0.1.0-alpha.12",
   "description": "Fluid, native Chrome automation for DeepSeek Harness, inspired by Codex browser workflows",
   "type": "module",
   "main": "index.js",

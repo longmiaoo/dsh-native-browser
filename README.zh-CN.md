@@ -44,7 +44,7 @@
 
 ## 开始试用
 
-下面安装已发布的 `0.1.0-alpha.10`，使用 DSH `web` profile。[开发版本](#开发下一个版本)正在准备 `alpha.11`，增加一键安装和独立工具命名。安装到 `desktop` 时，将命令中的 `web` 一致替换为 `desktop`。两个 profile 需要分别安装。
+下面安装已发布的 `0.1.0-alpha.10`，使用 DSH `web` profile。[开发版本](#开发下一个版本)正在准备 `alpha.12`，增加一键安装和独立工具命名。安装到 `desktop` 时，将命令中的 `web` 一致替换为 `desktop`。两个 profile 需要分别安装。
 
 环境以 **macOS + Google Chrome** 为首要验证目标。需要 Node.js ≥ 22.19、可运行的 DSH 和 pnpm 11。已记录的 DSH 验证版本是 `0.1.5-rc.1`；发布包声明兼容 `>=0.1.5-rc.1 <0.3.0`，其他版本仍欢迎提交兼容性反馈。
 
@@ -162,7 +162,7 @@ pnpm test
 
 ## 开发下一个版本
 
-当前检出代码正在准备 `0.1.0-alpha.11`，元数据记录了 DSH `0.1.5-rc.1` 和 `0.2.1-rc.3` 的兼容性，声明范围为 `>=0.1.5-rc.1 <0.3.0`。源码开发请使用对应的本地插件安装说明；上面的已发布 `alpha.10` 是独立的安装路线。
+当前检出代码正在准备 `0.1.0-alpha.12`，元数据记录了 DSH `0.1.5-rc.1` 和 `0.2.1-rc.3` 的兼容性，声明范围为 `>=0.1.5-rc.1 <0.3.0`。源码开发请使用对应的本地插件安装说明；上面的已发布 `alpha.10` 是独立的安装路线。
 
 开发版本增加了一键安装器。在已完成构建的本地仓库中运行：
 
@@ -176,7 +176,7 @@ node bin/dsh-native-browser.mjs install --browser=chrome
 
 ### 工具命名与共存
 
-`alpha.11` 使用 `native_browser_*` 命名，包括 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立前缀便于与其他浏览器插件共存；已发布 `alpha.10` 使用早期的 `browser_*` 名称。
+`alpha.12` 使用 `native_browser_*` 命名，包括 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立前缀便于与其他浏览器插件共存；已发布 `alpha.10` 使用早期的 `browser_*` 名称。
 
 旧提示词或自动化需要兼容别名时，可显式开启：
 

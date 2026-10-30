@@ -60,6 +60,11 @@ test('LaunchAgent plist pins a personal Broker and escapes paths', () => {
 });
 
 test('quick install stages the extension, registers the host, starts the service and opens setup', async t => {
+  // Exercise macOS orchestration on every CI platform. Both OS command runners
+  // are mocked below; never invoke the host machine's desktop or launchctl.
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' });
+  t.after(() => Object.defineProperty(process, 'platform', platform));
   const root = await mkdtemp('/tmp/dsh-quick-');
   t.after(() => rm(root, { recursive: true, force: true }));
   const runtime = path.join(root, 'runtime');
@@ -75,9 +80,22 @@ test('quick install stages the extension, registers the host, starts the service
   assert.equal(result.service.label, SERVICE_LABEL);
   assert.deepEqual(calls.map(args => args[0]), ['bootout', 'bootstrap']);
   assert.equal(opened.length, 2);
+  assert.deepEqual(opened[0], { file: '/usr/bin/open', args: ['-a', 'Google Chrome', 'chrome://extensions/'] });
+  assert.deepEqual(opened[1], { file: '/usr/bin/open', args: ['-R', result.extensionPath] });
   await readFile(path.join(runtime, 'extension', 'chrome', 'manifest.json'));
   await readFile(path.join(manifestDir, 'com.longmiaoo.dsh_native_browser.json'));
   await readFile(path.join(plistDir, `${SERVICE_LABEL}.plist`));
+});
+
+test('Broker service rejects unsupported platforms before creating a LaunchAgent', async t => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+  t.after(() => Object.defineProperty(process, 'platform', platform));
+  let launched = false;
+  await assert.rejects(installBrokerService({ directory: '/unused', cliPath: bin,
+    accessMode: 'personal', launchctl: async () => { launched = true; } }),
+  { code: 'UNSUPPORTED_CAPABILITY' });
+  assert.equal(launched, false);
 });
 
 test('CLI install supports a headless dry path without opening UI or installing a service', async t => {

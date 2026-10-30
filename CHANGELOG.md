@@ -2,7 +2,14 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## 0.1.0-alpha.11 - 2026-10-30
+## 0.1.0-alpha.12 - 2026-10-30
+
+- Include the one-command installer and isolated tool namespace prepared for alpha.11.
+- Simulate the macOS platform explicitly in the installer orchestration test and keep both OS command runners mocked, so Ubuntu publication exercises the same scenario without invoking macOS services.
+- Add an unsupported-platform service regression test and an Ubuntu package CI job before release tagging.
+- Alpha.11 was tagged but not published to npm: its release verification caught the platform-dependent test. Its tag is preserved unchanged.
+
+## 0.1.0-alpha.11 - 2026-10-30 (unpublished)
 
 - Add a one-command `install` flow: stage the Chrome/Edge bundle in a stable private directory, register the Native Messaging host, install and start a macOS user LaunchAgent for the Broker, then open the browser extension page and the staged folder.
 - Keep the sole unavoidable Chrome Stable step explicit: the user confirms **Load unpacked** once. The installer never automates Chrome UI or weakens extension installation security.

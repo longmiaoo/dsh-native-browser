@@ -2,7 +2,7 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.1.0-alpha.10 - 2026-10-30
 
 - Add `browser_act` `dialog` handling for pending `alert`, `confirm`, `prompt` and `beforeunload` dialogs: accept or dismiss the exact leased tab's dialog, optionally provide bounded prompt text, return typed dialog evidence, and continue with a text/state postcondition.
 - Add `input.dialog.v1` / `runtime.dialog.v1` capability negotiation. Dialog control bypasses the blocked page-command queue so a synchronous `confirm()` cannot deadlock behind the click that opened it.

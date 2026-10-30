@@ -1,5 +1,31 @@
 # Contributing
 
+Help make browser work in DSH feel fluid and continuous. A useful contribution can be a task report, a clearer installation step, a small reproducible page, or a focused code change.
+
+## Choose a starting point
+
+| What you can help with | A useful first step |
+|---|---|
+| Try a browser task | Describe your goal, the step that felt rough, and what you expected. |
+| Compare the experience with Codex | Identify a concrete gap in response, pauses between actions, feedback or handoff. |
+| Improve docs or translations | Correct a command, explain a confusing error, or improve a task example in both README languages. |
+| Reproduce a failure | Provide a public test page and minimal steps without private account data. |
+| Improve implementation | Pick one connection, observation, action, installation or compatibility issue and define how to verify it. |
+
+Start with [existing issues](https://github.com/longmiaoo/dsh-native-browser/issues), or open an issue describing your task and proposed scope. Discuss protocol, permission and broad architecture changes before implementation. Do not assume a new capability has been agreed merely because it appears in a roadmap.
+
+## Report an experience problem
+
+Include the task goal, OS/Chrome/DSH/plugin versions, model, web or desktop profile, approval mode, reproduction steps, expected behavior and actual behavior. A redacted recording or timing trace helps when a pause is hard to describe. Follow [SECURITY.md](SECURITY.md) for vulnerabilities; keep tokens, cookies, account data and private page content out of public reports.
+
+## Match verification to the change
+
+For documentation-only changes, verify commands against the version they install, check links, keep [English](README.md) and [Chinese](README.zh-CN.md) instructions aligned, and run the existing documentation checks if their covered text changes. Task reports and reproductions do not require the full development suite.
+
+For code changes, follow the engineering requirements below. Add tests for changed behavior and run the relevant real-browser checks for affected paths. Performance changes should retain failure cases and distinguish model time, setup time and browser execution time.
+
+## Architecture scope
+
 Chrome is the first production target. Browser-independent contracts are required from day one; Chrome and Edge share the Chromium engine. Follow the [v2 plan](docs/plans/browser-runtime-plan-v2.zh-CN.md), which supersedes the earlier decision to defer browser abstractions.
 
 ## Before opening a change

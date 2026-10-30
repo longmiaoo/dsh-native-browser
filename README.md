@@ -1,200 +1,188 @@
 # dsh-native-browser
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser icon" />
-</p>
+> Fluid, native Chrome automation for DeepSeek Harness.
 
-> DSH-native control plane for fast, observable and human-steerable browsing in the Chrome you already use.
+[![Alpha](https://img.shields.io/badge/status-alpha-orange)](#current-capabilities-and-limits) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
-[![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#project-status)
-[![Chrome first](https://img.shields.io/badge/browser-Chrome-4285F4?logo=googlechrome&logoColor=white)](#scope)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+Let DSH work in the Chrome you already use—with your existing tabs, signed-in sessions and extensions. Ask it to read pages, fill forms and work through browser tasks, with visible actions and explicit handoff when you need control.
 
-`dsh-native-browser` lets DSH agents operate the Chrome you already use: existing tabs, signed-in sessions and normal extensions, with low-latency semantic observation, reliable actions, visible handoff and safe interruption.
+**Our experience benchmark is Codex: we want people moving from Codex to DSH to find browser work just as natural and continuous.** This is an open alpha, and we are building toward that goal.
 
-This project is not trying to become another general-purpose Chrome MCP server. Google's official [Chrome DevTools for agents](https://github.com/ChromeDevTools/chrome-devtools-mcp) is the natural upstream capability layer for DevTools inspection, network analysis, performance traces, Lighthouse, CSS and memory debugging. `dsh-native-browser` focuses on the product layer that a generic MCP server does not own: DSH conversation identity, exact tab ownership, short-lived leases, approval policy, action-result semantics, visible agent presence and immediate human takeover.
+We want browser work to feel smooth enough that you choose to delegate more of it. Bring a real task, show us where the experience breaks down, and help improve the next step.
 
-The target is not another thin `click(x, y)` wrapper. The design is a stateful browser runtime inspired by the strongest parts of Codex's Chrome integration:
+## The experience we are building
 
-- a Manifest V3 Chrome extension connected to a local runtime through Native Messaging;
-- CDP-backed control without launching a second browser profile;
-- accessibility-tree-first observation with compact incremental updates;
-- stable element references plus actionability and hit-target checks;
-- explicit ownership for existing tabs, agent-created tabs and end-of-turn cleanup;
-- automatic control release when the visible DSH UI switches to another conversation;
-- immediate human interruption and resumable handoff;
-- a presentation-only virtual pointer and click/wheel pulse after verified browser input;
-- screenshots as a visual fallback, not the default source of page structure.
+| What matters to you | What the project works on |
+|---|---|
+| Work in a familiar browser | Connect to existing Chrome tabs, logins and extensions. |
+| Keep actions connected | Preserve browser connections; use semantic observations, scoped reads, incremental results and bounded batches. |
+| See what the agent is doing | Operate real pages and show pointer feedback for dispatched clicks and wheel actions. |
+| Take control when needed | Release control through the extension Stop button or explicit handoff. Switching DSH conversations also revokes the previous conversation's control. |
+| Recover without guessing | Check actionability and distinguish verified results from unknown outcomes, avoiding blind duplicate actions. |
 
-## Positioning
+“Native” means integration with DSH sessions, tools and approvals, together with direct control of existing Chrome. The plugin runs in DSH; Codex is the experience reference.
 
-The long-term direction is **DSH-native orchestration with first-party Chrome capabilities where they fit**, not a fork of Chrome DevTools.
+## Tasks to try
 
-| Concern | Chrome DevTools for agents | `dsh-native-browser` |
-|---|---|---|
-| Primary job | General MCP/CLI access to Chrome DevTools | DSH-native personal-browser control and human-agent UX |
-| Browser state | Managed profile, debugging endpoint or Chrome auto-connect | Explicitly claimed tabs in the user's existing profile |
-| Observation | Accessibility snapshot with reusable UIDs | Bounded AX windows, document epochs, scoped refs and incremental observations |
-| Action result | Browser input dispatch plus bounded navigation/DOM settling | Pre-dispatch hit validation, persistent action journal and verified/unknown outcome semantics |
-| Ownership | Selected page or explicit page ID | DSH owner, tab lease, conversation-focus revocation and handoff |
-| Human visibility | Headed browser; visual cursor is not currently built in | Presentation-only virtual pointer, click/wheel pulse and extension Stop control |
-| Deep debugging | Network, console, CSS, Lighthouse, trace and heap tooling | Planned through an optional official DevTools provider instead of reimplementation |
-| Browser scope | Official support for Chrome and Chrome for Testing | Chrome first, with portable contracts and early Edge compatibility gates |
+After installing and authorizing the relevant sites, ask DSH:
 
-The current alpha ships only the native Chromium path. An adapter for `chrome-devtools-mcp` is a planned provider, not an implemented feature. It must pass attachment-conflict, lifecycle, privacy and latency gates before it can share or replace any part of an active browser session. See the upstream discussions on [visual cursor support](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2401) and [silent input false positives](https://github.com/ChromeDevTools/chrome-devtools-mcp/issues/2199) for two examples of why the DSH control plane remains useful.
-
-## Product benchmark: Codex
-
-The experience benchmark is the browser integration in OpenAI Codex: browser work should feel like one continuous, observable collaboration rather than a chain of disconnected remote calls. The goal is experience parity where it can be measured, not protocol compatibility, visual imitation or use of private OpenAI implementation details.
-
-`dsh-native-browser` specifically benchmarks the following behaviors:
-
-- **Use the browser the user is already in:** preserve signed-in state, open tabs and normal Chrome extensions instead of making routine work start in a disposable automation profile.
-- **Keep the fast path semantic:** inspect compact accessible state and stable element references first; use screenshots and vision only when pixels contain necessary information.
-- **Make actions both visible and trustworthy:** show a virtual pointer for human observability, revalidate the hit target immediately before input, and verify the resulting page state instead of treating input dispatch as success.
-- **Let the human remain in charge:** Stop, direct user interaction, handoff, lease expiry and switching the visible DSH conversation revoke control without transferring authority to another conversation.
-- **Preserve continuity without leaking ownership:** keep browser connections and observations alive across tool calls while binding every tab, reference and continuation to its owner, document epoch and connection epoch.
-- **Leave the workspace clean:** distinguish claimed user tabs from agent-created tabs, close ephemeral work and retain only explicit deliverables or handoffs.
-
-Parity claims require evidence. Release gates should track end-to-end action latency, observation size, stale-target rate, verified-action success, duplicate-action rate, interruption latency, conversation-switch revocation and tab-cleanup correctness on real Chrome workflows. Until those gates pass broadly, this README describes Codex as the benchmark—not as a completed equivalence claim.
-
-## Project status
-
-**Public alpha — usable for opt-in Chrome testing, not production-ready.** The package contains a typed runtime, per-user Broker, Native Messaging host, shared Chrome/Edge extension builds, a Chromium AX/action provider, a small DSH Web foreground-conversation bridge and 13 namespace-isolated `native_browser_*` DSH tools, including bounded live page windows, separately approved action batches and metadata-only frame discovery. The new installer stages the extension, registers the host, starts the macOS Broker service and opens the setup pages in one command; Chrome Stable still requires one explicit **Load unpacked** confirmation. Broad page compatibility, visual-model accuracy and production hardening remain acceptance work rather than completed claims.
-
-Verified so far: deterministic contract/security tests; exact npm tarball installation into a fresh DSH `0.1.5-rc.1` profile; the assembled local stack in isolated Chrome-for-Testing profiles; and one end-to-end run in an existing local Chrome profile on an owned fixture. The real MV3 extension, Chrome-started Native Host, Unix socket, Broker, installed DSH ToolRuntime, AX actions, screenshot attachment and handoff paths were exercised. Live gates also cover delayed results, cancellation, Stop, late approval after turn end, and Broker restart without replay. No sensitive business account workflow or production visual-model accuracy claim has passed acceptance yet. See [development setup](docs/development.md) and [implementation progress](docs/implementation-progress.md) for exact evidence and limitations.
-
-The early Edge compatibility smoke also passes in an isolated Edge profile with the same runtime-core: 20 unchanged executor fixture oracles plus batch, paging, navigation, Stop and handoff checks. This is an architecture gate, not formal Edge release support; see [the retained evidence](docs/compatibility/2026-09-12-edge-native.json).
-
-## Scope
-
-Frame discovery now maps same-process and recursive OOPIF documents in real isolated Chrome and Edge tests. Explicit `native_browser_observe` frame reads support a same-origin ancestor chain, with separate child refs/deltas and exact child-document or known-region queries via `frame` + `query` + optional `rootRef`; `native_browser_read_page({frame,...})` provides bounded child-document/region windows; and explicit same-origin/same-process child clicks use `native_browser_act({frame,...})` with child-only text verification, including feedback outside the default bounded view. Other child actions and cross-origin approval remain pending. Frame origins alone are metadata, not permission. Screenshot checks inspect all attached sessions; visible top-level iframe branches containing foreign or opaque descendants are redacted inside MV3 before bytes cross Native Messaging, while incomplete geometry still fails closed. See [frame discovery](docs/development.md#frame-discovery-foundation).
-
-In scope for the first production release:
-
-- Google Chrome stable on macOS first; Windows/Linux support follows separate installer and compatibility gates;
-- the user's existing Chrome profile and authenticated sessions;
-- DSH `web` and `desktop` profiles;
-- semantic browsing, screenshots, downloads, dialogs, files and multi-tab workflows;
-- local-only control plane with explicit permissions and auditable lifecycle events.
-
-Architectural interfaces are cross-browser from day one. Deferred production support includes:
-
-- Edge and other Chromium brands (shared engine; early smoke testing before formal support), Firefox and Safari (separate providers);
-- hosted/remote browser farms;
-- CAPTCHA bypass or stealth claims;
-- arbitrary unrestricted CDP exposed directly to the model.
-
-## Planned architecture
-
-```mermaid
-flowchart LR
-    W[Visible DSH conversation] -->|opaque session ID| T
-    A[DSH agent] --> T[Browser tool adapter]
-    T --> R[Persistent browser runtime]
-    R --> G[Ownership / policy / journal]
-    G --> P{Capability router}
-
-    P -->|current default| N[Native Chromium provider]
-    N --> H[Local native host]
-    H <--> E[Chrome MV3 extension]
-    E <--> C[Claimed Chrome tabs via chrome.debugger / CDP]
-
-    P -.->|planned optional route| D[Chrome DevTools MCP adapter]
-    D -.-> M[Official DevTools MCP sidecar]
-    M -.-> X[Managed or explicitly connected Chrome]
-
-    C --> O[AX / DOM / screenshot observations]
-    O --> R
-    U[Human using Chrome] <--> C
-    U -. interrupt / handoff .-> R
+```text
+Read the documentation page I specify, summarize the key steps and caveats,
+then release browser control.
 ```
 
-The runtime keeps live browser objects and event subscriptions out of the model context. The model receives compact, typed observations and stable references; the runtime performs freshness, visibility, stability and hit-target checks immediately before actions. The capability router will expose a small DSH-facing surface and choose an eligible provider internally, so adding DevTools or future Edge/Firefox providers does not flood the model with dozens of vendor-specific tools.
+```text
+Fill this test form with the details I provide. Check every field,
+then hand control back to me before submitting.
+```
 
-The planned DevTools adapter is complementary: routine browsing, leases, virtual pointer and human handoff remain on the native control path; specialized debugging can delegate to the official implementation. The router will not assume that two providers can attach to the same target concurrently.
+```text
+Read the reference pages I specify and build a comparison table.
+Keep the relevant pages open and release control when finished.
+```
 
-The current design is the [v2 runtime implementation plan](docs/plans/browser-runtime-plan-v2.zh-CN.md), including [Vision Router integration](docs/plans/vision-router-integration.zh-CN.md). Earlier [architecture](docs/architecture.md), [research](docs/research/codex-chrome-browser-architecture.md) and [protocol](docs/protocol.md) documents are historical inputs; they do not override the v2 plan or describe all current implementation details.
+Results depend on the page, model and permission configuration. Start with the public-page task below, then try familiar sites.
 
-## DSH discovery metadata
+## Try it
 
-The package is structured as a DSH bundle and includes the discovery terms used by the ecosystem:
+These instructions pin the published `0.1.0-alpha.10` and use the DSH `web` profile. The [development version](#develop-the-next-version) prepares `alpha.11` with a one-command installer and isolated tool names. For `desktop`, replace `web` consistently in every command. Install separately into each profile you use.
 
-- npm keywords: `dsh-plugin`, `deepseek-harness`, `browser-automation`, `computer-use`, `chrome-extension`;
-- GitHub topics: `dsh-plugin`, `deepseek-harness`, `browser-automation`, `computer-use`, `browser-agent`;
-- bundle declaration: `dsh.bundle.patch` in `package.json`;
-- compatibility declaration for DSH `0.1.5` release candidates and the `web`/`desktop` profiles.
+**macOS + Google Chrome** is the primary validation target. You need Node.js ≥ 22.19, a working DSH installation and pnpm 11. Recorded DSH validation uses `0.1.5-rc.1`; the published package declares `>=0.1.5-rc.1 <0.3.0`. Reports from other versions are welcome.
 
-## Quick install the alpha
-
-Prerequisites: macOS, Google Chrome, DSH `0.1.5-rc.1`, Node.js 22.19 or newer, and pnpm 11. The npm package ships built JavaScript and does not run a build script during installation.
+### 1 Install and register the connection components
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.11
-dsh plugin --profile web exec dsh-native-browser install --browser=chrome
-```
-
-`install` performs the non-interactive setup:
-
-- copies the extension to a stable private path that survives npm upgrades;
-- registers the Native Messaging host with the packaged extension's stable public key;
-- installs and starts a per-user macOS LaunchAgent Broker in personal tab-consent mode;
-- opens the browser's extension page and reveals the staged directory in Finder.
-
-The only remaining manual step is the security confirmation Chrome Stable intentionally requires: enable **Developer mode**, choose **Load unpacked**, and select the printed stable extension directory. The installer never automates Chrome UI or bypasses extension trust with managed policy.
-
-Rerun the same `install` command after upgrading the npm package; it refreshes the staged files, host and Broker. Then click **Reload** once for the extension on `chrome://extensions`. `dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome` stops the Broker and removes the Native Host registration; remove the extension itself from the browser's extension page when desired.
-
-### Approval mode
-
-Quick install uses a personal Broker, so allowed tabs do not require a popup click on every discovery. The DSH adapter still defaults to `per-action`, preserving one DSH approval per action. To reduce repeated confirmations in everyday personal browsing, explicitly set:
-
-```yaml
-- id: native-browser
-  config:
-    approvalMode: personal
-```
-
-Restart the DSH profile after the change. Personal mode still enforces extension tab consent, tab-scoped leases, foreground-conversation revocation, Stop and origin checks; this alpha is still unsuitable for payments, publishing or destructive business actions.
-
-### Restricted or manual setup
-
-For an exact site allowlist, install a restricted Broker:
-
-```bash
-dsh plugin --profile web exec dsh-native-browser install --browser=chrome \
-  --access-mode=restricted --allow-origin=https://example.com
-```
-
-Restricted mode requires at least one exact origin, including any port. For headless or remote environments that cannot install a macOS service, the compatible lower-level path remains available:
-
-```bash
-dsh plugin --profile web exec dsh-native-browser install --browser=chrome --no-service --no-open
+dsh plugin --profile web add dsh-native-browser@0.1.0-alpha.10
 dsh plugin --profile web exec dsh-native-browser setup --browser=chrome
-dsh plugin --profile web exec dsh-native-browser broker --access-mode=personal
 ```
 
-`setup` and `extension-path` remain available for fully manual extension handling. See the [explicit setup and diagnostic guide](docs/development.md#explicit-chromeprofile-setup) before using a signed-in page.
+`setup` registers the Native Messaging host and prints `extensionPath` and the stable extension ID.
 
-When the visible DSH UI changes conversations, the client bridge releases browser scopes owned by other conversations before the newly selected conversation can claim control. A new conversation never inherits the previous lease. Switching away therefore intentionally interrupts an in-flight browser task instead of letting a background chat keep driving Chrome.
+Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `extensionPath`. If an older unpacked extension is present, follow the setup instructions to remove it before loading this build.
 
-## Use the current alpha
+### 2 Start the first connection
 
-The currently prepared npm version is `0.1.0-alpha.11`. The examples below use the DSH `web` profile; replace `web` consistently if the plugin was installed into another profile.
+Run the following command in a terminal and keep it running. This first-run route admits only `https://example.com` and uses the default approval for individual actions.
 
-### Start a browsing session
+```bash
+dsh plugin --profile web exec dsh-native-browser broker --allow-origin=https://example.com
+```
 
-1. Run quick install once and complete Chrome's **Load unpacked** confirmation; on macOS the LaunchAgent starts the Broker after future logins.
-2. Open the tab you want to use in Chrome. When Chrome or the extension asks for site access, grant it only to the intended tab/site. The extension popup is also the emergency Stop control.
-3. Talk to DSH normally. The agent discovers the `native_browser_*` tools automatically; users do not need to construct lease IDs, element refs, document epochs or request IDs.
+The selected DSH profile's `native-browser` configuration should use the default `approvalMode: per-action`. If you previously changed it, check the [configuration guide](docs/development.md#explicit-chromeprofile-setup).
 
-### Tool namespace and coexistence
+Restart the corresponding DSH profile. Open `https://example.com` in the intended Chrome profile, then use the extension popup to allow that tab and connect.
 
-Every official tool uses the isolated `native_browser_*` namespace, such as `native_browser_claim`, `native_browser_observe` and `native_browser_act`. DSH fails closed on duplicate tool names within one layer; the dedicated prefix allows coexistence with `browser_*`, `dsh_browser_*`, `bsk_*` and other browser plugins.
+### 3 Finish a first task
 
-Legacy `browser_*` names are no longer registered by default. Existing prompts or local automations can explicitly opt in:
+Send this to DSH:
+
+```text
+Claim the authorized tab titled “Example Domain”, read its title and main
+content, then release browser control.
+```
+
+Approve the requested tool operations. A successful first run returns the correct page content and releases control while leaving the page open.
+
+If the connection fails, run:
+
+```bash
+dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome
+```
+
+`ready` means the connection components are healthy. A page task still needs authorization for the relevant tab.
+
+### Configure continuous everyday use
+
+Once the first connection works, choose `per-lease`, `trusted` or explicitly enabled `personal` mode as appropriate to reduce individual approval prompts. See [approval modes](docs/development.md#approval-modes) for their scope and complete configuration.
+
+`personal` requires matching Broker and DSH settings. Follow the guide when switching an existing process; use one Broker per runtime directory. This alpha is unsuitable for payments, destructive business operations, password entry or unattended tasks.
+
+## Current capabilities and limits
+
+`alpha.10` includes semantic reads, clicks, text entry, scrolling, checkbox/radio actions, batches, multiple tabs, screenshots, guarded visual clicks, and actions for uploads, downloads and native dialogs. See the [changelog](CHANGELOG.md) and that version's bundled documentation for exact conditions. The [implementation inventory](docs/current-implementation.zh-CN.md) describes the development version, which can contain changes that have not shipped.
+
+- Cross-origin iframe content and actions remain bounded. Discovering a frame does not authorize reading it.
+- Visual clicks require a screenshot and suitable model understanding. The plugin does not run a vision model itself.
+- Explicit Stop and handoff are implemented. Recognizing arbitrary human intervention and resuming seamlessly still needs work.
+- Edge has early compatibility evidence; formal support and complete validation on other operating systems remain work in progress.
+- Chrome currently loads the extension manually. Easier installation and upgrades are contribution opportunities.
+
+The control connection runs locally. Page text and screenshots may be sent through DSH to your configured model; choose content according to your DSH and model provider's data policies.
+
+## Contribute
+
+**The most useful feedback starts with: “This task stopped feeling smooth here.”** You can help by trying, recording and reproducing a problem before deciding whether to change code.
+
+| How you want to help | A useful contribution |
+|---|---|
+| Try an everyday task | Explain the goal, the step that stalled and the behavior you expected. |
+| Bring experience with Codex | Identify a concrete gap in initial response, pauses between actions, page feedback or handoff. |
+| Improve docs or translations | Clarify installation, errors, task examples and English or Chinese documentation. |
+| Build tests or web interfaces | Turn a failing step into a small public page and reproducible case. |
+| Work on browsers or systems | Improve reconnection, semantic observation, action waiting, compatibility or installation. |
+
+Start with [existing issues](https://github.com/longmiaoo/dsh-native-browser/issues) or [propose a concrete improvement](https://github.com/longmiaoo/dsh-native-browser/issues/new). If there is no suitable task, describe the scenario you want to improve. Discuss protocol, permission or large architectural changes before implementation to reduce rework.
+
+### Report a rough edge
+
+Include what you can safely share:
+
+```text
+Task goal:
+OS, Chrome, DSH and plugin versions:
+Model, web/desktop profile and approval mode:
+Step that stalled or behaved unexpectedly:
+Expected behavior / actual behavior:
+Minimal reproduction or public test page:
+Optional: redacted recording, diagnostics, timing
+```
+
+Keep cookies, tokens, account details and private screenshots out of public issues. Follow the [security reporting policy](SECURITY.md) for vulnerabilities.
+
+### Start a code contribution
+
+From a local checkout:
+
+```bash
+pnpm install
+pnpm check
+pnpm typecheck
+pnpm test
+```
+
+Start with a focused change and read the [contribution guide](CONTRIBUTING.md). Browser behavior changes also need appropriate real-Chrome verification; performance changes should include reproducible before/after results. Recordings, documentation and reproductions are valuable contributions in their own right.
+
+## What to improve next
+
+- Make first connection, installation and upgrades easier.
+- Reduce idle gaps, repeated observations and unnecessary model round trips.
+- Improve action feedback, stopping, handoff and continuation.
+- Validate fluidity and compatibility on more real-site tasks.
+- Expand validation across DSH Desktop, Web and browser versions.
+
+These directions welcome proposals; use discussions in concrete issues and reproducible tasks to define the work. See the [roadmap](docs/roadmap.md) for the broader plan.
+
+## Develop the next version
+
+This checkout prepares `0.1.0-alpha.11`. Its metadata records compatibility with DSH `0.1.5-rc.1` and `0.2.1-rc.3`, within the declared `>=0.1.5-rc.1 <0.3.0` range. Use its local-plugin installation instructions when developing from source; the published `alpha.10` quickstart above remains a separate route.
+
+The development version adds a one-command installer. From a built local checkout:
+
+```bash
+node bin/dsh-native-browser.mjs install --browser=chrome
+```
+
+On macOS, it stages the extension under a stable private path, registers the Native Messaging host, starts a LaunchAgent Broker and opens the extension setup page. Complete Chrome's **Load unpacked** confirmation manually, then mount the local bundle into a dedicated DSH development profile. See [installation details](docs/development.md#explicit-chromeprofile-setup). After an upgrade, rerun installation and reload the extension. A service installed this way supplies the Broker; do not also start a competing manual Broker in the same runtime directory.
+
+The installer starts a personal Broker while the adapter retains its default `per-action` approvals. To opt in to fewer prompts for ordinary personal browsing, set `approvalMode: personal` on the profile's existing `native-browser` row and restart that DSH profile. Explicit Stop, handoff and conversation switching continue to release control.
+
+### Tool names and coexistence
+
+`alpha.11` uses `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix permits coexistence with other browser plugins. Published `alpha.10` uses the earlier `browser_*` names.
+
+For an older prompt or automation that needs the aliases, opt in explicitly:
 
 ```yaml
 - id: native-browser
@@ -202,83 +190,30 @@ Legacy `browser_*` names are no longer registered by default. Existing prompts o
     legacyToolNames: true
 ```
 
-If another plugin already owns one of those legacy names, the alias is skipped while the canonical `native_browser_*` tool remains available. The plugin never overwrites the other registration.
+Aliases already owned by another plugin are skipped; the canonical `native_browser_*` tools remain available. New integrations should use the canonical names.
 
-Safe prompts for a first run:
+## Technical foundations and evidence
 
-```text
-列出我当前 Chrome 中可用的标签页，只汇报，不做任何操作。
-接管标题为“Example Domain”的标签页，读取页面内容，然后释放浏览器控制。
-在我指定的标签页中填写这个测试表单，提交前先停下来让我确认。
-```
+Semantic observations describe the page, actionability checks confirm targets, the local runtime preserves connection and session state, and the virtual pointer shows dispatched actions. Reducing repeated reads and model round trips is an important part of making tasks feel continuous.
 
-For a longer task, identify the target tab clearly and state the stopping condition. DSH will claim that tab, observe its semantic page state, perform supported actions and release it with `native_browser_handoff` when asked. A claim is exclusive: another DSH conversation cannot reuse it. Switching the visible DSH conversation intentionally revokes the previous conversation's browser control, so ask the newly selected conversation to claim the tab again.
+Existing executor tests and local benchmarks validate these foundations. Complete model-driven tasks, real sites and sustained use need broader evidence as we work toward the Codex experience benchmark.
 
-### What this version can do
+[Implementation](docs/current-implementation.zh-CN.md) · [Benchmarks](docs/benchmarks.md) · [Security model](docs/security-model.md) · [Architecture plans](docs/plans/README.md)
 
-- list connected Chrome instances and eligible existing tabs;
-- claim one tab and read bounded accessible text, controls and named regions;
-- navigate, click, fill, append text, press supported keys, set checkbox/radio state, scroll, send a verified wheel event, set files on an observed `<input type=file>`, accept a native file chooser, capture a page-triggered download, accept or dismiss JavaScript `alert`/`confirm`/`prompt`/`beforeunload` dialogs, and click a screenshot-bound visual box after hit-test and viewport checks;
-- run a bounded batch of up to eight explicit actions, stopping on denial, uncertainty or failed verification;
-- open additional HTTP(S) tabs, group agent-created tabs into a `DSH Browser` group, close only agent-created tabs, hold independent leases for several tabs in one session, bring a controlled tab to the foreground and release all leases together;
-- page through large semantic documents and read supported same-origin child frames;
-- capture the current viewport as a DSH attachment and release control back to the user;
-- show a short-lived virtual pointer after a verified click or wheel dispatch.
+### Documentation map
 
-The normal fast path is semantic observation rather than screenshots. Multimodal sessions such as `DeepSeek-V4.1-Flash` can view the published screenshot attachment directly and pass an image-pixel box to `native_browser_act` `visual-click`; text-only sessions can optionally use a vision tool such as `dsh-vision-router` to produce the same box. The plugin never dispatches a vision model itself, and the browser-side click still requires a matching document epoch, unchanged viewport, a visible hit target and sufficient box overlap. The extension redacts safely located foreign or opaque frame regions before screenshot bytes leave Chrome, but still fails closed when the frame inventory or redaction geometry is incomplete. Text reading and semantic actions may still work on the authorized root page when a screenshot is refused.
+- [Installation, configuration and diagnostics](docs/development.md)
+- [Current implementation](docs/current-implementation.zh-CN.md) and [implementation progress](docs/implementation-progress.md)
+- [Benchmarks](docs/benchmarks.md) and [security model](docs/security-model.md)
+- [Roadmap](docs/roadmap.md) and [architecture plans](docs/plans/README.md)
+- [Browser plugin comparison and Codex experience plan](docs/plans/browser-plugin-competitive-analysis.zh-CN.md)
+- [Architecture background](docs/architecture.md), [protocol](docs/protocol.md) and [Chrome integration research](docs/research/codex-chrome-browser-architecture.md)
+- [Chrome-first decision](docs/decisions/0001-chrome-first.md)
 
-### Check the installation
+A Chrome DevTools MCP provider remains planned. Current browser work uses the native Chromium path.
 
-Run the packaged installation diagnostic and optional raw connection status:
+## Acknowledgements and license
 
-```bash
-dsh plugin --profile web exec dsh-native-browser doctor --browser=chrome
-dsh plugin --profile web exec dsh-native-browser status
-```
+Thanks to DeepSeek Harness, Chrome DevTools Protocol, the Chrome Extensions platform and the browser-agent community. Codex provides an experience reference. This is an independent implementation with no OpenAI affiliation or endorsement.
 
-`doctor` reporting `ready` proves that local registration, the Broker protocol and a matching connected extension are healthy; it does not grant a tab lease or prove that an arbitrary site is supported. If DSH lists no tab, check the running Broker mode, extension/site consent and that the DSH adapter uses the matching approval mode. A generic `Remote operation failed` during screenshot capture can currently mean that the cross-origin frame policy rejected the image; read/observe the page instead and inspect the DSH trace before retrying.
-
-## Development
-
-Prerequisites: Node.js 22.19 or newer and pnpm 11.
-
-```bash
-pnpm install
-pnpm check
-pnpm test
-pnpm test:chrome
-pnpm pack
-```
-
-Only the explicitly versioned alpha is recommended for testing. Do not use it for payments, destructive business actions, password entry, or unattended operation.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Security-sensitive findings should follow [SECURITY.md](SECURITY.md), not a public issue.
-
-## Acknowledgements
-
-This project is informed by excellent work across the browser-agent ecosystem:
-
-- [Chrome DevTools for agents](https://github.com/ChromeDevTools/chrome-devtools-mcp), maintained by Google ChromeDevTools, demonstrates how a standards-based MCP surface can make Chrome automation, debugging and performance analysis broadly available. Its DevTools capabilities are the preferred future integration path where they fit.
-- [OpenAI Codex](https://openai.com/codex/) inspired the product target of a browser that feels continuous, visible and easy to hand back to the human. `dsh-native-browser` is an independent implementation based on public behavior and documentation; it is not affiliated with or endorsed by OpenAI.
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) provides the plugin, profile, tool and approval model this package is built for.
-- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/), Chromium Accessibility and the Chrome Extensions platform provide the browser primitives behind the native provider.
-- [Puppeteer](https://github.com/puppeteer/puppeteer) and [Playwright](https://github.com/microsoft/playwright) provide valuable reference implementations for resilient browser lifecycle, locators, actionability and testing.
-- [dsh-vision-router](https://github.com/ysr666/dsh-vision-router) helped shape the optional visual fallback boundary: screenshots and vision complement semantic observation instead of replacing it.
-
-Names and trademarks belong to their respective owners. Acknowledgement does not imply sponsorship or endorsement. Third-party source incorporated in the future will retain its required license and notice information.
-
-## Design principles
-
-1. **Fast paths are semantic.** Use AX/DOM state for routine work and images only where pixels carry essential meaning.
-2. **Actions verify reality.** Resolve targets fresh, scroll, wait for stability, hit-test, act, then observe the resulting change.
-3. **Browser state has an owner.** Existing user tabs are claimed and released; agent tabs are tracked and cleaned up.
-4. **Human control wins immediately.** User interaction or an extension stop action cancels in-flight work and produces a resumable state.
-5. **Conversation focus is a control boundary.** Switching the visible DSH conversation revokes background browser scopes; authority is released, never transferred.
-6. **Capabilities are explicit.** Sensitive operations are narrow, policy-gated and auditable; raw CDP is an internal transport.
-7. **Performance is measured.** Latency, observation size, stale-reference rate, action success and recovery behavior are benchmark gates.
-
-The virtual pointer improves observability, but is never an input primitive: semantic discovery and last-moment hit testing choose the target first, the browser dispatches the real input, and only then does the extension draw the pointer. A drawing failure cannot authorize, retarget, delay or replay an action.
-
-## License
-
-[MIT](LICENSE)
+[MIT License](LICENSE)

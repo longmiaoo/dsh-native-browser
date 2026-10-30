@@ -1,7 +1,7 @@
 {
   "name": "dsh-native-browser",
   "version": "0.1.0-alpha.11",
-  "description": "Chrome-first native browser runtime for DeepSeek Harness with semantic observation, reliable CDP actions, and human-agent handoff",
+  "description": "Fluid, native Chrome automation for DeepSeek Harness, inspired by Codex browser workflows",
   "type": "module",
   "main": "index.js",
   "types": "./dist/packages/dsh-adapter/src/index.d.ts",
@@ -29,6 +29,7 @@
     "docs/compatibility/*.json",
     "protocol",
     "README.md",
+    "README.zh-CN.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",

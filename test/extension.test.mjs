@@ -322,6 +322,42 @@ test('screenshot last-mile gate discovers and redacts hidden OOPIFs before pixel
   assert.deepEqual(f.redactions,[[8,18,44,44]]);assert.notEqual(response.value.data,btoa('raw-jpeg'));await f.ui('stop');
 });
 
+test('screenshot skips a cross-origin frame that has no layout box instead of failing the capture', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let captures=0,quadsAsked=0;
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Target.setAutoAttach'&&!target.sessionId)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
+      {sessionId:'remote',targetInfo:{type:'iframe'}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:target.sessionId?'child':'root',
+      ...(target.sessionId?{parentId:'root'}:{}),loaderId:'loader',url:target.sessionId?'https://foreign.test/beacon':f.tab.url}}};
+    if(method==='DOM.getFrameOwner')return {backendNodeId:11};
+    if(method==='DOM.getBoxModel')throw Error('Could not compute box model.');
+    if(method==='DOM.getContentQuads'){quadsAsked++;return {quads:[]};}
+    if(method==='Page.captureScreenshot'){captures++;return {data:btoa('raw-jpeg')};}return {};
+  };
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg',quality:70,
+    clip:{x:0,y:0,width:100,height:100,scale:1}}});
+  assert.equal(response.ok,true);assert.equal(captures,1);assert.equal(quadsAsked,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(response.value.redaction)),{policy:'cross-origin-frames',frames:1,regions:0});
+  assert.deepEqual(f.redactions,[]);await f.ui('stop');
+});
+
+test('screenshot stays fail-closed when an unmeasurable cross-origin frame still paints content', async () => {
+  const f=await fixture();await f.call('lease.grant',{lease:f.lease});let captures=0;
+  f.chrome.debugger.sendCommand=async(target,method)=>{
+    if(method==='Target.setAutoAttach'&&!target.sessionId)f.chrome.debugger.onEvent.emit(target,'Target.attachedToTarget',
+      {sessionId:'remote',targetInfo:{type:'iframe'}});
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:target.sessionId?'child':'root',
+      ...(target.sessionId?{parentId:'root'}:{}),loaderId:'loader',url:target.sessionId?'https://foreign.test/private':f.tab.url}}};
+    if(method==='DOM.getFrameOwner')return {backendNodeId:11};
+    if(method==='DOM.getBoxModel')throw Error('Could not compute box model.');
+    if(method==='DOM.getContentQuads')return {quads:[[10,20,50,20,50,60,10,60]]};
+    if(method==='Page.captureScreenshot'){captures++;return {data:btoa('must-not-return')};}return {};
+  };
+  const response=await f.call('cdp',{lease:f.lease,method:'Page.captureScreenshot',params:{format:'jpeg',quality:70,
+    clip:{x:0,y:0,width:100,height:100,scale:1}}});
+  assert.equal(response.ok,false);assert.equal(response.code,'POLICY_DENIED');assert.equal(captures,0);await f.ui('stop');
+});
+
 test('screenshot redaction maps page quads through viewport clips and safely clips offscreen frames', () => {
   assert.deepEqual(screenshotRedactionRects([
     [110,220,150,220,150,260,110,260],

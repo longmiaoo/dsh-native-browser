@@ -143,13 +143,10 @@ export class FrameSessions {
         if (!Number.isSafeInteger(owner.backendNodeId) || owner.backendNodeId <= 0) {
           throw new BrowserError('POLICY_DENIED', 'Cross-origin frame owner is unavailable');
         }
-        const box = await this.command('', 'DOM.getBoxModel', { backendNodeId: owner.backendNodeId }, signal);
-        const quad = box.model?.border;
-        if (!Array.isArray(quad) || quad.length !== 8 || quad.some((value: unknown) => typeof value !== 'number'
-          || !Number.isFinite(value) || Math.abs(value) > 1e7)) {
-          throw new BrowserError('POLICY_DENIED', 'Cross-origin frame geometry is unavailable');
-        }
-        quads.push(quad as unknown as ScreenshotRedactionPlan['quads'][number]);
+        const quad = await this.frameOwnerQuad(owner.backendNodeId, signal);
+        // A frame with no layout box paints no pixels, so it needs no mask.
+        if (quad === undefined) continue;
+        quads.push(quad);
       }
     } catch (error) {
       if (error instanceof BrowserError) throw error;
@@ -160,6 +157,27 @@ export class FrameSessions {
       throw new BrowserError('STALE_TARGET', 'Frame documents changed during screenshot redaction planning');
     }
     return { revision: before.revision, frames: before.frames, quads, frameCount: branches.size };
+  }
+  /** Resolve the root-page border quad of one frame owner.
+   * Detached, `display:none` and otherwise unrendered owners have no layout box
+   * at all, so `DOM.getBoxModel` fails for them. Such a frame cannot paint, so it
+   * needs no mask — but only after `DOM.getContentQuads` proves it has no rendered
+   * area. Any other outcome still fails closed. */
+  private async frameOwnerQuad(backendNodeId: number, signal: AbortSignal): Promise<ScreenshotRedactionPlan['quads'][number] | undefined> {
+    let quad: unknown;
+    try {
+      quad = (await this.command('', 'DOM.getBoxModel', { backendNodeId }, signal)).model?.border;
+    } catch (error) {
+      if (error instanceof BrowserError) throw error;
+      const rendered = await this.command('', 'DOM.getContentQuads', { backendNodeId }, signal);
+      if (Array.isArray(rendered.quads) && rendered.quads.length === 0) return undefined;
+      throw new BrowserError('POLICY_DENIED', 'Cross-origin frame geometry is unavailable');
+    }
+    if (!Array.isArray(quad) || quad.length !== 8 || quad.some((value: unknown) => typeof value !== 'number'
+      || !Number.isFinite(value) || Math.abs(value) > 1e7)) {
+      throw new BrowserError('POLICY_DENIED', 'Cross-origin frame geometry is unavailable');
+    }
+    return quad as unknown as ScreenshotRedactionPlan['quads'][number];
   }
   dispose() { this.controller.abort(new BrowserError('LEASE_REVOKED', 'Frame session control ended')); this.sessions.clear(); this.version++; }
   private check(signal: AbortSignal) { checkAbort(signal); checkAbort(this.controller.signal); if (this.failed) throw new BrowserError('STALE_TARGET', 'Frame graph failed closed'); }

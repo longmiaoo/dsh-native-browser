@@ -2,7 +2,7 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.1.3 - 2026-11-02
 
 - Add `native_browser_task` for task status, explicit page-purpose marks and finish. In personal mode, a Host turn explicitly ending as completed cleans still-controlled temporary pages and releases control. Retain deliverable/handoff pages and all user-created pages; interrupted, unknown and background endings never close pages.
 - Fence cleanup before asynchronous connection work and through final release acknowledgement. Skip revoked/expired pages, report incomplete cleanup, and never automatically reclaim or replay a failed close.

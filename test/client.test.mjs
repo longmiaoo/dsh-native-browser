@@ -8,7 +8,9 @@ const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 function fixture(respond) {
-  let definition, current = 'chat-a';
+  let definition;
+  const catalog = id => ({ ids: id ? [id] : [], byId: id ? { [id]: { id, retainedBy: { mainView: 1 } } } : {}, phase: 'ready' });
+  let snapshot = catalog('chat-a');
   const listListeners = new Set(), eventListeners = new Map(), documentListeners = new Map(), disposers = [], calls = [];
   const windowListeners = new Map();
   const window = { __ModuleLoader__: { load(value) { definition = value; } },
@@ -23,14 +25,15 @@ function fixture(respond) {
   vm.runInNewContext(source, { window, document, crypto: webcrypto, AbortController, AbortSignal, Date, Promise, Object, Number, Symbol });
   const plugin = definition.factory();
   const ctx = {
-    sessions: { list: { getSnapshot: () => ({ current }), subscribe: listener => { listListeners.add(listener); return () => listListeners.delete(listener); } } },
+    sessions: { list: { getSnapshot: () => snapshot, subscribe: listener => { listListeners.add(listener); return () => listListeners.delete(listener); } } },
     connection: { rpc: { call: async (channel, endpoint, payload, signal) => { calls.push({ channel, endpoint, payload: structuredClone(payload), signal }); return respond ? respond(channel, endpoint) : { ok: true, value: {} }; } } },
     on(name, listener) { eventListeners.set(name, listener); return () => eventListeners.delete(name); },
     effect(callback) { disposers.push(callback()); },
   };
   plugin.apply(ctx);
   return { plugin, calls, document,
-    select(value) { current = value; for (const listener of listListeners) listener(); },
+    select(value) { snapshot = catalog(value); for (const listener of listListeners) listener(); },
+    snapshot(value) { snapshot = value; for (const listener of listListeners) listener(); },
     reset() { eventListeners.get('connection/reset')?.(); },
     visible() { documentListeners.get('visibilitychange')?.(); },
     focus() { document.focused = true; windowListeners.get('focus')?.(); },
@@ -48,6 +51,35 @@ test('client reports canonical current-session changes over authenticated Connec
   f.select('chat-b'); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'chat-b');
   const count = f.calls.length; f.select('chat-b'); await flush(); assert.equal(f.calls.length, count);
   assert.equal(f.calls[1].payload.revision, f.calls[0].payload.revision + 1);
+});
+
+test('modern catalog follows only unique mainView retention; cached/sidebar rows do not select or steal', async () => {
+  const f = fixture(); await flush();
+  f.snapshot({ phase: 'ready', byId: {
+    cached: { id: 'cached', retainedBy: { sidebar: 2 } },
+    active: { id: 'chat-b', retainedBy: { mainView: 1 } },
+  } }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'chat-b');
+  const count = f.calls.length;
+  f.snapshot({phase:'pending',byId:{}}); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({unknown:true}); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({phase:'ready',byId:{a:{id:'a',retainedBy:{mainView:1}},b:{id:'b',retainedBy:{mainView:1}}}});
+  await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({phase:'ready',byId:{cached:{id:'cached',retainedBy:{sidebar:1}}}});
+  await flush(); assert.equal(f.calls.at(-1).payload.sessionId, null); f.dispose();
+});
+test('legacy explicit current remains supported without treating undefined as a deliberate deselection', async () => {
+  const f = fixture(); await flush();
+  f.snapshot({ current: 'legacy-chat' }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'legacy-chat');
+  const count = f.calls.length;
+  f.snapshot({ current: undefined }); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({ current: null }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, null); f.dispose();
+});
+test('a failed foreground notification is retried on the next same-selection update', async () => {
+  let calls = 0;
+  const f = fixture(() => { if (++calls === 1) throw Error('temporarily unavailable'); return {ok:true,value:{accepted:true}}; });
+  await flush(); assert.equal(f.calls.length,1);
+  f.select('chat-a'); await flush(); assert.equal(f.calls.length,2);
+  f.select('chat-a'); await flush(); assert.equal(f.calls.length,2); f.dispose();
 });
 
 test('a visible unfocused DSH window cannot reclaim foreground on list updates or reconnect', async () => {

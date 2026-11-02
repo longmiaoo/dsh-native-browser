@@ -8,6 +8,9 @@ import { startBroker } from '../dist/packages/broker/src/server.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
 import { createHash } from 'node:crypto';
 import Ajv from 'ajv';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 
 async function fixture(t, config = {}, brokerOptions = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
@@ -40,6 +43,38 @@ async function fixture(t, config = {}, brokerOptions = {}) {
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('actual client foreground projection unlocks the same visible conversation through authenticated host bridge', async t => {
+  const f = await fixture(t); let definition;
+  await f.foreground({clientId:'11111111-1111-4111-8111-111111111111',revision:1,issuedAt:Date.now(),sessionId:null});
+  const selected = 'visible-chat'; let synchronized;
+  const synchronizedPromise = new Promise(resolve => { synchronized = resolve; });
+  const window = {__ModuleLoader__:{load:value=>{definition=value;}},addEventListener(){},removeEventListener(){}};
+  const document = {visibilityState:'visible',hasFocus:()=>true,addEventListener(){},removeEventListener(){}};
+  vm.runInNewContext(await readFile(new URL('../client.js',import.meta.url),'utf8'),
+    {window,document,crypto:webcrypto,AbortController,AbortSignal,Date,Promise,Object,Number,Symbol});
+  const disposers=[];
+  definition.factory().apply({
+    sessions:{list:{getSnapshot:()=>({phase:'ready',byId:{[selected]:{id:selected,retainedBy:{mainView:1}}}}),subscribe:()=>()=>{}}},
+    connection:{rpc:{call:async(_channel,endpoint,payload)=>{
+      assert.equal(endpoint,'dsh-native-browser/foreground'); assert.equal(payload.sessionId,selected);
+      const result=await f.foreground(payload);synchronized();return result;
+    }}},on:()=>()=>{},effect:callback=>disposers.push(callback()),
+  });
+  await synchronizedPromise;
+  const listed=f.prepare('native_browser_list',{},selected);
+  assert.notEqual(listed.decision.kind,'deny'); assert.equal((await listed.run())[0].id,'fake-1');
+  for(const dispose of disposers)dispose();
+});
+test('explicit no-selection denial is not a busy lease; selecting the active chat restores listing', async t => {
+  const f = await fixture(t), clientId = '11111111-1111-4111-8111-111111111111';
+  await f.foreground({clientId,revision:1,issuedAt:Date.now(),sessionId:null});
+  const blocked = f.prepare('native_browser_list', {}, 'chat-a');
+  assert.equal(blocked.decision.kind, 'deny'); assert.match(blocked.decision.reason, /NOT a busy tab lease/);
+  assert.equal(f.provider.grants.size,0);
+  await f.foreground({clientId,revision:2,issuedAt:Date.now(),sessionId:'chat-a'});
+  const restored = f.prepare('native_browser_list', {}, 'chat-a'); assert.notEqual(restored.decision.kind,'deny');
+  assert.equal((await restored.run())[0].id,'fake-1');
+});
 test('completed personal turn closes temporary task pages, preserves marked and user pages, and releases control', async t => {
   const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
   const run = (name, args) => f.prepare(`native_browser_${name}`, args).run();

@@ -37,7 +37,7 @@ window.__ModuleLoader__ = { load(definition) {
   const plugin=definition.factory(name=>{if(name==='react') return React; throw Error(name)});
   plugin.apply({
     slots:{inject:(name,callback)=>effects.push(callback()),register:(options,component)=>core.register(options,component)},
-    sessions:{list:{getSnapshot:()=>({current}),subscribe:listener=>{selectionListeners.add(listener);return ()=>selectionListeners.delete(listener)}}},
+    sessions:{list:{getSnapshot:()=>({phase:current===undefined?'pending':'ready',ids:current?[current]:[],byId:current?{[current]:{id:current,retainedBy:{mainView:1}}}: {}}),subscribe:listener=>{selectionListeners.add(listener);return ()=>selectionListeners.delete(listener)}}},
     connection:{rpc:{call:async(channel,endpoint,payload,signal)=>{
       const response=await fetch('/rpc',{method:'POST',body:JSON.stringify({endpoint:endpoint.split('/').at(-1),payload}),signal});
       return response.json();

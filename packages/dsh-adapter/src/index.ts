@@ -58,7 +58,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   // fence NEW claims from the predecessor's still-running model loop.
   let foregroundSessionId: string | null | undefined;
   const foregroundDenial = (sessionId: string | undefined) => foregroundSessionId !== undefined && foregroundSessionId !== sessionId
-    ? 'Browser control moved to another DSH conversation. This conversation is in the background: stop browser work and do not reclaim, reopen tabs, or switch to Bash/CDP. Wait for the user to select this conversation again, then obtain a fresh lease.' : undefined;
+    ? foregroundSessionId === null
+      ? 'No active DSH conversation is synchronized from the client. This request was blocked before contacting Chrome; this is NOT a busy tab lease. Select this conversation in the DSH client and restore foreground synchronization. Do not tell the user to close browser tabs, release a supposed old lease, or bypass through Bash/CDP.'
+      : 'Browser control moved to another DSH conversation. This conversation is in the background: stop browser work and do not reclaim, reopen tabs, or switch to Bash/CDP. Wait for the user to select this conversation again, then obtain a fresh lease.' : undefined;
   const executions = new WeakMap<Execution, TurnScope>();
   const registeredTools = new Set<string>();
   const screenshots = new ScreenshotRegistry();

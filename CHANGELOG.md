@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Fix foreground selection on current DSH Session Controller catalogs: derive the selected session from unique local `retainedBy.mainView` ownership instead of the removed `list.current` field. Use the same selection projection for task settings; preserve explicit-current compatibility for older hosts and avoid guessing from cached/sidebar rows.
+- Do not cache a failed foreground notification as synchronized. Distinguish missing foreground synchronization from a busy Chrome lease so recovery does not ask users to close unrelated tabs.
+
 ## 0.1.4 - 2026-11-02
 
 - Fix a 0.1.3 settings crash before Desktop selects or hydrates a conversation: an undefined selected ID must not match a nonexistent task snapshot. Browser setup remains available without an active chat.

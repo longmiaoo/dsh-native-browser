@@ -21,6 +21,26 @@ window.__ModuleLoader__.load({
       return ctx.connection.rpc.call('/dsh-native-browser', endpoint, payload, signal);
     }
 
+    function selectedSession(ctx) {
+      const snapshot = ctx.sessions.list.getSnapshot();
+      if (snapshot?.byId && typeof snapshot.byId === 'object') {
+        // Current Session Controller exposes catalog + local retention, not a
+        // `current` field. Follow the Host layout's mainView ownership only;
+        // sidebar/cache retention is not a selected conversation.
+        const selected = Object.values(snapshot.byId).filter(row => typeof row?.id === 'string'
+          && row.id.length > 0 && row.retainedBy?.mainView > 0);
+        if (selected.length === 1) return selected[0].id;
+        if (selected.length > 1 || snapshot.phase === 'pending') return undefined;
+        return null;
+      }
+      // Compatibility with older hosts that explicitly publish selection.
+      if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'current')) {
+        const id = snapshot.current;
+        return typeof id === 'string' && id.length > 0 ? id : id === null ? null : undefined;
+      }
+      return undefined; // Unknown API shape is not evidence of deselection.
+    }
+
     function setupSettings(ctx) {
       // Older/custom clients may omit settings. Foreground handoff must still
       // work there; use the host's React, never bundle another React instance.
@@ -65,8 +85,8 @@ window.__ModuleLoader__.load({
       });
       function TaskPanel() {
         const [snapshot, setSnapshot] = React.useState(null), [notice, setNotice] = React.useState('');
-        const [selection, setSelection] = React.useState(() => ctx.sessions.list.getSnapshot().current);
-        React.useEffect(() => ctx.sessions.list.subscribe(() => setSelection(ctx.sessions.list.getSnapshot().current)), []);
+        const [selection, setSelection] = React.useState(() => selectedSession(ctx));
+        React.useEffect(() => ctx.sessions.list.subscribe(() => setSelection(selectedSession(ctx))), []);
         React.useEffect(() => {
           if (typeof selection !== 'string') { setSnapshot(null); return; }
           const controller = new AbortController(); let pending = false;
@@ -230,8 +250,8 @@ window.__ModuleLoader__.load({
         && (typeof document.hasFocus !== 'function' || document.hasFocus());
       const publish = (force = false) => {
         if (disposed || !isForeground()) return;
-        const raw = ctx.sessions.list.getSnapshot().current;
-        const sessionId = typeof raw === 'string' && raw.length > 0 ? raw : null;
+        const sessionId = selectedSession(ctx);
+        if (sessionId === undefined) return;
         if (!force && state.hasLast && state.lastSessionId === sessionId) return;
         state.hasLast = true; state.lastSessionId = sessionId;
         const payload = { clientId: state.clientId, revision: ++state.revision, issuedAt: Date.now(), sessionId };
@@ -244,7 +264,11 @@ window.__ModuleLoader__.load({
             ? AbortSignal.any([lifecycle.signal, timeout]) : lifecycle.signal;
           const result = await callHost(ctx, 'foreground', payload, signal);
           if (!result || result.ok !== true) throw new Error('Foreground conversation handoff was rejected');
-        }).catch(() => {});
+        }).catch(() => {
+          // A failed notification was not a synchronized selection. Permit the
+          // next store notification to retry instead of caching false success.
+          if (!disposed && state.revision === payload.revision) state.hasLast = false;
+        });
       };
       const stopList = ctx.sessions.list.subscribe(() => publish());
       const stopReset = ctx.on('connection/reset', () => publish(true));

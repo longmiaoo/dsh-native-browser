@@ -2,13 +2,13 @@
 
 0.1.3 新增第 14 个工具 `native_browser_task`，并提供任务收尾与执行状态。升级后需重载 DSH。
 
-## 前台同步修复（开发分支，尚未发布）
+## 前台同步修复（0.1.5）
 
 0.1.4 及之前版本错误读取 `sessions.list.current`。核对 DSH 0.2.1-rc.3 的 Session Controller 源码，其 catalog 只有 ids/byId/phase 等字段；宿主布局使用 byId 中唯一的 `retainedBy.mainView > 0` 行确定当前对话。旧插件读到 undefined 后上报 null，后端把正在显示的对话挡在浏览器请求之前，模型又将其误解释为租约占用。
 
 修复统一前台桥接与设置面板的选择来源：优先使用宿主 mainView 保留标记，兼容旧宿主显式 current；不从 sidebar/cache 行猜测，不将未知或待加载数据当作已明确取消选择。前台通知失败后不会缓存成功状态。后端的“未同步当前对话”说明明确指出尚未联系 Chrome，不应让用户关闭标签页或释放并不存在的旧租约。
 
-该修复补充真实 catalog 结构下的前端测试，以及加载实际 client.js、经过后端前台桥接、解锁当前会话浏览器列表的契约测试。隔离 SlotCore/React 验收改用 mainView catalog；仍不等于完整 Desktop 外壳验收。本机安装已应用同等客户端临时补丁，需重载 DSH 生效；npm 正式包尚待发布。
+该修复补充真实 catalog 结构下的前端测试，以及加载实际 client.js、经过后端前台桥接、解锁当前会话浏览器列表的契约测试。隔离 SlotCore/React 验收改用 mainView catalog；仍不等于完整 Desktop 外壳验收。本机安装已应用同等客户端临时补丁，需重载 DSH 生效；0.1.5 正式包包含相同的客户端修复和更准确的后端诊断提示。
 
 ## 使用契约
 

@@ -1,8 +1,8 @@
 # 安装、升级与故障处理
 
-0.1.1 的正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
+0.1.2 的正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
 
-## 推荐：DSH 内配置（0.1.1）
+## 推荐：DSH 内配置（0.1.2）
 
 从当前 DSH 的插件市场安装后，按宿主提示重载，进入 **设置 → 浏览器配置**，点击 **完成浏览器配置**。无需输入 Profile；安装使用当前加载的插件包和它的运行目录。点击会注册本机组件、安装或更新登录后自动运行的服务并打开 Chrome，不会更改 DSH 审批设置或授权标签页。连接检查只读取状态。
 
@@ -14,18 +14,18 @@
 
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.2 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。安装完成不会自动批准任何标签页，也不会修改 DSH 的审批模式。
+这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。标准安装启用个人模式后台；已有显式插件审批配置与 DSH 全局权限继续生效。
 
 Chrome 首次加载需要你确认：在 `chrome://extensions` 开启开发者模式，点击“加载已解压的扩展程序”。在目录选择窗口按 Command+Shift+G，粘贴安装器输出的完整目录，回车并选择。该快捷键可以直接进入隐藏目录。
 
-重启对应 DSH Profile，在 Chrome 普通网页打开扩展，选择“允许当前标签页并连接”。在 DSH 输入：
+重载对应 DSH，在“浏览器配置”检查连接，默认个人模式无需逐页授权。在 Chrome 打开普通网页，然后在 DSH 输入：
 
-> 使用 native_browser 工具读取刚才授权页面的标题和主要内容，然后交还浏览器控制。
+> 使用 native_browser 工具读取当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
 
-已发布 `0.1.1` 默认逐动作审批；如需个人模式，请在当前 Profile 的 `native-browser` 条目中设置 `approvalMode: personal` 后重载。开发分支已修复为默认个人模式（尚未发布）；显式审批配置仍优先。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
+`0.1.2` 默认个人模式；已有显式审批配置仍优先。升级后重新运行浏览器配置以更新后台和固定目录中的扩展，再在 Chrome 重新加载扩展，并重载 DSH。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
 
 ## 升级
 

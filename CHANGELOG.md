@@ -2,7 +2,7 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.1.2 - 2026-11-02
 
 - Render focused-target pointer feedback for fill, append and keyboard input, without synthesizing mouse clicks. Acknowledge pointer messages and suppress late reinjection feedback after Stop.
 - Fence new browser calls from a conversation after it loses foreground ownership; return an explicit handoff explanation instead of allowing repeated background reclaims. Selecting that conversation again permits a fresh lease.
@@ -12,6 +12,8 @@ All notable changes will be documented here. The project follows semantic versio
 - Report the live Broker access mode and effective plugin approval mode separately in setup. Remove incorrect per-tab consent instructions in personal mode, retain restricted-mode guidance, and flag mode mismatches.
 - Hide completed loading steps once Chrome connects, and explain the macOS hidden-folder picker shortcut in words.
 - Verify default-mode packed installation with real Chrome/Native Messaging without per-tab popup approval; keep a no-service acceptance path for machines with an active user Broker.
+
+- Keep task-created tabs open after completion in this release. Automatic temporary-tab cleanup is planned for a later version.
 
 ## 0.1.1 - 2026-10-30
 

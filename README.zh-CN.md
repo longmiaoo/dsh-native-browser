@@ -6,7 +6,7 @@
 
 > 为 DeepSeek Harness 打造流畅、连贯的原生 Chrome 操作体验。
 
-[![Version](https://img.shields.io/badge/version-0.1.1-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · 简体中文 · [开始试用](#开始试用) · [参与共建](#参与共建) · [反馈体验](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
@@ -48,11 +48,11 @@
 
 ## 开始试用
 
-正式版 `0.1.1` 的支持范围是 **macOS + Google Chrome**，需要已能正常对话的 DSH。CLI/Web 安装需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 配置复用经过验证的内置运行时。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
+正式版 `0.1.2` 的支持范围是 **macOS + Google Chrome**，需要已能正常对话的 DSH。CLI/Web 安装需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 配置复用经过验证的内置运行时。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
 
-### 推荐：在 DSH 内完成配置（0.1.1）
+### 推荐：在 DSH 内完成配置（0.1.2）
 
-`0.1.1` 新增 **设置 → 浏览器配置 → 完成浏览器配置**。从正在使用的 DSH 插件市场安装或升级到 `0.1.1`，按宿主提示重载，然后从此设置页完成配置，**无需寻找或填写 Profile**。页面提供连接诊断、复制目录和重新打开 Chrome 的按钮。桌面端复用经过验证的 DSH 内置运行时，不要求另外安装 Node。
+`0.1.1` 起提供 **设置 → 浏览器配置 → 完成浏览器配置**。从正在使用的 DSH 插件市场安装或升级到 `0.1.2`，按宿主提示重载，然后从此设置页完成配置，**无需寻找或填写 Profile**。页面提供连接诊断、复制目录和重新打开 Chrome 的按钮。桌面端复用经过验证的 DSH 内置运行时，不要求另外安装 Node。
 
 Chrome 扩展目前尚未上架商店，首次仍需“加载已解压的扩展程序”。商店版将以“添加至 Chrome”的一次确认替代目录选择，并支持扩展自动更新；这部分尚未实现。参见[安装入口设计与验证](docs/setup-ui.zh-CN.md)。
 
@@ -61,7 +61,7 @@ Chrome 扩展目前尚未上架商店，首次仍需“加载已解压的扩展�
 在终端粘贴这一整行：
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.2 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 这条命令仅用于你已知名称的 CLI/Web Profile，例如 `web` 或 `browser-lab`；两处名称必须一致。`web` 不是所有用户的默认值。**DSH Desktop 用户应通过桌面应用的插件市场管理插件，不要直接把它改成 `desktop`**：公开 CLI 对桌面专属 Profile 有管理限制。插件装到另一个 Profile 不会出现在当前聊天中。
@@ -76,19 +76,19 @@ dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile we
 
 ### 3 连接并开始对话
 
-重启安装插件的 DSH Profile。在 Chrome 打开一个普通网页，点开 DSH Native Browser 扩展，点击“允许当前标签页并连接”。然后在 DSH 输入：
+重载已安装插件的 DSH，在“浏览器配置”检查连接。默认个人模式无需逐页授权。在 Chrome 打开一个普通网页，然后在 DSH 输入：
 
 ```text
-使用 native_browser 工具，读取我刚才授权页面的标题和主要内容，然后交还浏览器控制。
+使用 native_browser 工具，读取我当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
 ```
 
-成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。已发布的 `0.1.1` 默认逐动作确认；下述开发分支修复改为默认个人模式。安装器不会修改 DSH 的全局权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
+成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。`0.1.2` 默认个人模式。安装器不会修改 DSH 的全局权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
 
 ### 权限模式
 
-**开发分支修复（尚未发布）**：默认 `personal` 与标准安装器保持一致，普通网页无需逐页点击授权，插件不再对每个动作追加确认。Stop、交还控制、会话切换、租约和 DSH 自身权限仍生效。显式配置的 `per-action` / `per-lease` / `trusted` 不会被覆盖。
+**自 0.1.2 起**：默认 `personal` 与标准安装器保持一致，普通网页无需逐页点击授权，插件不再对每个动作追加确认。Stop、交还控制、会话切换、租约和 DSH 自身权限仍生效。显式配置的 `per-action` / `per-lease` / `trusted` 不会被覆盖。
 
-已安装 `0.1.1` 的用户可先在当前 Profile 的 `native-browser` 条目中设置 `approvalMode: personal` 并重载 DSH；后台也必须为个人模式。希望每次接管确认一次，则配置：
+旧版用户升级到 `0.1.2` 后，重新运行浏览器配置以更新固定目录中的扩展与后台，在 Chrome 重新加载扩展，并重载 DSH。已有显式审批设置优先；个人模式需要匹配的个人后台。希望每次接管确认一次，则配置：
 
 ```yaml
 - id: native-browser
@@ -96,11 +96,11 @@ dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile we
     approvalMode: per-lease
 ```
 
-`0.1.1` 的个人日常浏览需显式选择 `approvalMode: personal`，再重启对应 Profile；开发分支已将其作为默认值。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
+`0.1.2` 默认采用 `approvalMode: personal`。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
 
 ### 升级、排障与卸载
 
-升级也运行上面的安装命令，然后在 Chrome 扩展页点“重新加载”，并重启对应 DSH Profile。固定扩展目录不会随 npm 包路径变化。**从旧 Alpha 首次迁移时**，移除原先从 `node_modules` 或源码目录加载的旧扩展，改为加载安装器输出的固定目录，并重新授权标签页。
+升级也运行上面的安装命令，然后在 Chrome 扩展页点“重新加载”，并重启对应 DSH Profile。固定扩展目录不会随 npm 包路径变化。**从旧 Alpha 首次迁移时**，移除原先从 `node_modules` 或源码目录加载的旧扩展，改为加载安装器输出的固定目录，并检查连接；个人模式无需逐页授权。
 
 若旧版 Broker 仍在某个终端运行，先在那个终端按 Ctrl+C，再运行安装命令。不要同时运行手工 Broker 和后台服务。
 

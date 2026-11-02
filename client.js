@@ -75,7 +75,8 @@ window.__ModuleLoader__.load({
             pending = true;
             try {
               const result = await callHost(ctx, 'task.status', { sessionId: selection }, AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]));
-              if (!controller.signal.aborted && result?.ok) setSnapshot({ id: selection, value: result.value });
+              if (!controller.signal.aborted && result?.ok && typeof result.value?.phase === 'string'
+                && Array.isArray(result.value.pages)) setSnapshot({ id: selection, value: result.value });
             } catch { /* A missing route on older installed hosts is not a browser failure. */ }
             finally { pending = false; }
           };
@@ -91,7 +92,10 @@ window.__ModuleLoader__.load({
             if (endpoint === 'task.finish') setNotice(t(`收尾返回：关闭 ${result.closed ?? 0} 页；失效或失败的页面不会强行关闭。`, `Cleanup returned: ${result.closed ?? 0} closed; unavailable pages stay open.`));
           } catch (error) { setNotice(String(error?.message || error)); }
         };
-        const value = snapshot?.id === selection ? snapshot.value : null;
+        // Before Desktop hydrates its current conversation, both the optional
+        // snapshot id and selection can be undefined. Equality is not evidence
+        // that a snapshot exists; keep browser setup usable without a chat.
+        const value = snapshot && typeof selection === 'string' && snapshot.id === selection ? snapshot.value : null;
         if (!value || value.phase === 'idle') return null;
         const phases = { running: '执行中', ready: '等待下一步', finishing: '收尾中', completed: '已完成收尾', 'handed-off': '已交接', attention: '需要检查' };
         return h('section', { 'aria-label': 'Browser task status' }, h('h3', null, t('当前对话的浏览器任务', 'Current conversation browser task')),

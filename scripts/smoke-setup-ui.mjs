@@ -18,7 +18,7 @@ const hostRequire = createRequire(path.join(path.resolve(hostRoot), 'package.jso
 const rendererRequire = process.argv[3] ? createRequire(path.join(path.resolve(process.argv[3]), 'package.json')) : hostRequire;
 const root = await mkdtemp('/tmp/dsh-setup-ui-'), directory = path.join(root, 'runtime'), manifestDir = path.join(root, 'manifests');
 const calls = [], errors = [];
-let installs = 0, opened = 0, browser, statusPreview;
+let installs = 0, opened = 0, browser, statusPreview, taskStatusPreview;
 const setup = createSetupController(directory, {
   platform: 'darwin', verifyRuntime: verifySetupRuntime,
   diagnose: options => diagnose({ ...options, manifestDir }),
@@ -29,13 +29,15 @@ const entry = `
 import React from ${JSON.stringify(hostRequire.resolve('react'))};
 import { createRoot } from ${JSON.stringify(rendererRequire.resolve('react-dom/client'))};
 import { SlotCore } from ${JSON.stringify(hostRequire.resolve('@deepseek-ai/dsh-client-ui-slots'))};
-const core = new SlotCore(), effects=[];
+const core = new SlotCore(), effects=[], selectionListeners=new Set();
+let current;
+window.selectTestChat=value=>{current=value;for(const listener of selectionListeners)listener()};
 core.register({name:'root',children:{'settings.section':{kind:'list',scope:'root'},'tool.call.toolview':{kind:'keyed',scope:'session'}}},()=>null);
 window.__ModuleLoader__ = { load(definition) {
   const plugin=definition.factory(name=>{if(name==='react') return React; throw Error(name)});
   plugin.apply({
     slots:{inject:(name,callback)=>effects.push(callback()),register:(options,component)=>core.register(options,component)},
-    sessions:{list:{getSnapshot:()=>({current:'test-chat'}),subscribe:()=>()=>{}}},
+    sessions:{list:{getSnapshot:()=>({current}),subscribe:listener=>{selectionListeners.add(listener);return ()=>selectionListeners.delete(listener)}}},
     connection:{rpc:{call:async(channel,endpoint,payload,signal)=>{
       const response=await fetch('/rpc',{method:'POST',body:JSON.stringify({endpoint:endpoint.split('/').at(-1),payload}),signal});
       return response.json();
@@ -61,7 +63,7 @@ const server = http.createServer(async (req, res) => {
     else if (req.url === '/rpc' && req.method === 'POST') {
       let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 4096) throw new Error('request too big'); }
       const { endpoint, payload } = JSON.parse(data); calls.push(endpoint);
-      const result = endpoint === 'task.status' ? {ok:true,value:{phase:'ready',action:'observe',pages:[],pending:0}}
+      const result = endpoint === 'task.status' ? {ok:true,value:taskStatusPreview === undefined ? {phase:'ready',action:'observe',pages:[],pending:0} : taskStatusPreview}
         : endpoint === 'task.stop' ? {ok:true,value:{phase:'handed-off'}}
         : endpoint === 'task.finish' ? {ok:true,value:{closed:2,retained:1,skipped:0}}
         : endpoint === 'setup.status' && statusPreview ? { ok: true, value: statusPreview }
@@ -80,6 +82,23 @@ try {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1050, height: 1100 } });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor({timeout:5000});
+  // Settings can open before Desktop has selected or hydrated a conversation.
+  await page.evaluate(() => window.selectTestChat(null));
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  let invalidIndex = 0;
+  for (const invalidStatus of [null, {}, {phase:'ready',pages:null}]) {
+    taskStatusPreview = invalidStatus;
+    const id = `invalid-status-chat-${++invalidIndex}`;
+    const response = page.waitForResponse(response => response.url().endsWith('/rpc')
+      && response.request().postDataJSON()?.endpoint.split('/').at(-1) === 'task.status'
+      && response.request().postDataJSON()?.payload?.sessionId === id);
+    await page.evaluate(id => window.selectTestChat(id), id);
+    assert.deepEqual((await (await response).json()).value, invalidStatus);
+    await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  }
+  taskStatusPreview = undefined;
+  await page.evaluate(() => window.selectTestChat('test-chat'));
   const install = page.getByRole('button', { name: '完成浏览器配置', exact: true });
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '完成浏览器配置')?.disabled);
   assert.equal(await page.evaluate(() => window.slotLabel), '浏览器配置');
@@ -120,12 +139,15 @@ try {
   await page.getByRole('heading',{name:'当前对话的浏览器任务'}).waitFor();
   await page.getByRole('button',{name:'完成并清理临时页'}).click();
   await page.getByText('收尾返回：关闭 2 页；失效或失败的页面不会强行关闭。',{exact:true}).waitFor();
+  await page.evaluate(() => window.selectTestChat(undefined));
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.screenshot({path:'output/playwright/setup-without-conversation.png',fullPage:true});
   await page.evaluate(() => window.previewTaskCard());
   await page.getByText('关闭 2 页，保留 1 页，待处理 0 页',{exact:true}).waitFor();
   await page.screenshot({path:'output/playwright/task-card.png'});
   await page.evaluate(() => window.disposeSetup());
   assert.deepEqual(errors, []);
   const report = { passed: true, scope: 'Real DSH SlotCore and React component; isolated installer without LaunchAgent; not full Desktop shell',
-    installs, opened, rpcCalls: calls, browser: browser.version() };
+    installs, opened, rpcCalls: calls, browser: browser.version(), noConversation: true, malformedTaskStatuses: invalidIndex };
   await writeFile('output/playwright/setup-ui.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); }

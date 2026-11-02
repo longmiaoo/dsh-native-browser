@@ -115,6 +115,8 @@ try {
   const [instance] = await call('list', {});
   const tabs = await call('list', { instanceId: instance.id });
   let lease = await call('claim', { instanceId: instance.id, tab: tabs.find(t => t.url.startsWith(origin)).id });
+  await eventual(() => page.locator('[data-dsh-activity="v1"]').count(), 'control indicator before input');
+  assert.equal(await page.locator('[data-dsh-pointer="v1"]').count(), 0, 'Claim/read must not invent a mouse target');
   let observation = await call('observe', { leaseId: lease.id });
   const ref = name => { const node = observation.nodes.find(n => n.name === name); assert.ok(node, name); return node.id; };
   let acted = await call('act', { leaseId: lease.id, requestId: 'install-fill', documentEpoch: observation.documentEpoch,
@@ -128,12 +130,29 @@ try {
     action: { kind: 'press', ref: ref('搜索词'), key: 'ArrowLeft' } });
   observation = acted.observation;
   assert.ok(await page.locator('[data-dsh-pointer="v1"]').count());
+  await page.evaluate(() => {
+    window.feedbackFrames = []; window.recordFeedback = true;
+    const sample = () => {
+      const node = document.querySelector('[data-dsh-pointer="v1"]');
+      if (node?.dataset.moving === 'true') {
+        const m = new DOMMatrixReadOnly(getComputedStyle(node).transform);
+        window.feedbackFrames.push({ x: m.m41 + 2, y: m.m42 + 2 });
+      }
+      if (window.recordFeedback) requestAnimationFrame(sample);
+    }; requestAnimationFrame(sample);
+  });
   acted = await call('act', { leaseId: lease.id, requestId: 'install-click', documentEpoch: observation.documentEpoch,
     action: { kind: 'click', ref: ref('提交测试'), expected: { kind: 'text', text: '已提交：正式版安装验收' } } });
   assert.equal(acted.outcome, 'succeeded'); assert.equal(await page.locator('#result').innerText(), '已提交：正式版安装验收');
+  await eventual(() => page.locator('[data-dsh-pointer="v1"]').evaluate(node => node.dataset.moving === 'false'), 'installed cursor arrives at click target');
+  const movement = await page.evaluate(() => { window.recordFeedback = false; return window.feedbackFrames; });
+  assert.ok(movement.length > 1 && new Set(movement.map(p => p.x)).size > 1, 'Actual DSH fill-to-click action path must produce multiple moving frames');
+  await page.screenshot({ path: path.join(root, 'output/playwright/installation-smooth-click.png') });
+  passed.push('Actual packed DSH fill-to-click path produces multiple rendered movement frames without delaying input');
   const shot = await call('screenshot', { leaseId: lease.id }); assert.ok(shot.attachment);
   await call('handoff', { leaseId: lease.id });
   await eventual(async () => (await page.locator('[data-dsh-pointer="v1"]').count()) === 0, 'pointer removed on handoff');
+  assert.equal(await page.locator('[data-dsh-activity="v1"]').count(),0,'Handoff removes the control indicator');
   passed.push('Fill and keyboard actions show a pointer without a synthetic click; handoff removes it');
   passed.push('Installed package performs Chinese fill, verified click, Host-owned screenshot and handoff through real DSH tools');
 

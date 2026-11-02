@@ -2,6 +2,13 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.6 - 2026-11-02
+
+- Animate the virtual cursor between actual dispatched targets with distance-based 160–420 ms transitions, continuous retargeting and arrival feedback for clicks, wheel and typing. Rendering never dispatches extra input or delays browser commands; reduced-motion users receive immediate placement.
+- Show a separate, metadata-only control/activity indicator for reads, navigation, capture and waiting. Restore the indicator in new documents without inventing cursor coordinates; remove presentation on Stop, handoff and lease expiry, rejecting late feedback.
+- Use a versioned content-script acknowledgement with deduplicated on-demand injection. Build the overlay without HTML string injection for Trusted Types compatibility, and fence animation/status updates by monotonic revisions.
+- Exercise actual rendered intermediate frames, retargeting, no synthetic input, reduced motion, navigation reset, Stop and expiry in isolated Chrome MV3. Give the multi-action Chrome smoke suite a 60-second total budget; per-request deadlines and product action timeouts are unchanged.
+
 ## 0.1.5 - 2026-11-02
 
 - Fix foreground selection on current DSH Session Controller catalogs: derive the selected session from unique local `retainedBy.mainView` ownership instead of the removed `list.current` field. Use the same selection projection for task settings; preserve explicit-current compatibility for older hosts and avoid guessing from cached/sidebar rows.

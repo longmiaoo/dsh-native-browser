@@ -1,55 +1,123 @@
-type PointerPhase = 'move' | 'click' | 'wheel' | 'typing';
-type PointerMessage = Readonly<{ type: 'dsh.pointer.v1'; action: 'show'; x: number; y: number; phase: PointerPhase }>
-  | Readonly<{ type: 'dsh.pointer.v1'; action: 'focus' }>
-  | Readonly<{ type: 'dsh.pointer.v1'; action: 'remove' }>;
-type PointerState = { host: HTMLDivElement; arrow: SVGElement; ring: HTMLDivElement; fade?: ReturnType<typeof setTimeout> };
-const world = globalThis as typeof globalThis & { __dshPointerV1?: PointerState; __dshPointerListenerV1?: true };
+import { activityLabels, feedbackType, type Activity, type Feedback, type PointerPhase } from './feedback.js';
 
+type Point = { x: number; y: number };
+type Pointer = { host: HTMLDivElement; arrow: SVGElement; ring: HTMLDivElement; badge: HTMLDivElement };
+type State = {
+  floor: number; pointerRevision: number; activityRevision: number;
+  pointer?: Pointer; activity?: { host: HTMLDivElement; label: HTMLSpanElement };
+  point?: Point; target?: Point; phase?: PointerPhase; frame?: number;
+  expiry?: ReturnType<typeof setTimeout>; idle?: ReturnType<typeof setTimeout>; busyAt?: number;
+};
+const world = globalThis as typeof globalThis & { __dshFeedbackV2?: State; __dshFeedbackListenerV2?: true };
+const state = world.__dshFeedbackV2 ??= { floor: 0, pointerRevision: 0, activityRevision: 0 };
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function shell(attribute: string): { host: HTMLDivElement; root: ShadowRoot } {
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true'); host.setAttribute('inert', ''); host.setAttribute(attribute, 'v1');
+  // Important prevents ordinary page CSS from moving or blocking the overlay.
+  for (const [key, value] of Object.entries({ position: 'fixed', margin: '0', padding: '0', border: '0',
+    'z-index': '2147483647', 'pointer-events': 'none', 'user-select': 'none' })) host.style.setProperty(key, value, 'important');
+  const root = host.attachShadow({ mode: 'closed' });
+  (document.documentElement || document.body)?.append(host);
+  return { host, root };
+}
+function style(root: ShadowRoot, text: string): void {
+  const css = document.createElement('style'); css.textContent = text; root.append(css);
+}
+function removePointer(): void {
+  if (state.frame !== undefined) cancelAnimationFrame(state.frame);
+  delete state.frame; state.pointer?.host.remove(); delete state.pointer;
+  delete state.point; delete state.target; delete state.phase;
+}
 function remove(): void {
-  if (world.__dshPointerV1?.fade) clearTimeout(world.__dshPointerV1.fade);
-  world.__dshPointerV1?.host.remove(); delete world.__dshPointerV1;
+  removePointer(); state.activity?.host.remove(); delete state.activity;
+  clearTimeout(state.expiry); clearTimeout(state.idle); delete state.expiry; delete state.idle;
 }
-
-function show(payload: Extract<PointerMessage, { action: 'show' }>): void {
-  if (!Number.isFinite(payload.x) || !Number.isFinite(payload.y) || payload.x < 0 || payload.y < 0
-    || !['move', 'click', 'wheel', 'typing'].includes(payload.phase)) return;
-  let state = world.__dshPointerV1;
-  if (!state?.host.isConnected) {
-    const host = document.createElement('div');
-    host.setAttribute('aria-hidden', 'true'); host.setAttribute('inert', ''); host.dataset.dshPointer = 'v1';
-    Object.assign(host.style, { position: 'fixed', left: '0', top: '0', width: '96px', height: '80px', overflow: 'visible',
-      zIndex: '2147483647', pointerEvents: 'none', userSelect: 'none', isolation: 'isolate',
-      opacity: '0', transition: 'opacity 120ms ease' });
-    const root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `<style>
-      :host{all:initial}.arrow{position:absolute;left:18px;top:18px;width:32px;height:40px;overflow:visible;
-        filter:drop-shadow(0 2px 3px rgba(0,0,0,.58));transform-origin:4px 4px}
-      .badge{position:absolute;left:45px;top:44px;padding:2px 6px;border-radius:9px;background:#126fe8;color:#fff;
-        font:700 10px/14px system-ui,-apple-system,sans-serif;letter-spacing:.3px;box-shadow:0 1px 3px rgba(0,0,0,.35)}
-      .ring{position:absolute;left:2px;top:2px;width:36px;height:36px;border:4px solid #37a6ff;border-radius:999px;
-        box-sizing:border-box;opacity:0;transform:scale(.35)}
-      .ring.click{animation:dsh-click 420ms cubic-bezier(.2,.8,.2,1)}
-      .ring.wheel{border-style:dashed;animation:dsh-wheel 520ms ease-out}
-      @keyframes dsh-click{0%{opacity:.95;transform:scale(.3)}100%{opacity:0;transform:scale(1.55)}}
-      @keyframes dsh-wheel{0%{opacity:.9;transform:scale(.45) rotate(0)}100%{opacity:0;transform:scale(1.3) rotate(90deg)}}
-    </style><svg class="arrow" viewBox="0 0 25 31" aria-hidden="true">
-      <path d="M2 1.5v23.2l6.3-5.6 4.1 9.6 4.1-1.8-4.2-9.4 8.5-.4z" fill="#1687ff" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
-    </svg><div class="badge">DSH</div><div class="ring"></div>`;
-    const arrow = root.querySelector('.arrow') as SVGElement, ring = root.querySelector('.ring') as HTMLDivElement;
-    (document.documentElement || document.body)?.append(host);
-    state = world.__dshPointerV1 = { host, arrow, ring };
+function activity(phase: Activity): void {
+  if (!state.activity?.host.isConnected) {
+    const { host, root } = shell('data-dsh-activity');
+    host.style.setProperty('top', '12px', 'important'); host.style.setProperty('right', '12px', 'important');
+    style(root, `:host{all:initial}.panel{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #ffffff55;
+      border-radius:20px;background:#102842ed;color:white;box-shadow:0 2px 10px #0003;font:600 12px/18px system-ui,sans-serif}
+      .dot{width:8px;height:8px;border-radius:50%;background:#59b9ff;animation:pulse 1.4s ease-in-out infinite}
+      @keyframes pulse{50%{opacity:.35}}:host([data-phase=waiting]) .dot{animation:none;background:#8bb3cf}
+      @media(prefers-reduced-motion:reduce){.dot{animation:none}}`);
+    const panel = document.createElement('div'); panel.className = 'panel';
+    const dot = document.createElement('span'); dot.className = 'dot';
+    const label = document.createElement('span'); panel.append(dot, label); root.append(panel);
+    state.activity = { host, label };
   }
-  const { host, arrow, ring } = state;
-  host.style.transition = host.style.opacity === '0' ? 'opacity 120ms ease' : 'transform 110ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease';
-  host.style.transform = `translate3d(${payload.x - 20}px,${payload.y - 20}px,0)`; host.style.opacity = '1';
-  arrow.style.transform = payload.phase === 'move' ? 'scale(.94)' : 'scale(1)';
-  if (payload.phase !== 'move') { ring.className = 'ring'; void ring.getBoundingClientRect(); ring.classList.add(payload.phase); }
-  if (state.fade) clearTimeout(state.fade);
-  state.fade = setTimeout(() => { if (host.isConnected) host.style.opacity = '.78'; }, 8000);
+  state.activity.host.dataset.phase = phase;
+  state.activity.label.textContent = `DSH · ${activityLabels[phase]}`;
 }
-
-// Keyboard operations do not dispatch a mouse click. Show their real focused
-// target without synthesizing input or inventing a point during page reads.
+function pointer(): Pointer {
+  if (!state.pointer?.host.isConnected) {
+    const { host, root } = shell('data-dsh-pointer');
+    host.style.setProperty('top', '0', 'important'); host.style.setProperty('left', '0', 'important');
+    host.style.setProperty('width', '90px', 'important'); host.style.setProperty('height', '64px', 'important');
+    host.style.setProperty('overflow', 'visible', 'important');
+    style(root, `:host{all:initial}.arrow{position:absolute;left:0;top:0;width:30px;height:38px;overflow:visible;
+      filter:drop-shadow(0 2px 3px #0008);transform-origin:2px 2px}
+      .badge{position:absolute;left:24px;top:28px;padding:2px 6px;border-radius:9px;background:#126fe8;color:white;
+        font:700 10px/14px system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 3px #0005}
+      .ring{position:absolute;left:-16px;top:-16px;width:36px;height:36px;border:3px solid #37a6ff;
+        border-radius:50%;box-sizing:border-box;opacity:0}
+      .ring.click{animation:click 420ms ease-out}.ring.wheel{border-style:dashed;animation:wheel 600ms ease-out}
+      .ring.typing{animation:typing 800ms ease-out}
+      @keyframes click{0%{opacity:.95;transform:scale(.3)}100%{opacity:0;transform:scale(1.6)}}
+      @keyframes wheel{0%{opacity:.9;transform:scale(.45) rotate(0)}100%{opacity:0;transform:scale(1.3) rotate(90deg)}}
+      @keyframes typing{0%{opacity:.8;transform:scale(.6)}100%{opacity:0;transform:scale(1.2)}}
+      @media(prefers-reduced-motion:reduce){.ring{animation:none!important}}`);
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrow.setAttribute('class', 'arrow'); arrow.setAttribute('viewBox', '0 0 25 31');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    for (const [key, value] of Object.entries({ d: 'M2 1.5v23.2l6.3-5.6 4.1 9.6 4.1-1.8-4.2-9.4 8.5-.4z',
+      fill: '#1687ff', stroke: 'white', 'stroke-width': '2.2', 'stroke-linejoin': 'round' })) path.setAttribute(key, value);
+    arrow.append(path);
+    const badge = document.createElement('div'); badge.className = 'badge';
+    const ring = document.createElement('div'); ring.className = 'ring'; root.append(arrow, badge, ring);
+    state.pointer = { host, arrow, badge, ring };
+  }
+  return state.pointer;
+}
+function paint(point: Point): void {
+  state.point = point;
+  pointer().host.style.setProperty('transform', `translate3d(${point.x - 2}px,${point.y - 2}px,0)`, 'important');
+}
+function pulse(): void {
+  const p = state.pointer;
+  if (!p || !state.phase) return;
+  p.ring.className = 'ring';
+  if (state.phase !== 'move') { void p.ring.getBoundingClientRect(); p.ring.classList.add(state.phase); }
+  p.host.dataset.moving = 'false';
+}
+function show(x: number, y: number, phase: PointerPhase): void {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > innerWidth || y > innerHeight
+    || !['move', 'click', 'wheel', 'typing'].includes(phase)) return;
+  const p = pointer(); state.phase = phase;
+  p.badge.textContent = phase === 'typing' ? 'DSH 输入' : phase === 'wheel' ? 'DSH 滚动' : 'DSH';
+  p.host.dataset.phase = phase;
+  const target = { x, y };
+  // Press/release at the same point updates feedback without restarting motion.
+  if (state.frame !== undefined && state.target?.x === x && state.target?.y === y) return;
+  if (state.frame !== undefined) cancelAnimationFrame(state.frame);
+  delete state.frame; state.target = target;
+  const from = state.point;
+  if (!from || reduced() || document.visibilityState === 'hidden') { paint(target); pulse(); return; }
+  const distance = Math.hypot(x - from.x, y - from.y);
+  if (distance < 1) { paint(target); pulse(); return; }
+  const duration = Math.min(420, Math.max(160, distance / 1.8)), start = performance.now();
+  p.host.dataset.moving = 'true';
+  const tick = (now: number) => {
+    const t = Math.min(1, Math.max(0, (now - start) / duration));
+    const eased = 1 - (1 - t) ** 3;
+    paint({ x: from.x + (x - from.x) * eased, y: from.y + (y - from.y) * eased });
+    if (t < 1 && !reduced()) state.frame = requestAnimationFrame(tick);
+    else { delete state.frame; paint(target); pulse(); }
+  };
+  state.frame = requestAnimationFrame(tick);
+}
 function showFocus(): void {
   let target = document.activeElement;
   while (target?.shadowRoot?.activeElement) target = target.shadowRoot.activeElement;
@@ -57,20 +125,45 @@ function showFocus(): void {
   const rect = target.getBoundingClientRect();
   const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
   const right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
-  if (right <= left || bottom <= top) return;
-  show({ type: 'dsh.pointer.v1', action: 'show', x: (left + right) / 2, y: (top + bottom) / 2, phase: 'typing' });
+  if (right > left && bottom > top) show((left + right) / 2, (top + bottom) / 2, 'typing');
 }
-
-if (!world.__dshPointerListenerV1) {
-  world.__dshPointerListenerV1 = true;
+function receive(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return;
+  const m = raw as Feedback;
+  if (m.type !== feedbackType || !Number.isSafeInteger(m.revision) || m.revision <= state.floor) return;
+  if (m.action === 'remove') {
+    state.floor = m.revision;
+    // A delayed old Stop must not erase a newer lease's visible feedback.
+    if (m.revision >= Math.max(state.pointerRevision, state.activityRevision)) remove();
+    return;
+  }
+  if (!Number.isSafeInteger(m.expiresAt) || m.expiresAt <= Date.now() || m.expiresAt > Date.now() + 5 * 60_000) return;
+  if (m.action === 'activity') {
+    if (m.revision < state.activityRevision || !Object.hasOwn(activityLabels, m.phase)) return;
+    state.activityRevision = m.revision; clearTimeout(state.idle);
+    if (m.resetPointer) { state.pointerRevision = Math.max(state.pointerRevision, m.revision); removePointer(); }
+    if (m.phase === 'waiting') {
+      const wait = Math.max(0, 500 - (performance.now() - (state.busyAt ?? 0)));
+      state.idle = setTimeout(() => activity('waiting'), wait);
+    } else { state.busyAt = performance.now(); activity(m.phase); }
+  } else if (m.action === 'show' || m.action === 'focus') {
+    if (m.revision <= state.pointerRevision) return;
+    state.pointerRevision = m.revision;
+    if (m.action === 'focus') showFocus(); else show(m.x, m.y, m.phase);
+  } else return;
+  clearTimeout(state.expiry);
+  state.expiry = setTimeout(() => { state.floor = Math.max(state.floor, m.revision); remove(); }, m.expiresAt - Date.now());
+}
+if (!world.__dshFeedbackListenerV2) {
+  world.__dshFeedbackListenerV2 = true;
+  // Extension reload invalidates old script contexts but can leave their DOM
+  // behind. Retire only our inert, hidden presentation markers on first boot.
+  document.querySelectorAll('[data-dsh-pointer="v1"][aria-hidden="true"][inert], [data-dsh-activity="v1"][aria-hidden="true"][inert]')
+    .forEach(host => host.remove());
   chrome.runtime.onMessage.addListener((raw: unknown, _sender, respond) => {
-    const message = raw as Partial<PointerMessage>;
-    if (message.type !== 'dsh.pointer.v1') return;
-    if (message.action === 'remove') remove();
-    else if (message.action === 'show') show(message as Extract<PointerMessage, { action: 'show' }>);
-    else if (message.action === 'focus') showFocus();
-    // A synchronous acknowledgement prevents an indefinitely pending channel
-    // and a needless reinjection attempt when the document later navigates.
-    respond({ ok: true });
+    if ((raw as Partial<Feedback> | null)?.type !== feedbackType) return;
+    receive(raw); respond({ ok: true, version: 2 });
   });
+  // New documents regain the control indicator, but never an invented cursor.
+  void chrome.runtime.sendMessage({ type: feedbackType, action: 'ready' }).then(receive).catch(() => {});
 }

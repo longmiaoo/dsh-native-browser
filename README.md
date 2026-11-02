@@ -6,7 +6,7 @@
 
 > Fluid, native Chrome automation for DeepSeek Harness.
 
-[![Version](https://img.shields.io/badge/version-0.1.5-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.6-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
@@ -22,7 +22,7 @@ We want browser work to feel smooth enough that you choose to delegate more of i
 |---|---|
 | Work in a familiar browser | Connect to existing Chrome tabs, logins and extensions. |
 | Keep actions connected | Preserve browser connections; use semantic observations, scoped reads, incremental results and bounded batches. |
-| See what the agent is doing | Operate real pages and show pointer feedback for dispatched clicks and wheel actions. |
+| See what the agent is doing | Show smooth cursor motion for dispatched clicks, scrolling and typing, plus a separate control/read/navigation/wait indicator. |
 | Take control when needed | Release control through the extension Stop button or explicit handoff. Switching DSH conversations also revokes the previous conversation's control. |
 | Recover without guessing | Check actionability and distinguish verified results from unknown outcomes, avoiding blind duplicate actions. |
 
@@ -51,11 +51,11 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-Version **0.1.5 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
+Version **0.1.6 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-### Recommended: setup inside DSH (0.1.5)
+### Recommended: setup inside DSH (0.1.6)
 
-Since `0.1.1`, DSH provides **Settings → Browser setup → Set up Chrome**. Install or update to `0.1.5` from the plugin market in the DSH app you use, reload as instructed by DSH, then use this settings page. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
+Since `0.1.1`, DSH provides **Settings → Browser setup → Set up Chrome**. Install or update to `0.1.6` from the plugin market in the DSH app you use, reload as instructed by DSH, then use this settings page. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
 
 The extension is not on the Chrome Web Store yet, so initial unpacked loading remains. A future store release can replace directory selection with the user's **Add to Chrome** confirmation and automatic extension updates; that distribution path has not shipped. See the [setup design and validation](docs/setup-ui.zh-CN.md).
 
@@ -64,7 +64,7 @@ The extension is not on the Chrome Web Store yet, so initial unpacked loading re
 Paste this entire line into a terminal:
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.5 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.6 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 Use this only for a known CLI/Web profile such as `web` or `browser-lab`, with the same name in both places. `web` is not a universal default. **Desktop users should manage plugins through the Desktop plugin market, not substitute `desktop` into the public CLI**, which restricts management of Desktop-owned profiles. Installing into a different profile does not register tools in the current chat.
@@ -85,13 +85,13 @@ Reload the DSH environment where you installed the plugin. Check the connection 
 Use the native_browser tools to read the title and main content of the Chrome page I have open, then hand browser control back to me.
 ```
 
-DSH should return the page contents and leave the tab open. Version `0.1.5` defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
+DSH should return the page contents and leave the tab open. Version `0.1.6` defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
 
 ### Approval modes
 
 **Since 0.1.2:** the adapter now defaults to `personal`, matching the standard installer. Ordinary pages need no per-tab popup consent and the plugin adds no per-action approval prompts. Explicit `per-action`, `per-lease` and `trusted` configurations remain effective. Stop, handoff, conversation switching, lease checks and DSH's own permissions still apply.
 
-Upgrade existing installations to `0.1.5`, rerun setup to update the staged extension and Broker, reload the extension in Chrome, and reload DSH. Existing explicit approval settings take precedence. A personal Broker is required for personal mode.
+Upgrade existing installations to `0.1.6`, rerun setup to update the staged extension and Broker, reload the extension in Chrome, and reload DSH. Existing explicit approval settings take precedence. A personal Broker is required for personal mode.
 
 For one confirmation per tab claim, add this to the **existing** plugin entry in your actual profile and restart it:
 
@@ -195,13 +195,13 @@ These directions welcome proposals; use discussions in concrete issues and repro
 
 ## Tool names and coexistence
 
-The stable version registers 13 `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix avoids name collisions with plugins using `browser_*`. Old aliases are opt-in through `legacyToolNames: true`; occupied aliases are skipped. Use the canonical names for new tasks.
+The stable version registers 14 `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix avoids name collisions with plugins using `browser_*`. Old aliases are opt-in through `legacyToolNames: true`; occupied aliases are skipped. Use the canonical names for new tasks.
 
 Source development, manual Broker setup and experimental features are documented in [development.md](docs/development.md).
 
 ## Technical foundations and evidence
 
-Semantic observations describe the page, actionability checks confirm targets, the local runtime preserves connection and session state, and the virtual pointer shows dispatched actions. Reducing repeated reads and model round trips is an important part of making tasks feel continuous.
+Semantic observations describe the page, actionability checks confirm targets, the local runtime preserves connection and session state, and the virtual pointer shows dispatched actions. Version 0.1.6 adds smooth motion between actual targets and a separate indicator for reads, navigation, screenshots and waiting; read-only work never invents a mouse target. Animation does not add browser input or delay dispatch, and respects reduced-motion preferences. Reducing repeated reads and model round trips is an important part of making tasks feel continuous.
 
 Existing executor tests and local benchmarks validate these foundations. Complete model-driven tasks, real sites and sustained use need broader evidence as we work toward the Codex experience benchmark.
 

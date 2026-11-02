@@ -10,6 +10,7 @@ import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetr
 import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 import { screenshotRedactionRects } from '../dist/packages/extension-core/src/screenshot-redaction.js';
 import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
+const pointerMessages = f => f.tabMessages.filter(m => m.action !== 'activity').map(({revision, expiresAt, ...m}) => m);
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
@@ -49,7 +50,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
       create: async ({ url }) => ({ id: 9, url, title: 'New Tab' }), update: async (id, properties) => ({ id, ...properties }),
       group: async ({ tabIds }) => { grouped.push(...tabIds); return 42; },
       remove: async id => { removed.push(id); },
-      sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
+      sendMessage: async (_id, message) => { tabMessages.push(message); return { version: 2 }; }, onRemoved: event(), onUpdated: event() },
     tabGroups: { update: async (id, properties) => { groupUpdates.push({ id, ...properties }); } },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     downloads: { onCreated: event(), onChanged: event(),
@@ -119,12 +120,12 @@ test('text and key-down input render focused-target feedback without synthesizin
 test('Stop during pointer script injection prevents late keyboard feedback', async () => {
   const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
   let finish;
-  f.chrome.tabs.sendMessage = async (_id, m) => { f.tabMessages.push(m); if (m.action === 'focus') throw Error('No content script'); };
+  f.chrome.tabs.sendMessage = async (_id, m) => { f.tabMessages.push(m); if (m.action === 'focus') throw Error('No content script'); return {version:2}; };
   f.chrome.scripting.executeScript = async () => new Promise(resolve => { finish = resolve; });
   await f.call('cdp', { lease: f.lease, method: 'Input.insertText', params: { text: 'test' } });
   assert.ok(finish); await f.ui('stop'); finish([]);
   for (let i = 0; i < 8; i++) await Promise.resolve();
-  assert.deepEqual(f.tabMessages.map(m => m.action), ['focus', 'remove']);
+  assert.deepEqual(pointerMessages(f).map(m => m.action), ['focus', 'remove']);
 });
 
 test('file chooser interception and accept are allowlisted, enabled-only and bounded to absolute local files', async () => {
@@ -443,9 +444,9 @@ test('extension child-click commands bind semantic target, refuse coordinate inj
   const input=f.geometryCalls.filter(c=>c.method.startsWith('Input.'));assert.deepEqual(input.map(c=>c.p.type),['mousePressed','mouseReleased']);
   assert.ok(input.every(c=>c.target.sessionId===undefined&&Math.abs(c.p.x-220)<1e-6&&Math.abs(c.p.y-130)<1e-6));
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(JSON.stringify(f.tabMessages), JSON.stringify([
-    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'move'},
-    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'click'},
+  assert.equal(JSON.stringify(pointerMessages(f)), JSON.stringify([
+    {type:'dsh.pointer.v2',action:'show',x:220,y:130,phase:'move'},
+    {type:'dsh.pointer.v2',action:'show',x:220,y:130,phase:'click'},
   ]));
   assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,2);
   await f.ui('stop');assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');
@@ -727,13 +728,13 @@ test('mouse gate accepts one canonical wheel sample but rejects modifiers and bl
   for(const patch of [{modifiers:2},{deltaY:10001},{buttons:1},{type:'mouseMoved'},{deltaX:0,deltaY:0}]) {
     assert.equal((await send({...event,...patch})).code,'POLICY_DENIED');
   }
-  assert.equal(f.tabMessages.length,0);
+  assert.equal(pointerMessages(f).length,0);
   assert.equal((await send(event)).ok,true);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(JSON.stringify(f.tabMessages),JSON.stringify([{type:'dsh.pointer.v1',action:'show',x:20,y:30,phase:'wheel'}]));
+  assert.equal(JSON.stringify(pointerMessages(f)),JSON.stringify([{type:'dsh.pointer.v2',action:'show',x:20,y:30,phase:'wheel'}]));
   await f.ui('stop'); assert.equal((await send(event)).code,'LEASE_REVOKED');
-  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(f.tabMessages.length,2);
-  assert.equal(JSON.stringify(f.tabMessages[1]),JSON.stringify({type:'dsh.pointer.v1',action:'remove'}));
+  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(pointerMessages(f).length,2);
+  assert.equal(JSON.stringify(pointerMessages(f)[1]),JSON.stringify({type:'dsh.pointer.v2',action:'remove'}));
 });
 
 test('scroll document discovery only permits a shallow non-piercing root handle', async () => {
@@ -816,4 +817,82 @@ test('Stop while a semantic query is pending discards its result and does not di
   const result = await read; await stopped;
   assert.equal(result.code, 'LEASE_REVOKED'); assert.equal(f.commands.length, count);
   assert.equal(JSON.stringify(result).includes('secret-query-result'), false);
+});
+
+test('read-only requests publish control/read/wait presentation without mouse input or lease secrets', async () => {
+  const f = await fixture(); await f.call('lease.grant', {lease:f.lease});
+  assert.equal(f.tabMessages.at(-1).phase,'controlled');
+  assert.equal((await f.call('cdp',{lease:f.lease,method:'Page.getFrameTree',params:{}})).ok,true);
+  for (let i=0;i<10;i++) await f.call('cdp',{lease:f.lease,method:'Page.getFrameTree',params:{}});
+  assert.deepEqual(f.tabMessages.filter(m=>m.action==='activity').map(m=>m.phase),['controlled','reading'], 'Bursts coalesce presentation IPC');
+  await new Promise(resolve=>setTimeout(resolve,220));
+  const activities=f.tabMessages.filter(m=>m.action==='activity');
+  assert.deepEqual(activities.map(m=>m.phase),['controlled','reading','waiting']);
+  assert.ok(activities.every(m=>Number.isSafeInteger(m.revision)&&m.expiresAt===f.lease.expiresAt));
+  assert.ok(activities.every((m,i)=>i===0||m.revision>activities[i-1].revision));
+  assert.equal(f.commands.some(c=>c.method.startsWith('Input.')),false);
+  assert.equal(f.tabMessages.some(m=>'lease' in m || 'token' in m || 'owner' in m),false);
+  await f.ui('stop');
+});
+
+test('document-ready restores only the same extension top-frame indicator while its lease is live', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  const ready=sender=>{
+    let response;
+    f.chrome.runtime.onMessage.listeners[0]({type:'dsh.pointer.v2',action:'ready'},sender,value=>response=value);
+    return response;
+  };
+  const sender={id:f.chrome.runtime.id,frameId:0,tab:{id:7}};
+  assert.equal(ready(sender).phase,'controlled');
+  assert.equal(ready({...sender,frameId:1}),undefined);
+  assert.equal(ready({...sender,id:'other-extension'}),undefined);
+  assert.equal(ready({...sender,tab:{id:8}}),undefined);
+  await f.ui('stop'); assert.equal(ready(sender),undefined);
+});
+
+test('Stop during an outstanding read suppresses its late waiting indicator', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let done,started;
+  const dispatched=new Promise(resolve=>started=resolve);
+  f.chrome.debugger.sendCommand=async()=>{started();return new Promise(resolve=>done=resolve);};
+  const pending=f.call('cdp',{lease:f.lease,method:'Page.getLayoutMetrics',params:{}});
+  await dispatched;
+  const stopping=f.ui('stop');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.at(-1).action,'remove');
+  const count=f.tabMessages.length;done({}); await pending;await stopping;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.length,count,'A completed old operation must not recreate presentation');
+});
+
+test('a legacy content-script acknowledgement triggers one renderer injection without replaying input', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let delivered=0;
+  f.chrome.tabs.sendMessage=async()=>++delivered===1?{ok:true}:{ok:true,version:2};
+  const before=f.scripts.length;
+  await f.call('cdp',{lease:f.lease,method:'Input.insertText',params:{text:'once'}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.scripts.length,before+1);
+  assert.equal(f.commands.filter(c=>c.method==='Input.insertText').length,1);
+  await f.ui('stop');
+});
+
+test('an old mouse dispatch settling after Stop and regrant cannot paint into the new lease', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let finish,started;
+  const dispatched=new Promise(resolve=>started=resolve),original=f.chrome.debugger.sendCommand;
+  f.chrome.debugger.sendCommand=async(...args)=>{
+    if(args[1]==='Input.dispatchMouseEvent'){started();return new Promise(resolve=>finish=resolve);}
+    return original(...args);
+  };
+  const click=f.call('cdp',{lease:f.lease,method:'Input.dispatchMouseEvent',params:wheelEvent({x:20,y:30},{deltaX:0,deltaY:100})});
+  await dispatched;
+  const stopping=f.ui('stop');await new Promise(resolve=>setImmediate(resolve));
+  await f.ui('allow');
+  const regrant=f.call('lease.grant',{lease:{...f.lease,id:'new',token:'new-token'}});
+  await new Promise(resolve=>setImmediate(resolve));
+  finish({});await click;await stopping;assert.equal((await regrant).ok,true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.filter(m=>m.action==='show').length,0,'Only the matching lease may paint its action');
+  await f.ui('stop');
 });

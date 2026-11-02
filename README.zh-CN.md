@@ -82,11 +82,13 @@ dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile we
 使用 native_browser 工具，读取我刚才授权页面的标题和主要内容，然后交还浏览器控制。
 ```
 
-成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。插件默认逐动作确认，安装器不会修改 DSH 的权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
+成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。已发布的 `0.1.1` 默认逐动作确认；下述开发分支修复改为默认个人模式。安装器不会修改 DSH 的全局权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
 
 ### 权限模式
 
-默认 `per-action` 适合首次验收。希望每次接管只确认一次，可以在该 Profile **已有** 的 `native-browser` 配置行加入：
+**开发分支修复（尚未发布）**：默认 `personal` 与标准安装器保持一致，普通网页无需逐页点击授权，插件不再对每个动作追加确认。Stop、交还控制、会话切换、租约和 DSH 自身权限仍生效。显式配置的 `per-action` / `per-lease` / `trusted` 不会被覆盖。
+
+已安装 `0.1.1` 的用户可先在当前 Profile 的 `native-browser` 条目中设置 `approvalMode: personal` 并重载 DSH；后台也必须为个人模式。希望每次接管确认一次，则配置：
 
 ```yaml
 - id: native-browser
@@ -94,7 +96,7 @@ dsh plugin --profile web add dsh-native-browser@0.1.1 && dsh plugin --profile we
     approvalMode: per-lease
 ```
 
-个人日常浏览可显式选择 `approvalMode: personal`，再重启对应 Profile。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
+`0.1.1` 的个人日常浏览需显式选择 `approvalMode: personal`，再重启对应 Profile；开发分支已将其作为默认值。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
 
 ### 升级、排障与卸载
 

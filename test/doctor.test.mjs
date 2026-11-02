@@ -17,14 +17,14 @@ import { brokerCapabilities } from '../dist/packages/contracts/src/wire.js';
 const extensionId = 'a'.repeat(32);
 const origin = `chrome-extension://${extensionId}/`;
 const finding = (report, id) => report.checks.find(c => c.id === id);
-async function fixture(t, broker = false) {
+async function fixture(t, broker = false, accessMode = 'restricted') {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-dx-'));
   let server;
   t.after(async () => { await server?.close(); await rm(directory, { recursive: true }); });
   const manifestDir = path.join(directory, 'manifests');
   const installed = await installHost({ directory, extensionId, brand: 'chrome', manifestDir,
     cliPath: path.resolve('bin/dsh-native-browser.mjs') });
-  if (broker) server = await startBroker({ directory, allowedOrigins: ['https://example.test'] });
+  if (broker) server = await startBroker({ directory, accessMode, allowedOrigins: accessMode === 'personal' ? [] : ['https://example.test'] });
   return { directory, installed, broker: server, options: { directory, manifestDir, brand: 'chrome', extensionId } };
 }
 
@@ -59,7 +59,7 @@ test('doctor distinguishes installed-but-stopped from a connected matching brows
   const lockBefore = await lstat(path.join(f.directory, 'broker-lock.sqlite'), { bigint: true });
   const result = await diagnose(f.options);
   assert.equal(result.status, 'ready');
-  assert.deepEqual(result.connection, { connected: true, instanceCount: 1, matchingBrowserCount: 1 });
+  assert.deepEqual(result.connection, { connected: true, accessMode: 'restricted', instanceCount: 1, matchingBrowserCount: 1 });
   assert.deepEqual(provider.calls, []);
   const encoded = JSON.stringify(result);
   for (const secret of [before.trim(), origin, extensionId, 'private-profile-secret', 'https://example.test', f.directory]) assert.equal(encoded.includes(secret), false);
@@ -182,4 +182,17 @@ test('doctor CLI has machine-readable failure output and a failing exit status w
   assert.equal(exitCode, 1); assert.equal(err, '');
   assert.equal(JSON.parse(out).status, 'failed');
   assert.deepEqual(await readdir(root), []);
+});
+
+
+test('doctor derives personal mode from the live Broker handshake without tab consent or actions', async t => {
+  const f = await fixture(t, true, 'personal');
+  const pending = await diagnose(f.options);
+  assert.equal(pending.connection.accessMode, 'personal');
+  assert.match(finding(pending, 'browser-connection').hint, /无需逐页/);
+  const provider = new FakeProvider(); provider.instance.brand = 'chrome';
+  f.broker.runtime.register(provider);
+  const result = await diagnose(f.options);
+  assert.equal(result.status, 'ready'); assert.equal(result.connection.accessMode, 'personal');
+  assert.equal(provider.grants.size, 0); assert.deepEqual(provider.calls, []);
 });

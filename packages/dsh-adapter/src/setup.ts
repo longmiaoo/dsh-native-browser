@@ -10,6 +10,7 @@ import { extensionIdFromManifestKey } from '../../installer/src/extension.js';
 import { quickInstall } from '../../installer/src/quick-install.js';
 import { openSetup } from '../../installer/src/open-setup.js';
 import { snapshot } from '../../installer/src/files.js';
+import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from './approval-policy.js';
 
 const exec = promisify(execFile);
 const packageRoot = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -38,7 +39,7 @@ export async function verifySetupRuntime() {
 
 export function createSetupController(directory = defaultDirectory(), dependencies = {
   diagnose, quickInstall, openSetup, verifyRuntime: verifySetupRuntime, platform: process.platform,
-}) {
+}, approvalMode: ApprovalMode = DEFAULT_APPROVAL_MODE) {
   directory = path.resolve(directory);
   const extensionPath = path.join(directory, 'extension', 'chrome');
   const source = path.join(packageRoot, 'dist', 'extension', 'chrome');
@@ -59,7 +60,8 @@ export function createSetupController(directory = defaultDirectory(), dependenci
     } catch { /* Not installed yet; status never repairs files. */ }
     const report = await dependencies.diagnose({ directory, brand: 'chrome', extensionId: meta.extensionId, timeoutMs: 750 });
     return { ...meta, extensionPath, extensionStaged, platform: dependencies.platform,
-      supported: dependencies.platform === 'darwin', installing: Boolean(installation), report };
+      supported: dependencies.platform === 'darwin', installing: Boolean(installation),
+      policy: { approvalMode, browserAccessMode: report.connection.accessMode ?? 'unknown' }, report };
   };
   return async (endpoint: string, raw: unknown, signal: AbortSignal) => {
     checkAbort(signal);

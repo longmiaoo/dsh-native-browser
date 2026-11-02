@@ -62,7 +62,7 @@ export async function nativeAdapter({ hostRoot, executablePath, html, signal, co
     ctx = new Context(); await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime);
     await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'attachments') });
     ctx.provide('connection', { rpc: { handle: () => () => {} } });
-    await ctx.plugin(plugin, { runtimeDirectory: directory });
+    await ctx.plugin(plugin, { runtimeDirectory: directory, approvalMode: 'per-action' });
     const session = Session.create(SessionId('executor-benchmark')); session.append('turn/start', { turn: 1 });
     // Benchmarks default to deterministic approval. Integration tests may mount
     // the real public ApprovalService with controlled answerers instead.

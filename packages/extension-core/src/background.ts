@@ -77,6 +77,16 @@ function checkGate(lease: Lease, signal: AbortSignal): number {
 }
 
 type PointerPhase = 'move' | 'click' | 'wheel';
+function sendPointerFeedback(id: number, message: Record<string, unknown>): void {
+  const token = gates.get(id)?.token;
+  if (!token) return;
+  const current = () => gates.get(id)?.token === token;
+  void chrome.tabs.sendMessage(id, message).catch(async () => {
+    if (!current()) return;
+    await chrome.scripting.executeScript({ target: { tabId: id }, files: ['pointer.js'] });
+    if (current()) await chrome.tabs.sendMessage(id, message);
+  }).catch(() => {});
+}
 function showVirtualPointer(id: number, params: Record<string, unknown>): void {
   const type = params.type;
   if (type !== 'mousePressed' && type !== 'mouseReleased' && type !== 'mouseWheel') return;
@@ -86,10 +96,7 @@ function showVirtualPointer(id: number, params: Record<string, unknown>): void {
   // The persistent isolated content script keeps pointer rendering independent
   // from the action queue. Existing tabs receive it once on demand.
   const message = { type: 'dsh.pointer.v1', action: 'show', x, y, phase };
-  void chrome.tabs.sendMessage(id, message).catch(async () => {
-    await chrome.scripting.executeScript({ target: { tabId: id }, files: ['pointer.js'] });
-    await chrome.tabs.sendMessage(id, message);
-  }).catch(() => {});
+  sendPointerFeedback(id, message);
 }
 function removeVirtualPointer(id: number): void {
   void chrome.tabs.sendMessage(id, { type: 'dsh.pointer.v1', action: 'remove' }).catch(() => {});
@@ -423,6 +430,9 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
+      if (command === 'Input.insertText' || command === 'Input.dispatchKeyEvent' && params.type === 'keyDown') {
+        sendPointerFeedback(id, { type: 'dsh.pointer.v1', action: 'focus' });
+      }
       const result = await chrome.debugger.sendCommand({ tabId: id }, command, params);
       if (command === 'Page.handleJavaScriptDialog') pendingDialogs.delete(id);
       if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);

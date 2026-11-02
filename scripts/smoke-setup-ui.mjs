@@ -18,7 +18,7 @@ const hostRequire = createRequire(path.join(path.resolve(hostRoot), 'package.jso
 const rendererRequire = process.argv[3] ? createRequire(path.join(path.resolve(process.argv[3]), 'package.json')) : hostRequire;
 const root = await mkdtemp('/tmp/dsh-setup-ui-'), directory = path.join(root, 'runtime'), manifestDir = path.join(root, 'manifests');
 const calls = [], errors = [];
-let installs = 0, opened = 0, browser;
+let installs = 0, opened = 0, browser, statusPreview;
 const setup = createSetupController(directory, {
   platform: 'darwin', verifyRuntime: verifySetupRuntime,
   diagnose: options => diagnose({ ...options, manifestDir }),
@@ -59,7 +59,8 @@ const server = http.createServer(async (req, res) => {
     else if (req.url === '/rpc' && req.method === 'POST') {
       let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 4096) throw new Error('request too big'); }
       const { endpoint, payload } = JSON.parse(data); calls.push(endpoint);
-      const result = endpoint === 'foreground' ? { ok: true, value: { accepted: true } }
+      const result = endpoint === 'setup.status' && statusPreview ? { ok: true, value: statusPreview }
+        : endpoint === 'foreground' ? { ok: true, value: { accepted: true } }
         : await setup(endpoint, payload, new AbortController().signal);
       res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(result));
     } else {
@@ -92,6 +93,23 @@ try {
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '检查连接')?.disabled);
   assert.equal(installs, 2);
   await page.getByText('连接诊断', { exact: true }).click();
+  // Presentation-only scenarios: never change the real service or Host policy.
+  const actualStatus = (await setup('setup.status', {}, new AbortController().signal)).value;
+  const preview = async (access, approval, message) => {
+    statusPreview = { ...actualStatus, policy: { browserAccessMode: access, approvalMode: approval },
+      report: { ...actualStatus.report, status: 'ready' } };
+    await page.getByRole('button', { name: '检查连接', exact: true }).click();
+    await page.getByText(message, { exact: true }).waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Chrome 最后一步' }).count(), 0);
+  };
+  await preview('personal', 'personal', 'Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。');
+  await page.getByText('插件审批：个人模式，不额外逐次询问；仍遵循 DSH 的权限设置。', { exact: true }).waitFor();
+  await preview('personal', 'per-action', '插件审批：逐次审批。当前显式配置会在操作时请求确认。');
+  await preview('restricted', 'per-lease', 'Chrome 已连接，当前为受限模式。请在扩展弹窗中允许目标标签页。');
+  await preview('restricted', 'personal', '插件为个人模式，但后台为受限模式。请点击“完成浏览器配置”启用匹配的个人后台，或显式选择受限审批配置。');
+  await preview('unknown', 'personal', 'Chrome 已连接。尚未确认页面访问模式，请重新检查连接。');
+  await preview('personal', 'personal', 'Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。');
+  assert.equal(installs, 2);
   await mkdir('output/playwright', { recursive: true });
   await page.screenshot({ path: 'output/playwright/setup-ui.png', fullPage: true });
   await page.evaluate(() => window.disposeSetup());

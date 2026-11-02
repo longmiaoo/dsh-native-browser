@@ -102,6 +102,31 @@ test('file selection is allowlisted, resolved-object-only and bounded to absolut
   await f.ui('stop');
 });
 
+test('text and key-down input render focused-target feedback without synthesizing mouse input', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  for (const [method, params] of [['Input.insertText', { text: 'test' }],
+    ['Input.dispatchKeyEvent', keyEvent('ArrowLeft', false, 'keyDown')],
+    ['Input.dispatchKeyEvent', keyEvent('ArrowLeft', false, 'keyUp')]]) {
+    assert.equal((await f.call('cdp', { lease: f.lease, method, params })).ok, true);
+  }
+  assert.equal(f.tabMessages.filter(m => m.action === 'focus').length, 2);
+  assert.equal(f.commands.some(c => c.method === 'Input.dispatchMouseEvent'), false);
+  await f.ui('stop');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Input.insertText', params: { text: 'late' } })).code, 'LEASE_REVOKED');
+  assert.equal(f.tabMessages.filter(m => m.action === 'focus').length, 2);
+});
+
+test('Stop during pointer script injection prevents late keyboard feedback', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  let finish;
+  f.chrome.tabs.sendMessage = async (_id, m) => { f.tabMessages.push(m); if (m.action === 'focus') throw Error('No content script'); };
+  f.chrome.scripting.executeScript = async () => new Promise(resolve => { finish = resolve; });
+  await f.call('cdp', { lease: f.lease, method: 'Input.insertText', params: { text: 'test' } });
+  assert.ok(finish); await f.ui('stop'); finish([]);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.deepEqual(f.tabMessages.map(m => m.action), ['focus', 'remove']);
+});
+
 test('file chooser interception and accept are allowlisted, enabled-only and bounded to absolute local files', async () => {
   const f = await fixture();
   await f.call('lease.grant', { lease: f.lease });

@@ -27,8 +27,18 @@ test('setup status is read-only and never installs or discovers a profile', asyn
   const response = await f.handle('setup.status', {}, signal());
   assert.equal(response.ok, true); assert.equal(response.value.report.status, 'failed');
   assert.equal(response.value.supported, true);
+  assert.deepEqual(response.value.policy, { approvalMode: 'personal', browserAccessMode: 'unknown' });
   assert.equal(response.value.extensionPath, path.join(f.root, 'runtime/extension/chrome'));
   assert.deepEqual(await readdir(f.root), []); assert.equal(f.calls.length, 0);
+});
+
+test('setup reports explicit adapter approval and live Broker access separately', async t => {
+  const f = await fixture(t, { diagnose: async () => ({ status: 'ready', checks: [],
+    connection: { connected: true, instanceCount: 1, matchingBrowserCount: 1, accessMode: 'personal' } }) });
+  const controller = createSetupController(path.join(f.root, 'runtime'), f.dependencies, 'per-action');
+  const result = await controller('setup.status', {}, signal());
+  assert.deepEqual(result.value.policy, { approvalMode: 'per-action', browserAccessMode: 'personal' });
+  assert.equal(f.calls.length, 0);
 });
 
 test('setup rejects missing consent, unknown methods and caller-controlled paths before writes', async t => {

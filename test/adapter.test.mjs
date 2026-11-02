@@ -23,7 +23,8 @@ async function fixture(t, config = {}, brokerOptions = {}) {
   } } });
   const ctx = { tools: { register: tool => definitions.set(tool.name, tool) },
     on: (event, handler) => hooks.set(event, handler), effect: callback => effects.push(callback()), get: name => services.get(name) };
-  apply(ctx, { runtimeDirectory: directory, ...config });
+  // Existing approval-boundary cases deliberately exercise explicit per-action mode.
+  apply(ctx, { approvalMode: 'per-action', runtimeDirectory: directory, ...config });
   t.after(async () => { for (const dispose of effects) await dispose(); await broker.close(); await rm(directory, { recursive: true }); });
   let count = 0;
   const prepare = (name, args, sessionId = 'session') => {
@@ -31,7 +32,7 @@ async function fixture(t, config = {}, brokerOptions = {}) {
     const decision = hooks.get('tools/pre-execute')(exec, () => ({ kind: 'allow' }));
     return { exec, decision, run: () => definitions.get(name).execute(args, exec) };
   };
-  return { provider, broker, prepare, definitions, services,
+  return { provider, broker, prepare, definitions, services, preExecute: hooks.get('tools/pre-execute'),
     rpc: (endpoint, payload) => foregroundHandler(endpoint, payload, AbortSignal.timeout(3000)),
     foreground: (payload, signal = AbortSignal.timeout(3000)) => foregroundHandler('foreground', payload, signal),
     end: (id = 'session') => hooks.get('session/event')({ id }, { type: 'turn/end' }),
@@ -108,6 +109,38 @@ test('personal adapter fails closed when the Broker is not in personal access mo
   const f = await fixture(t, { approvalMode: 'personal' });
   await assert.rejects(f.prepare('native_browser_claim', claimArgs).run(), { code: 'POLICY_DENIED' });
   assert.equal(f.provider.grants.size, 0);
+  await assert.rejects(f.prepare('native_browser_open', { instanceId: 'fake-1', url: 'https://example.test/' }).run(), { code: 'POLICY_DENIED' });
+  assert.deepEqual(f.provider.opened, []);
+});
+test('default personal policy permits consecutive actions, keeps host denials and revokes on handoff/switch', async t => {
+  const f = await fixture(t, { approvalMode: undefined }, { accessMode: 'personal' });
+  let extraApprovals = 0;
+  f.services.set('approval', { request: async () => { extraApprovals++; return 'allowed-once'; } });
+  const first = f.prepare('native_browser_claim', claimArgs, 'chat-a');
+  assert.equal(first.decision.kind, 'allow');
+  const lease = await first.run();
+  for (const text of ['first', 'second']) {
+    const action = f.prepare('native_browser_act', { requestId: `default-${text}`, leaseId: lease.id, documentEpoch: 'doc-1',
+      action: { kind: 'fill', ref: 'node-1', text } }, 'chat-a');
+    assert.equal(action.decision.kind, 'allow'); assert.equal((await action.run()).outcome, 'succeeded');
+  }
+  const batch = f.prepare('native_browser_batch', { requestId: 'default-batch', leaseId: lease.id, documentEpoch: 'doc-1',
+    steps: [{ action: { kind: 'fill', ref: 'node-1', text: 'batch-1' } }, { action: { kind: 'fill', ref: 'node-1', text: 'batch-2' } }] }, 'chat-a');
+  assert.equal((await batch.run()).outcome, 'succeeded'); assert.equal(extraApprovals, 0);
+  f.end('chat-a');
+  assert.equal((await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run()).tab, 'tab-1');
+  await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 1, issuedAt: Date.now(), sessionId: 'chat-b' });
+  await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run(), { code: 'LEASE_REVOKED' });
+  await until(() => f.provider.grants.size === 0);
+  const second = await f.prepare('native_browser_claim', claimArgs, 'chat-b').run();
+  await f.prepare('native_browser_handoff', { leaseId: second.id }, 'chat-b').run();
+  await assert.rejects(f.prepare('native_browser_observe', { leaseId: second.id }, 'chat-b').run(), { code: 'LEASE_REVOKED' });
+  const status = await f.rpc('setup.status', {});
+  assert.equal(status.value.policy.approvalMode, 'personal');
+  assert.equal(status.value.policy.browserAccessMode, 'personal');
+  const hostDenial = { kind: 'deny', reason: 'Host permission policy' };
+  assert.equal(f.preExecute({ name: 'native_browser_act', callId: 'host-denial', signal: AbortSignal.timeout(1000),
+    agent: { session: { id: 'chat-b' } } }, () => hostDenial), hostDenial);
 });
 test('foreground conversation change revokes the old owner before the new session can claim', async t => {
   const f = await fixture(t), first = await f.prepare('native_browser_claim', claimArgs, 'chat-a').run(), now = Date.now();
@@ -128,6 +161,26 @@ test('foreground bridge rejects malformed and stale updates without revoking the
   assert.equal((await f.foreground({ clientId: 'forged', revision: 3, issuedAt: now + 3, sessionId: 'chat-b' })).ok, false);
   assert.equal((await f.foreground({ clientId: '22222222-2222-4222-8222-22222222222-', revision: 3, issuedAt: now + 3, sessionId: 'chat-b' })).ok, false);
   assert.equal((await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run()).tab, 'tab-1');
+});
+
+test('background model cannot reclaim or open tabs after handoff; selecting it again permits a fresh claim', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const clientId = '11111111-1111-4111-8111-111111111111', now = Date.now();
+  const first = await f.prepare('native_browser_claim', claimArgs, 'chat-a').run();
+  await f.foreground({ clientId, revision: 1, issuedAt: now, sessionId: 'chat-b' });
+  await until(() => f.provider.grants.size === 0);
+  for (const [name, args] of [['claim', claimArgs], ['open', { instanceId: 'fake-1', url: 'https://example.test' }],
+    ['observe', { leaseId: first.id }]]) {
+    const attempt = f.prepare(`native_browser_${name}`, args, 'chat-a');
+    assert.equal(attempt.decision.kind, 'deny'); assert.match(attempt.decision.reason, /background.*do not reclaim/);
+    await assert.rejects(attempt.run(), { code: 'LEASE_REVOKED' });
+  }
+  assert.equal(f.provider.opened.length, 0); assert.equal(f.provider.grants.size, 0);
+  await f.foreground({ clientId, revision: 2, issuedAt: now + 1, sessionId: 'chat-a' });
+  const next = f.prepare('native_browser_claim', claimArgs, 'chat-a');
+  assert.equal(next.decision.kind, 'allow'); assert.notEqual((await next.run()).id, first.id);
+  await f.foreground({ clientId, revision: 3, issuedAt: now + 2, sessionId: null });
+  assert.equal(f.prepare('native_browser_claim', claimArgs, 'chat-a').decision.kind, 'deny');
 });
 test('disposing a DSH conversation releases all of its browser control', async t => {
   const f = await fixture(t), lease = await f.prepare('native_browser_claim', claimArgs, 'chat-a').run();

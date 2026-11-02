@@ -2,6 +2,17 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Render focused-target pointer feedback for fill, append and keyboard input, without synthesizing mouse clicks. Acknowledge pointer messages and suppress late reinjection feedback after Stop.
+- Fence new browser calls from a conversation after it loses foreground ownership; return an explicit handoff explanation instead of allowing repeated background reclaims. Selecting that conversation again permits a fresh lease.
+- Ignore foreground notifications from visible but unfocused DSH windows; reassert the selected conversation on window focus. Explain that user-visible browsing should activate the controlled Chrome tab.
+- Align the default adapter approval mode with the installer's personal Broker. Ordinary browser actions and batch steps no longer add plugin-owned per-action prompts; explicit approval configurations and DSH host permissions remain in force.
+- Require the personal capability during every Broker connection/reconnection before issuing browser commands. A restricted Broker cannot receive an unapproved tab-open request from a personal adapter.
+- Report the live Broker access mode and effective plugin approval mode separately in setup. Remove incorrect per-tab consent instructions in personal mode, retain restricted-mode guidance, and flag mode mismatches.
+- Hide completed loading steps once Chrome connects, and explain the macOS hidden-folder picker shortcut in words.
+- Verify default-mode packed installation with real Chrome/Native Messaging without per-tab popup approval; keep a no-service acceptance path for machines with an active user Broker.
+
 ## 0.1.1 - 2026-10-30
 
 - Add a DSH settings page for explicit Chrome setup, connection diagnostics, extension path copying and reopening the extension manager. Use the running plugin's package and runtime directory without asking users for a Profile name.

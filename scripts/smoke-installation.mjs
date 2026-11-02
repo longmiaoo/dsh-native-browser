@@ -13,13 +13,16 @@ import { chromium } from 'playwright-core';
 // -> actual DSH ToolRuntime. Only temporary profiles/registrations are used.
 const root = path.resolve(import.meta.dirname, '..');
 const hostRoot = process.argv[2], executablePath = process.env.DSH_CHROME_TEST_EXECUTABLE;
+// Allows acceptance while the user has a live Broker, without unloading it.
+const noService = process.argv.includes('--no-service');
 if (process.platform !== 'darwin' || !hostRoot || !executablePath) throw Error('Requires macOS, an installed DSH directory and DSH_CHROME_TEST_EXECUTABLE');
 const exec = promisify(execFile), temporary = await mkdtemp('/tmp/dsh-install-');
 const profile = path.join(temporary, 'profile'), directory = path.join(temporary, 'runtime');
 const plistDirectory = path.join(temporary, 'agents');
-const passed = []; let browser, ctx, service, installer, server, cleanupComplete = false;
+const passed = []; let browser, ctx, service, installer, server, isolatedBroker, cleanupComplete = false;
 const report = { checkedAt: new Date().toISOString(), passed,
-  scope: 'Installed npm tarball, real macOS LaunchAgent, temporary Chrome-for-Testing profile and Native Messaging registration, actual DSH ToolRuntime with explicit personal-mode test config. Deterministic tool calls; no LLM, daily user profile or business account.' };
+  scope: 'Installed npm tarball, real macOS LaunchAgent, temporary Chrome-for-Testing profile and Native Messaging registration, actual DSH ToolRuntime with default plugin approval mode. Deterministic tool calls; no LLM, daily user profile or business account.' };
+if (noService) report.scope = report.scope.replace('real macOS LaunchAgent', 'isolated in-process Broker (no LaunchAgent changes)');
 const eventual = async (check, label, timeout = 8000) => {
   const until = Date.now() + timeout;
   while (Date.now() < until) { const result = await check(); if (result) return result; await new Promise(r => setTimeout(r, 50)); }
@@ -27,7 +30,7 @@ const eventual = async (check, label, timeout = 8000) => {
 };
 try {
   const installedService = await import('../dist/packages/installer/src/service.js');
-  assert.equal(await installedService.serviceIsLoaded(), false, 'Refusing to disturb an existing user Broker service');
+  if (!noService) assert.equal(await installedService.serviceIsLoaded(), false, 'Refusing to disturb an existing user Broker service');
   const archive = (await exec('npm', ['pack', '--ignore-scripts', '--silent', '--pack-destination', temporary], { cwd: root })).stdout.trim().split('\n').at(-1);
   const consumer = path.join(temporary, 'consumer'); await mkdir(consumer);
   await exec('pnpm', ['add', '--dir', consumer, '--ignore-scripts', path.join(temporary, archive)]);
@@ -40,14 +43,18 @@ try {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, 'dist/extension/chrome/manifest.json'), 'utf8'));
   const options = { browser: 'chrome', extensionSource: path.join(packageRoot, 'dist/extension/chrome'),
     extensionId: extensionIdFromManifestKey(manifest.key), directory, cliPath: path.join(packageRoot, 'bin/dsh-native-browser.mjs'),
-    plistDirectory, manifestDir: path.join(profile, 'NativeMessagingHosts'), open: false };
+    plistDirectory, manifestDir: path.join(profile, 'NativeMessagingHosts'), open: false, service: !noService };
   const installed = await quickInstall(options); service = installed.service;
-  assert.ok(service.loaded); assert.ok(await installer.serviceIsLoaded());
+  if (!noService) { assert.ok(service.loaded); assert.ok(await installer.serviceIsLoaded()); }
   const token = await readFile(path.join(directory, 'auth-token'));
   const repeated = await quickInstall(options); service = repeated.service;
   assert.equal(repeated.extensionPath, installed.extensionPath);
   assert.deepEqual(await readFile(path.join(directory, 'auth-token')), token);
-  passed.push('Installed tarball starts a real LaunchAgent Broker; repeated install restarts it at the same extension path and preserves authentication');
+  if (noService) {
+    const { startBroker } = await loadPackage('dist/packages/broker/src/server.js');
+    isolatedBroker = await startBroker({ directory, accessMode: 'personal', allowedOrigins: [] });
+    passed.push('Installed tarball uses an isolated personal Broker; repeated install preserves path and authentication without touching the user service');
+  } else passed.push('Installed tarball starts a real LaunchAgent Broker; repeated install restarts it at the same extension path and preserves authentication');
 
   server = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end('<!doctype html><html lang="zh-CN"><title>安装验收表单</title><body><h1>安装验收</h1><label for="query">搜索词</label><input id="query"><button id="submit">提交测试</button><p id="result">尚未提交</p><script>document.querySelector("#submit").onclick=()=>document.querySelector("#result").textContent="已提交："+document.querySelector("#query").value</script></body></html>'); });
@@ -64,12 +71,15 @@ try {
   const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab' }] });
   await cdp.send('Extensions.triggerAction', { id: extensionId, targetId: targetInfos.find(t => t.url === page.url()).targetId });
   const popup = await browser.newPage(); await popup.goto(`chrome-extension://${extensionId}/popup.html`); await page.bringToFront();
-  const popupCommand = command => popup.evaluate(command => chrome.runtime.sendMessage({ command }), command);
-  await popupCommand('allow');
+  const popupCommand = command => {
+    assert.notEqual(command, 'allow', 'Default personal acceptance must not grant individual tabs');
+    return popup.evaluate(command => chrome.runtime.sendMessage({ command }), command);
+  };
+  // Personal mode must work without invoking the popup's per-tab allow action.
   try { await eventual(async () => (await popupCommand('status')).status.startsWith('Connected'), 'native connection'); }
   catch (error) {
     console.error('Popup connection evidence:', JSON.stringify(await popupCommand('status')));
-    console.error('Broker startup evidence:', await readFile(path.join(directory, 'broker.stderr.log'), 'utf8'));
+    console.error('Broker startup evidence:', await readFile(path.join(directory, 'broker.stderr.log'), 'utf8').catch(() => 'No service log (isolated Broker)'));
     throw error;
   }
   const diagnostics = { directory, brand: 'chrome', extensionId, manifestDir: options.manifestDir };
@@ -91,7 +101,7 @@ try {
   ctx.tools.register({ name: 'browser_claim', description: 'Other-plugin namespace fixture',
     parameters: { type: 'object', properties: {} }, output: { schema: {}, render: () => [] }, execute: async () => ({ untouched: true }) });
   const plugin = await loadPackage('index.js');
-  await ctx.plugin(plugin, { runtimeDirectory: directory, approvalMode: 'personal' });
+  await ctx.plugin(plugin, { runtimeDirectory: directory });
   const names = ctx.tools.schemas().map(t => t.name);
   assert.equal(names.filter(n => n.startsWith('native_browser_')).length, 13); assert.ok(names.includes('browser_claim'));
   passed.push('All 13 native_browser tools register beside an existing browser_claim tool without aliases or collisions');
@@ -110,15 +120,25 @@ try {
   let acted = await call('act', { leaseId: lease.id, requestId: 'install-fill', documentEpoch: observation.documentEpoch,
     action: { kind: 'fill', ref: ref('搜索词'), text: '正式版安装验收' } });
   assert.equal(acted.outcome, 'succeeded'); observation = acted.observation;
+  await eventual(() => page.locator('[data-dsh-pointer="v1"]').count(), 'keyboard-only fill pointer before any click');
+  assert.notEqual(await page.locator('[data-dsh-pointer="v1"]').evaluate(node => node.style.opacity), '0');
+  await mkdir(path.join(root, 'output/playwright'), { recursive: true });
+  await page.screenshot({ path: path.join(root, 'output/playwright/installation-keyboard-pointer.png') });
+  acted = await call('act', { leaseId: lease.id, requestId: 'install-key', documentEpoch: observation.documentEpoch,
+    action: { kind: 'press', ref: ref('搜索词'), key: 'ArrowLeft' } });
+  observation = acted.observation;
+  assert.ok(await page.locator('[data-dsh-pointer="v1"]').count());
   acted = await call('act', { leaseId: lease.id, requestId: 'install-click', documentEpoch: observation.documentEpoch,
     action: { kind: 'click', ref: ref('提交测试'), expected: { kind: 'text', text: '已提交：正式版安装验收' } } });
   assert.equal(acted.outcome, 'succeeded'); assert.equal(await page.locator('#result').innerText(), '已提交：正式版安装验收');
   const shot = await call('screenshot', { leaseId: lease.id }); assert.ok(shot.attachment);
   await call('handoff', { leaseId: lease.id });
+  await eventual(async () => (await page.locator('[data-dsh-pointer="v1"]').count()) === 0, 'pointer removed on handoff');
+  passed.push('Fill and keyboard actions show a pointer without a synthetic click; handoff removes it');
   passed.push('Installed package performs Chinese fill, verified click, Host-owned screenshot and handoff through real DSH tools');
 
   // Public sites supplement local fixtures; no account or external submission.
-  await page.goto('https://example.com/', { timeout: 30000 }); await page.bringToFront(); await popupCommand('allow');
+  await page.goto('https://example.com/', { timeout: 30000 }); await page.bringToFront();
   const publicTabs = await call('list', { instanceId: instance.id });
   lease = await call('claim', { instanceId: instance.id, tab: publicTabs.find(t => t.url.startsWith('https://example.com')).id });
   observation = await call('observe', { leaseId: lease.id });
@@ -144,7 +164,7 @@ try {
   await call('handoff', { leaseId: lease.id });
   passed.push('Read-only public Example Domain and GitHub repository reads plus agent-tab open, activate and close passed');
 
-  await page.goto(origin); await page.bringToFront(); await popupCommand('allow');
+  await page.goto(origin); await page.bringToFront();
   const finalTabs = await call('list', { instanceId: instance.id });
   lease = await call('claim', { instanceId: instance.id, tab: finalTabs.find(t => t.url.startsWith(origin)).id });
   const switched = await foreground('foreground', { clientId: '11111111-1111-4111-8111-111111111111',
@@ -152,8 +172,11 @@ try {
   assert.equal(switched.value.released, 1);
   const revoked = await ctx.tools.execute({ name: 'native_browser_observe', callId: 'after-switch', arguments: { leaseId: lease.id }, agent: { session }, signal: AbortSignal.timeout(5000) });
   assert.equal(revoked.isError, true);
+  const backgroundClaim = await ctx.tools.execute({ name: 'native_browser_claim', callId: 'background-reclaim', arguments: { instanceId: instance.id, tab: lease.tab }, agent: { session }, signal: AbortSignal.timeout(5000) });
+  assert.equal(backgroundClaim.isError, true);
   passed.push('Foreground conversation RPC revokes the installed native stack lease before another conversation can use it (UI notification simulated)');
-  await popupCommand('allow');
+  await foreground('foreground', { clientId: '11111111-1111-4111-8111-111111111111', revision: 2,
+    issuedAt: Date.now(), sessionId: session.id }, AbortSignal.timeout(3000));
   lease = await call('claim', { instanceId: instance.id, tab: finalTabs.find(t => t.url.startsWith(origin)).id });
   await popupCommand('stop');
   const stopped = await ctx.tools.execute({ name: 'native_browser_observe', callId: 'after-stop', arguments: { leaseId: lease.id }, agent: { session }, signal: AbortSignal.timeout(5000) });
@@ -162,7 +185,7 @@ try {
   report.outcome = 'passed';
 } catch (error) { report.outcome = 'failed'; report.failure = error.message; console.error(error); process.exitCode = 1; }
 finally {
-  await ctx?.fiber.dispose(); await browser?.close();
+  await ctx?.fiber.dispose(); await browser?.close(); await isolatedBroker?.close();
   if (installer) {
     const plistExists = await access(path.join(plistDirectory, `${installer.SERVICE_LABEL}.plist`)).then(() => true, () => false);
     if (plistExists) {

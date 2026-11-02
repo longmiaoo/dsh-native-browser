@@ -1,5 +1,6 @@
-type PointerPhase = 'move' | 'click' | 'wheel';
+type PointerPhase = 'move' | 'click' | 'wheel' | 'typing';
 type PointerMessage = Readonly<{ type: 'dsh.pointer.v1'; action: 'show'; x: number; y: number; phase: PointerPhase }>
+  | Readonly<{ type: 'dsh.pointer.v1'; action: 'focus' }>
   | Readonly<{ type: 'dsh.pointer.v1'; action: 'remove' }>;
 type PointerState = { host: HTMLDivElement; arrow: SVGElement; ring: HTMLDivElement; fade?: ReturnType<typeof setTimeout> };
 const world = globalThis as typeof globalThis & { __dshPointerV1?: PointerState; __dshPointerListenerV1?: true };
@@ -11,7 +12,7 @@ function remove(): void {
 
 function show(payload: Extract<PointerMessage, { action: 'show' }>): void {
   if (!Number.isFinite(payload.x) || !Number.isFinite(payload.y) || payload.x < 0 || payload.y < 0
-    || !['move', 'click', 'wheel'].includes(payload.phase)) return;
+    || !['move', 'click', 'wheel', 'typing'].includes(payload.phase)) return;
   let state = world.__dshPointerV1;
   if (!state?.host.isConnected) {
     const host = document.createElement('div');
@@ -47,13 +48,29 @@ function show(payload: Extract<PointerMessage, { action: 'show' }>): void {
   state.fade = setTimeout(() => { if (host.isConnected) host.style.opacity = '.78'; }, 8000);
 }
 
+// Keyboard operations do not dispatch a mouse click. Show their real focused
+// target without synthesizing input or inventing a point during page reads.
+function showFocus(): void {
+  let target = document.activeElement;
+  while (target?.shadowRoot?.activeElement) target = target.shadowRoot.activeElement;
+  if (!target || target === document.body || target === document.documentElement || target.tagName === 'IFRAME') return;
+  const rect = target.getBoundingClientRect();
+  const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+  const right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+  if (right <= left || bottom <= top) return;
+  show({ type: 'dsh.pointer.v1', action: 'show', x: (left + right) / 2, y: (top + bottom) / 2, phase: 'typing' });
+}
+
 if (!world.__dshPointerListenerV1) {
   world.__dshPointerListenerV1 = true;
-  chrome.runtime.onMessage.addListener((raw: unknown) => {
+  chrome.runtime.onMessage.addListener((raw: unknown, _sender, respond) => {
     const message = raw as Partial<PointerMessage>;
     if (message.type !== 'dsh.pointer.v1') return;
     if (message.action === 'remove') remove();
     else if (message.action === 'show') show(message as Extract<PointerMessage, { action: 'show' }>);
-    return true;
+    else if (message.action === 'focus') showFocus();
+    // A synchronous acknowledgement prevents an indefinitely pending channel
+    // and a needless reinjection attempt when the document later navigates.
+    respond({ ok: true });
   });
 }

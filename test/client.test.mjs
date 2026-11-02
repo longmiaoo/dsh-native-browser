@@ -10,9 +10,13 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve();
 function fixture(respond) {
   let definition, current = 'chat-a';
   const listListeners = new Set(), eventListeners = new Map(), documentListeners = new Map(), disposers = [], calls = [];
-  const window = { __ModuleLoader__: { load(value) { definition = value; } } };
+  const windowListeners = new Map();
+  const window = { __ModuleLoader__: { load(value) { definition = value; } },
+    addEventListener(name, listener) { windowListeners.set(name, listener); },
+    removeEventListener(name, listener) { if (windowListeners.get(name) === listener) windowListeners.delete(name); } };
   const document = {
     visibilityState: 'visible',
+    focused: true, hasFocus() { return this.focused; },
     addEventListener(name, listener) { documentListeners.set(name, listener); },
     removeEventListener(name, listener) { if (documentListeners.get(name) === listener) documentListeners.delete(name); },
   };
@@ -29,6 +33,7 @@ function fixture(respond) {
     select(value) { current = value; for (const listener of listListeners) listener(); },
     reset() { eventListeners.get('connection/reset')?.(); },
     visible() { documentListeners.get('visibilitychange')?.(); },
+    focus() { document.focused = true; windowListeners.get('focus')?.(); },
     dispose() { for (const dispose of disposers) dispose(); },
   };
 }
@@ -43,6 +48,16 @@ test('client reports canonical current-session changes over authenticated Connec
   f.select('chat-b'); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'chat-b');
   const count = f.calls.length; f.select('chat-b'); await flush(); assert.equal(f.calls.length, count);
   assert.equal(f.calls[1].payload.revision, f.calls[0].payload.revision + 1);
+});
+
+test('a visible unfocused DSH window cannot reclaim foreground on list updates or reconnect', async () => {
+  const f = fixture(); await flush();
+  f.document.focused = false;
+  f.select('background-chat'); f.reset(); f.visible(); await flush();
+  assert.equal(f.calls.length, 1);
+  f.focus(); await flush();
+  assert.equal(f.calls.length, 2); assert.equal(f.calls.at(-1).payload.sessionId, 'background-chat');
+  f.dispose(); f.focus(); await flush(); assert.equal(f.calls.length, 2);
 });
 
 test('hidden pages cannot steal foreground; visibility and reconnect reassert the latest selection', async () => {

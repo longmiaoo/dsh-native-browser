@@ -67,6 +67,15 @@ window.__ModuleLoader__.load({
           return () => { const running = active.current; active.current = null; running?.abort(); };
         }, []);
         const waiting = busy || status?.installing;
+        const accessMode = status?.policy?.browserAccessMode;
+        const approvalMode = status?.policy?.approvalMode;
+        const connected = status?.report?.status === 'ready';
+        const modeMismatch = accessMode === 'restricted' && approvalMode === 'personal';
+        const connectedText = accessMode === 'personal'
+          ? t('Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。', 'Chrome is connected. Personal mode needs no per-tab consent; start chatting.')
+          : accessMode === 'restricted'
+            ? t('Chrome 已连接，当前为受限模式。请在扩展弹窗中允许目标标签页。', 'Chrome is connected in restricted mode. Allow the target tab in the extension popup.')
+            : t('Chrome 已连接。尚未确认页面访问模式，请重新检查连接。', 'Chrome is connected. Check the connection again to confirm its access mode.');
         const button = (label, endpoint, disabled = false) => h('button', {
           type: 'button', disabled: Boolean(waiting || disabled), onClick: () => void perform(endpoint),
           style: { font: 'inherit', padding: '9px 14px', borderRadius: 8, cursor: 'pointer',
@@ -77,9 +86,19 @@ window.__ModuleLoader__.load({
           h('p', null, t('在这里完成 Chrome 配置，无需查找 Profile 或复制安装命令。', 'Set up Chrome here without finding a Profile or editing commands.')),
           h('p', null, t('配置将在运行 DSH 的这台 Mac 上注册浏览器组件、启动登录后自动运行的本地服务，并打开 Chrome。不会更改 DSH 的操作审批设置。远程连接的 DSH 不会配置你面前的电脑。',
             'Setup registers browser components and a login service on the Mac running DSH, then opens Chrome. DSH approval settings stay unchanged. A remote DSH host cannot configure the computer in front of you.')),
+          h('p', null, t('标准安装使用个人浏览器模式：助手可接管此 Chrome 中的普通网页，无需逐页授权。Stop、交还控制和切换对话仍会释放控制。',
+            'Standard setup uses personal browser mode: the assistant can claim ordinary tabs in this Chrome without per-tab consent. Stop, handoff and conversation switching still release control.')),
           status && h('p', { role: 'status' }, status.report?.status === 'ready'
-            ? t('Chrome 已连接。授权目标标签页后，就可以回到聊天开始使用。', 'Chrome is connected. Authorize your target tab, then start chatting.')
+            ? connectedText
             : t('尚未就绪：请完成配置、加载扩展，再检查连接。', 'Not ready: complete setup, load the extension, then check the connection.')),
+          approvalMode && h('p', null, t('插件审批：', 'Plugin approval: ') + ({
+            personal: t('个人模式，不额外逐次询问；仍遵循 DSH 的权限设置。', 'Personal mode, no extra per-action prompts; DSH permissions still apply.'),
+            'per-action': t('逐次审批。当前显式配置会在操作时请求确认。', 'Per action. Your explicit configuration requests confirmation for actions.'),
+            'per-lease': t('每次接管时确认，同一次接管中的后续动作不额外询问。', 'Confirm each claim; no extra prompts for subsequent actions under that lease.'),
+            trusted: t('仅信任已配置的网站来源。', 'Only the configured website origins are trusted.'),
+          }[approvalMode] || approvalMode)),
+          modeMismatch && h('p', { role: 'alert' }, t('插件为个人模式，但后台为受限模式。请点击“完成浏览器配置”启用匹配的个人后台，或显式选择受限审批配置。',
+            'The plugin uses personal mode but the Broker is restricted. Run Set up Chrome for a matching personal Broker, or explicitly configure restricted approvals.')),
           status?.supported === false && h('p', { role: 'alert' }, t('自动配置目前仅支持 macOS；其他系统请参考安装文档。', 'Automatic setup currently supports macOS only. See the installation guide for other systems.')),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
             button(t('完成浏览器配置', 'Set up Chrome'), 'setup.install', !status?.supported),
@@ -90,11 +109,15 @@ window.__ModuleLoader__.load({
           notice && h('p', { role: 'status' }, notice),
           error && h('p', { role: 'alert' }, error),
           status?.extensionStaged && h('div', null,
-            h('h3', null, t('Chrome 最后一步', 'Final Chrome step')),
-            h('ol', null,
+            h('h3', null, connected ? t('扩展已连接', 'Extension connected') : t('Chrome 最后一步', 'Final Chrome step')),
+            !connected && h('ol', null,
               h('li', null, t('打开 Chrome 扩展管理页，开启右上角“开发者模式”。', 'Open Chrome extensions and enable Developer mode.')),
               h('li', null, t('点击“加载已解压的扩展程序”。在选择目录窗口按 ⌘⇧G，粘贴下方目录并选择。', 'Click Load unpacked. Press ⌘⇧G in the folder picker, paste the path below and select it.')),
-              h('li', null, t('打开 DSH Native Browser 扩展弹窗，允许目标标签页，然后点击本页“检查连接”。', 'Open the extension popup, allow the target tab, then check the connection here.'))),
+              h('li', null, accessMode === 'restricted'
+                ? t('在扩展弹窗中允许目标标签页，然后点击“检查连接”。', 'Allow the target tab in the extension popup, then check the connection.')
+                : t('加载扩展后回到此页点击“检查连接”；个人模式无需逐页授权。', 'After loading the extension, check the connection here; personal mode needs no per-tab consent.'))),
+            !connected && h('p', null, t('找不到目录？它在 macOS 的隐藏文件夹中。在 Chrome 选择目录的窗口同时按 Command + Shift + G，再粘贴目录并回车；选择整个 chrome 文件夹，不是里面的文件。',
+              'Cannot find it? The folder is hidden on macOS. In Chrome’s folder picker, press Command + Shift + G, paste the path and press Return. Select the whole chrome folder, not a file inside it.')),
             h('input', { 'aria-label': t('扩展目录', 'Extension directory'), readOnly: true, value: status.extensionPath,
               onFocus: e => e.target.select(), style: { boxSizing: 'border-box', width: '100%', padding: 8, font: 'inherit' } }),
             h('button', { type: 'button', onClick: async () => {
@@ -126,8 +149,10 @@ window.__ModuleLoader__.load({
       const state = pageState();
       let disposed = false;
       const lifecycle = new AbortController();
+      const isForeground = () => document.visibilityState === 'visible'
+        && (typeof document.hasFocus !== 'function' || document.hasFocus());
       const publish = (force = false) => {
-        if (disposed || document.visibilityState !== 'visible') return;
+        if (disposed || !isForeground()) return;
         const raw = ctx.sessions.list.getSnapshot().current;
         const sessionId = typeof raw === 'string' && raw.length > 0 ? raw : null;
         if (!force && state.hasLast && state.lastSessionId === sessionId) return;
@@ -148,9 +173,11 @@ window.__ModuleLoader__.load({
       const stopReset = ctx.on('connection/reset', () => publish(true));
       const visible = () => { if (document.visibilityState === 'visible') publish(true); };
       document.addEventListener('visibilitychange', visible);
+      window.addEventListener('focus', visible);
       publish(true);
       ctx.effect(() => () => {
         disposed = true; lifecycle.abort(); stopList(); stopReset(); document.removeEventListener('visibilitychange', visible);
+        window.removeEventListener('focus', visible);
       }, 'dsh-native-browser: foreground conversation handoff');
     }
 

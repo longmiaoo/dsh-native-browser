@@ -25,7 +25,7 @@ Chrome 首次加载需要你确认：在 `chrome://extensions` 开启开发者�
 
 > 使用 native_browser 工具读取刚才授权页面的标题和主要内容，然后交还浏览器控制。
 
-默认采用逐动作审批。确认首次连接正常后，可选择 README 中的 `per-lease` 或显式的 `personal` 模式。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
+已发布 `0.1.1` 默认逐动作审批；如需个人模式，请在当前 Profile 的 `native-browser` 条目中设置 `approvalMode: personal` 后重载。开发分支已修复为默认个人模式（尚未发布）；显式审批配置仍优先。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
 
 ## 升级
 

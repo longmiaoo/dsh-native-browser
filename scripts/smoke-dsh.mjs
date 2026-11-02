@@ -28,7 +28,7 @@ try {
   await ctx.plugin(ToolRuntime);
   await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'fixture-host') });
   ctx.provide('connection', { rpc: { handle: () => () => {} } });
-  await ctx.plugin(plugin, { runtimeDirectory: directory });
+  await ctx.plugin(plugin, { runtimeDirectory: directory, approvalMode: 'per-action' });
   const session = Session.create(SessionId('browser-smoke'));
   session.append('turn/start', { turn: 1 });
   let number = 0;

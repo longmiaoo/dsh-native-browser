@@ -85,9 +85,13 @@ Restart the DSH profile where you installed the plugin. Open a normal webpage in
 Use the native_browser tools to read the title and main content of the page I just authorized, then hand browser control back to me.
 ```
 
-DSH should return the page contents and leave the tab open. The default approval mode is per-action; installation does not change DSH approval configuration. Screenshot understanding depends on your selected model; Vision Router is optional.
+DSH should return the page contents and leave the tab open. Published `0.1.1` defaults to per-action approval; the unreleased fix below defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
 
 ### Approval modes
+
+**Unreleased fix:** the adapter now defaults to `personal`, matching the standard installer. Ordinary pages need no per-tab popup consent and the plugin adds no per-action approval prompts. Explicit `per-action`, `per-lease` and `trusted` configurations remain effective. Stop, handoff, conversation switching, lease checks and DSH's own permissions still apply.
+
+On published `0.1.1`, explicitly set `approvalMode: personal` in the current profile's `native-browser` entry and reload DSH to obtain this behavior. A personal Broker is required.
 
 For one confirmation per tab claim, add this to the **existing** plugin entry in your actual profile and restart it:
 

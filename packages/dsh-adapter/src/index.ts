@@ -9,6 +9,7 @@ import { visualActionFromScreenshot } from '../../vision-adapter/src/grounding.j
 import { createSetupController } from './setup.js';
 import { registerHostRoutes } from './host-routes.js';
 import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from './approval-policy.js';
+import { BrowserTasks, type PagePurpose } from './tasks.js';
 
 export const name = 'dsh-native-browser';
 export const inject = ['tools', 'connection'];
@@ -52,6 +53,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   let connection: Promise<RpcPeer> | undefined;
   let disposed = false;
   const sessions = new Map<string, TurnScope>();
+  const tasks = new BrowserTasks();
   // Once the UI selects a conversation, releasing its predecessor must also
   // fence NEW claims from the predecessor's still-running model loop.
   let foregroundSessionId: string | null | undefined;
@@ -127,6 +129,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const data = record(raw);
           if (Object.keys(data).length !== 2) throw new BrowserError('INVALID_REQUEST', 'Invalid lease revocation');
           revokeCaptureLease(string(data.sessionId), string(data.leaseId));
+          tasks.revoked(string(data.leaseId));
         });
         value.onCloseEvent(() => {
           for (const capture of captures) if (capture.peer === value) {
@@ -184,6 +187,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       await run('browser.release', { leaseId: lease.leaseId }, exec).catch(() => {});
       throw new BrowserError('POLICY_DENIED', 'Claimed tab left the configured trusted origin');
     }
+    tasks.claimed(string(exec.agent?.session.id), executionScope(exec).scope.wireSessionId, lease);
     return lease;
   };
   const releaseScope = (sessionId: string, message: string) => {
@@ -195,6 +199,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     scope.controller.abort(new BrowserError('LEASE_REVOKED', message));
     screenshots.revokeOwner(scope.wireSessionId);
     sessions.delete(sessionId);
+    tasks.interrupted(sessionId);
     void connection?.then(p => p.call('browser.releaseSession', { sessionId: scope.wireSessionId }, AbortSignal.timeout(3000))).catch(() => {});
     return true;
   };
@@ -206,7 +211,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     return released;
   };
   function addTool(name: string, definition: Omit<Record<string, unknown>, 'name'>) {
-    ctx.tools.register({ name, ...definition });
+    const execute = definition.execute as (args: unknown, exec: Execution) => Promise<unknown>;
+    ctx.tools.register({ name, ...definition, execute: (args: unknown, exec: Execution) => {
+      if (name.endsWith('_task') && record(args).action === 'status') return execute(args, exec);
+      const settled = tasks.begin(string(exec.agent?.session.id), name.replace(/^(native_browser_|browser_)/, ''));
+      try { return Promise.resolve(execute(args, exec)).then(value => { settled(); return value; }, error => { settled(error); throw error; }); }
+      catch (error) { settled(error); throw error; }
+    } });
     registeredTools.add(name);
   }
   function compatibilityName(shortName: string, description: string, definition: Omit<Record<string, unknown>, 'name' | 'description'>) {
@@ -248,13 +259,43 @@ export function apply(ctx: Context, config: Config = {}): void {
         await run('browser.release', { leaseId: lease.leaseId }, exec).catch(() => {});
         throw new BrowserError('POLICY_DENIED', 'Personal approval mode requires a Broker started with --access-mode=personal');
       }
+      tasks.opened(string(exec.agent?.session.id), executionScope(exec).scope.wireSessionId, lease);
       return lease;
     });
   register('activate', 'Bring a controlled tab to the foreground. The lease and origin checks still apply; this only changes visible focus and does not grant new authority.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.activate', { leaseId: string(args.leaseId) }, exec));
   register('close', 'Close a tab created by native_browser_open. User tabs can never be closed by this tool; the extension rejects them. The lease is released after the close.',
-    { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.close', { leaseId: string(args.leaseId) }, exec));
-  register('release_all', 'Release every browser lease owned by this DSH session. Tabs stay open; screenshots for this session are revoked. Use this when a multi-tab workflow ends instead of calling native_browser_handoff for each lease.',
+    { leaseId: schemaString }, ['leaseId'], async (args, exec) => {
+      const leaseId = string(args.leaseId), value = await run('browser.close', { leaseId }, exec);
+      tasks.closed(string(exec.agent?.session.id), leaseId); return value;
+    });
+  const finishTask = async (sessionId: string, scope: TurnScope, signal: AbortSignal, pendingAllowance = 0) => {
+    // Reserve cleanup synchronously before connection setup yields. Otherwise a
+    // fresh tool can enter between turn completion and the cleanup reservation.
+    return tasks.finish(sessionId, scope.wireSessionId, async (leaseId, currentSignal) => {
+      const channel = await peer(); checkAbort(currentSignal);
+      await channel.call('browser.close', { leaseId, sessionId: scope.wireSessionId }, currentSignal);
+      revokeCaptureLease(scope.wireSessionId, leaseId);
+    }, signal, pendingAllowance, async () => {
+      const channel = await peer(); checkAbort(signal);
+      await channel.call('browser.releaseSession', { sessionId: scope.wireSessionId }, signal);
+    });
+  };
+  register('task', 'Manage browser task lifecycle. action=status reports progress without page content. action=mark sets a currently controlled task-created page to temporary, deliverable (a live result the user needs) or handoff (waiting for login, input or unfinished work). Mark before ending the turn. Personal mode automatically cleans unmarked temporary pages on a confirmed completed turn; interruptions and conversation switches never trigger closing. action=finish explicitly completes browser work, closes only still-controlled temporary task pages and releases remaining control. User pages always remain open. Revoked/expired pages are skipped and reported; cleanup never reclaims control or blindly retries a failed close. Do not mark routine search/source/intermediate pages as deliverables. Use handoff for unfinished multi-turn work.',
+    { action: { type: 'string', enum: ['status', 'mark', 'finish'] }, leaseId: schemaString,
+      purpose: { type: 'string', enum: ['temporary', 'deliverable', 'handoff'] } }, ['action'], async (args, exec) => {
+      const sessionId = string(exec.agent?.session.id), { scope, signal } = executionScope(exec);
+      if (args.action === 'status') return tasks.status(sessionId);
+      if (args.action === 'mark') {
+        if (!['temporary', 'deliverable', 'handoff'].includes(String(args.purpose))) throw new BrowserError('INVALID_REQUEST', 'Invalid page purpose');
+        await run('browser.validateLease', { leaseId: string(args.leaseId) }, exec);
+        tasks.mark(sessionId, scope.wireSessionId, string(args.leaseId), args.purpose as PagePurpose);
+        return tasks.status(sessionId);
+      }
+      if (args.action === 'finish') return finishTask(sessionId, scope, signal, 1);
+      throw new BrowserError('INVALID_REQUEST', 'Invalid task action');
+    });
+  register('release_all', 'Release every browser lease owned by this DSH session while leaving all tabs open; screenshots are revoked. For completed work use native_browser_task action=finish instead, so temporary pages are cleaned before releasing control. Use release_all only when the user wants all current pages kept.',
     {}, [], async (_args, exec) => {
       const { scope } = executionScope(exec);
       screenshots.revokeOwner(scope.wireSessionId);
@@ -361,6 +402,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     { leaseId: schemaString }, ['leaseId'], (args, exec) => {
       const leaseId = string(args.leaseId), { scope } = executionScope(exec);
       revokeCaptureLease(scope.wireSessionId, leaseId);
+      tasks.handoff(string(exec.agent?.session.id), leaseId);
       return run('browser.release', { leaseId }, exec);
     });
   const screenshotDefinition = {
@@ -423,6 +465,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     checkAbort(signal);
     if (disposed) throw new BrowserError('CONNECTION_LOST', 'Plugin disposed');
     if (endpoint.startsWith('setup.')) return setup(endpoint, raw, signal);
+    if (endpoint === 'task.status' || endpoint === 'task.stop' || endpoint === 'task.finish') {
+      const p = record(raw);
+      if (Object.keys(p).length !== 1 || typeof p.sessionId !== 'string' || !p.sessionId || p.sessionId.length > 1024)
+        throw new BrowserError('INVALID_REQUEST', 'Task controls require one sessionId');
+      if (endpoint === 'task.status') return { ok: true, value: tasks.status(p.sessionId) };
+      if (foregroundDenial(p.sessionId)) throw new BrowserError('POLICY_DENIED', 'Select this conversation before controlling its browser task');
+      if (endpoint === 'task.stop') { releaseScope(p.sessionId, 'Browser work stopped by the user'); return { ok: true, value: tasks.status(p.sessionId) }; }
+      const scope = sessions.get(p.sessionId);
+      if (!scope) return { ok: true, value: tasks.status(p.sessionId) };
+      return { ok: true, value: await finishTask(p.sessionId, scope, AbortSignal.any([signal, scope.controller.signal, AbortSignal.timeout(15000)])) };
+    }
     if (endpoint !== 'foreground') return { ok: false, error: { code: 'gateway/not-found', message: 'Unknown browser endpoint', details: {} } };
     const p = record(raw);
     if (Object.keys(p).some(key => !['clientId', 'revision', 'issuedAt', 'sessionId'].includes(key))
@@ -454,7 +507,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const denial = foregroundDenial(exec.agent.session.id);
     if (denial) return { kind: 'deny', reason: denial };
     bind(exec);
-    if ((approvalMode === 'per-action' && ['claim', 'open', 'close', 'act', 'screenshot'].includes(shortName))
+    if ((approvalMode === 'per-action' && ['claim', 'open', 'close', 'act', 'screenshot', 'task'].includes(shortName))
       || (approvalMode === 'per-lease' && ['claim', 'open'].includes(shortName))) {
       return { kind: 'ask', reason: 'Allow this browser control action on the selected signed-in page?' };
     }
@@ -462,17 +515,28 @@ export function apply(ctx: Context, config: Config = {}): void {
   });
   // Personal mode keeps a short-lived lease across turns in the same conversation.
   // Foreground switching, Session disposal, expiry and Stop remain hard boundaries.
-  ctx.on('session/event', (session: { id: string }, event: { type: string }) => {
+  ctx.on('session/event', (session: { id: string }, event: { type: string; data?: { reason?: { kind?: string } } }) => {
     if (event.type !== 'turn/end') return;
-    if (approvalMode === 'personal') return;
+    if (approvalMode === 'personal') {
+      // Only a completed Host turn has authority for normal cleanup. Unknown,
+      // interrupted or errored endings keep pages available for recovery.
+      const scope = sessions.get(session.id);
+      if (event.data?.reason?.kind === 'completed' && scope && !foregroundDenial(session.id)) {
+        return finishTask(session.id, scope, AbortSignal.any([scope.controller.signal, AbortSignal.timeout(15000)]))
+          .catch(() => tasks.interrupted(session.id));
+      }
+      if (event.data?.reason?.kind && event.data.reason.kind !== 'completed') releaseScope(session.id, 'Browser turn was interrupted or did not complete');
+      return;
+    }
     releaseScope(session.id, 'The owning DSH turn ended');
   });
-  ctx.on('session/disposed', (session: { id: string }) => { releaseScope(session.id, 'The owning DSH conversation was disposed'); });
+  ctx.on('session/disposed', (session: { id: string }) => { releaseScope(session.id, 'The owning DSH conversation was disposed'); tasks.delete(session.id); });
   ctx.effect(() => () => {
     disposed = true;
     for (const scope of sessions.values()) scope.controller.abort(new BrowserError('LEASE_REVOKED', 'Browser plugin disposed'));
     void connection?.then(p => p.close()).catch(() => {});
     sessions.clear();
+    tasks.clear();
     screenshots.clear();
   });
 }

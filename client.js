@@ -29,6 +29,78 @@ window.__ModuleLoader__.load({
       const h = React.createElement;
       const zh = typeof navigator === 'undefined' || navigator.language?.startsWith('zh');
       const t = (cn, en) => zh ? cn : en;
+      const labels = { list: '查找浏览器', claim: '接管页面', open: '打开页面', activate: '显示页面',
+        observe: '读取页面', read_page: '继续读取', frames: '检查框架', act: '操作页面', batch: '执行步骤',
+        close: '关闭任务页', handoff: '交还控制', release_all: '释放控制', task: '任务收尾' };
+      function ToolView(props) {
+        const short = props.toolName?.replace(/^native_browser_/, '') || 'task';
+        const done = props.phase === 'result', failed = done && props.block?.isError;
+        const [elapsed, setElapsed] = React.useState(0);
+        React.useEffect(() => {
+          if (done) return;
+          const start = Date.now(), timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+          return () => clearInterval(timer);
+        }, [done, props.callId]);
+        let summary = '';
+        if (done && !failed) {
+          try {
+            const content = props.block?.content?.find(c => c.type === 'text')?.text;
+            const value = JSON.parse(content || '{}');
+            if (typeof value.closed === 'number') summary = t(`关闭 ${value.closed} 页，保留 ${value.retained} 页，待处理 ${value.skipped} 页`,
+              `Closed ${value.closed}, retained ${value.retained}, skipped ${value.skipped}`);
+            else if (value.outcome === 'unknown' || value.postcondition === 'unverified') summary = t('结果尚未验证，请先观察页面，勿重复提交。', 'Result unverified; observe before retrying.');
+            else if (value.outcome === 'failed' || value.outcome === 'cancelled') summary = t('动作未成功完成，请检查详情。', 'Action did not complete successfully; inspect details.');
+          } catch { /* Unknown historical output remains available through Inspect. */ }
+        }
+        return h('section', { 'aria-label': 'DSH Native Browser action', style: { border: '1px solid #8885', borderRadius: 8, padding: 10, margin: '5px 0' } },
+          h('strong', null, `DSH Native Browser · ${zh ? labels[short] || short : short}`),
+          h('p', { role: 'status' }, failed ? t('操作已停止或失败，请检查详情。', 'Stopped or failed; inspect details.')
+            : done ? summary || t('调用已返回', 'Call returned') : `${props.phase === 'preparing' ? t('准备中', 'Preparing') : t('执行中', 'Running')} · ${elapsed}s`),
+          props.inspect && h('button', { type: 'button', onClick: () => props.inspect() }, t('查看详情', 'Inspect')));
+      }
+      // Optional host slot: keep image tools on the host's image-capable fallback.
+      ctx.slots.inject('tool.call.toolview', () => {
+        const disposers = Object.keys(labels).map(short => ctx.slots.register({ name: 'tool.call.toolview', key: `native_browser_${short}` }, ToolView));
+        return () => { for (const dispose of disposers) dispose?.(); };
+      });
+      function TaskPanel() {
+        const [snapshot, setSnapshot] = React.useState(null), [notice, setNotice] = React.useState('');
+        const [selection, setSelection] = React.useState(() => ctx.sessions.list.getSnapshot().current);
+        React.useEffect(() => ctx.sessions.list.subscribe(() => setSelection(ctx.sessions.list.getSnapshot().current)), []);
+        React.useEffect(() => {
+          if (typeof selection !== 'string') { setSnapshot(null); return; }
+          const controller = new AbortController(); let pending = false;
+          const refresh = async () => {
+            if (pending || document.visibilityState !== 'visible') return;
+            pending = true;
+            try {
+              const result = await callHost(ctx, 'task.status', { sessionId: selection }, AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]));
+              if (!controller.signal.aborted && result?.ok) setSnapshot({ id: selection, value: result.value });
+            } catch { /* A missing route on older installed hosts is not a browser failure. */ }
+            finally { pending = false; }
+          };
+          void refresh(); const timer = setInterval(refresh, 1500);
+          return () => { controller.abort(); clearInterval(timer); };
+        }, [selection]);
+        const control = async endpoint => {
+          setNotice('');
+          try {
+            const response = await callHost(ctx, endpoint, { sessionId: selection }, AbortSignal.timeout(18000));
+            if (!response?.ok) throw Error(response?.error?.message || 'Request failed');
+            const result = response.value;
+            if (endpoint === 'task.finish') setNotice(t(`收尾返回：关闭 ${result.closed ?? 0} 页；失效或失败的页面不会强行关闭。`, `Cleanup returned: ${result.closed ?? 0} closed; unavailable pages stay open.`));
+          } catch (error) { setNotice(String(error?.message || error)); }
+        };
+        const value = snapshot?.id === selection ? snapshot.value : null;
+        if (!value || value.phase === 'idle') return null;
+        const phases = { running: '执行中', ready: '等待下一步', finishing: '收尾中', completed: '已完成收尾', 'handed-off': '已交接', attention: '需要检查' };
+        return h('section', { 'aria-label': 'Browser task status' }, h('h3', null, t('当前对话的浏览器任务', 'Current conversation browser task')),
+          h('p', { role: 'status' }, `${zh ? phases[value.phase] || value.phase : value.phase} · ${value.action || ''} · ${value.pages.length} ${t('个任务页', 'task pages')}`),
+          value.error && h('p', null, `${t('诊断代码：', 'Diagnostic code: ')}${value.error}`),
+          h('button', { type: 'button', onClick: () => void control('task.stop') }, t('停止并交还控制', 'Stop and hand off')),
+          h('button', { type: 'button', disabled: value.pending > 0 || value.phase === 'finishing', onClick: () => void control('task.finish') }, t('完成并清理临时页', 'Finish and clean temporary tabs')),
+          notice && h('p', { role: 'status' }, notice));
+      }
       function Setup() {
         const [status, setStatus] = React.useState(null);
         const [busy, setBusy] = React.useState(false);
@@ -83,6 +155,7 @@ window.__ModuleLoader__.load({
         }, label);
         return h('section', { 'aria-label': 'DSH Native Browser', style: { maxWidth: 720, lineHeight: 1.7, padding: '8px 0' } },
           h('h2', null, 'DSH Native Browser'),
+          h(TaskPanel),
           h('p', null, t('在这里完成 Chrome 配置，无需查找 Profile 或复制安装命令。', 'Set up Chrome here without finding a Profile or editing commands.')),
           h('p', null, t('配置将在运行 DSH 的这台 Mac 上注册浏览器组件、启动登录后自动运行的本地服务，并打开 Chrome。不会更改 DSH 的操作审批设置。远程连接的 DSH 不会配置你面前的电脑。',
             'Setup registers browser components and a login service on the Mac running DSH, then opens Chrome. DSH approval settings stay unchanged. A remote DSH host cannot configure the computer in front of you.')),

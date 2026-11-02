@@ -35,11 +35,45 @@ async function fixture(t, config = {}, brokerOptions = {}) {
   return { provider, broker, prepare, definitions, services, preExecute: hooks.get('tools/pre-execute'),
     rpc: (endpoint, payload) => foregroundHandler(endpoint, payload, AbortSignal.timeout(3000)),
     foreground: (payload, signal = AbortSignal.timeout(3000)) => foregroundHandler('foreground', payload, signal),
-    end: (id = 'session') => hooks.get('session/event')({ id }, { type: 'turn/end' }),
+    end: (id = 'session', kind) => hooks.get('session/event')({ id }, { type: 'turn/end', ...(kind ? { data: { reason: { kind } } } : {}) }),
     disposeSession: id => hooks.get('session/disposed')({ id }),
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('completed personal turn closes temporary task pages, preserves marked and user pages, and releases control', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const run = (name, args) => f.prepare(`native_browser_${name}`, args).run();
+  const user = await run('claim', claimArgs);
+  const temp = await run('open', { instanceId: 'fake-1', url: 'https://example.test/search' });
+  const result = await run('open', { instanceId: 'fake-1', url: 'https://example.test/result' });
+  const waiting = await run('open', { instanceId: 'fake-1', url: 'https://example.test/login' });
+  await run('task', { action: 'mark', leaseId: result.id, purpose: 'deliverable' });
+  await run('task', { action: 'mark', leaseId: waiting.id, purpose: 'handoff' });
+  await assert.rejects(run('task', { action: 'mark', leaseId: user.id, purpose: 'temporary' }), { code: 'POLICY_DENIED' });
+  await f.end('session', 'completed');
+  assert.equal(f.provider.opened.some(p => p.id === temp.tab), false);
+  assert.equal(f.provider.opened.length, 2); assert.equal(f.provider.grants.size, 0);
+  assert.equal((await run('task', { action: 'status' })).phase, 'completed');
+  await f.end('session', 'completed'); assert.equal(f.provider.opened.length, 2);
+});
+test('interrupted, unknown and background endings never close task pages; UI rejects other conversation cleanup', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  await f.prepare('native_browser_open', { instanceId: 'fake-1', url: 'https://example.test/' }, 'a').run();
+  await f.end('a', 'interrupted'); await f.end('a'); assert.equal(f.provider.opened.length, 1);
+  await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 1, issuedAt: Date.now(), sessionId: 'b' });
+  await f.end('a', 'completed'); assert.equal(f.provider.opened.length, 1);
+  await assert.rejects(f.rpc('task.finish', { sessionId: 'a' }), { code: 'POLICY_DENIED' });
+  assert.equal((await f.rpc('task.status', { sessionId: 'a' })).value.phase, 'handed-off');
+  await assert.rejects(f.rpc('task.stop', { sessionId: 'a', extra: true }), { code: 'INVALID_REQUEST' });
+});
+test('Stop and expired authority are skipped, never silently reclaimed for cleanup', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const lease = await f.prepare('native_browser_open', { instanceId: 'fake-1', url: 'https://example.test/' }).run();
+  await f.broker.runtime.providerRevoked('fake-1', lease.id);
+  await until(() => f.provider.grants.size === 0);
+  const result = await f.prepare('native_browser_task', { action: 'finish' }).run();
+  assert.equal(result.closed, 0); assert.equal(result.skipped, 1); assert.equal(f.provider.opened.length, 1);
+});
 test('setup uses the authenticated Host RPC channel and registers no model installation tool', async t => {
   const f = await fixture(t);
   assert.equal([...f.definitions.keys()].some(name => /setup|install/.test(name)), false);

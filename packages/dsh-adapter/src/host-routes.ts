@@ -1,6 +1,6 @@
 import { BrowserError } from '../../contracts/src/index.js';
 
-const endpoints = ['foreground', 'setup.status', 'setup.install', 'setup.open'] as const;
+const endpoints = ['foreground', 'setup.status', 'setup.install', 'setup.open', 'task.status', 'task.stop', 'task.finish'] as const;
 type Handler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<unknown>;
 
 /** Modern DSH owns authentication and owner-principal checks for exact /api routes.

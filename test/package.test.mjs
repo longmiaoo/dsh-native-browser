@@ -30,7 +30,7 @@ test('exports a loadable development-preview Cordis plugin', () => {
   const tools = []
   const connection = { rpc: { handle: () => () => {} } }
   assert.doesNotThrow(() => apply({ tools: { register: tool => tools.push(tool) }, on() {}, effect() {}, get: name => name === 'connection' ? connection : undefined }))
-  assert.equal(tools.length, 13)
+  assert.equal(tools.length, 14)
   assert.ok(tools.every(tool => tool.name.startsWith('native_browser_')))
   assert.ok(tools.every(tool => !tool.name.startsWith('browser_')))
   for (const name of ['native_browser_open', 'native_browser_activate', 'native_browser_close', 'native_browser_release_all']) {

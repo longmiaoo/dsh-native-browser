@@ -11,7 +11,7 @@ test('shared routes coexist with API Gateway, validate envelopes and dispose ind
   } }, rpc: { handle() { throw Error('Independent channel must not be mounted'); } } }, async (...args) => {
     calls.push(args); return { ok: true, value: { accepted: true } };
   });
-  assert.equal(routes.size, 4);
+  assert.equal(routes.size, 7);
   const route = routes.get('/api/dsh-native-browser/setup.status');
   const request = (body, contentType = 'application/json') => new Request('http://127.0.0.1' + route.path,
     { method: 'POST', headers: { 'content-type': contentType }, body });

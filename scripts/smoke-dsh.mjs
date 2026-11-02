@@ -35,7 +35,7 @@ try {
   const call = (name, args) => ctx.tools.execute({ name, callId: `smoke-${++number}`, arguments: args,
     agent: { session }, signal: AbortSignal.timeout(3000) });
   const names = ctx.tools.schemas().map(tool => tool.name);
-  assert.equal(names.length, 13);
+  assert.equal(names.length, 14);
   assert.ok(names.includes('native_browser_frames'));
   assert.ok(names.includes('native_browser_read_page'));
   assert.ok(names.includes('native_browser_batch'));

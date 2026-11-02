@@ -30,7 +30,7 @@ import React from ${JSON.stringify(hostRequire.resolve('react'))};
 import { createRoot } from ${JSON.stringify(rendererRequire.resolve('react-dom/client'))};
 import { SlotCore } from ${JSON.stringify(hostRequire.resolve('@deepseek-ai/dsh-client-ui-slots'))};
 const core = new SlotCore(), effects=[];
-core.register({name:'root',children:{'settings.section':{kind:'list',scope:'root'}}},()=>null);
+core.register({name:'root',children:{'settings.section':{kind:'list',scope:'root'},'tool.call.toolview':{kind:'keyed',scope:'session'}}},()=>null);
 window.__ModuleLoader__ = { load(definition) {
   const plugin=definition.factory(name=>{if(name==='react') return React; throw Error(name)});
   plugin.apply({
@@ -42,10 +42,12 @@ window.__ModuleLoader__ = { load(definition) {
     }}}, on:()=>()=>{}, effect:callback=>effects.push(callback())
   });
   const entries=core.entriesOfSlot('settings.section');
+  window.taskToolView=core.entriesOfSlot('tool.call.toolview').find(e=>e.options.key==='native_browser_task')?.component;
   if(entries.length!==1||entries[0].options.id!=='dsh-native-browser') throw Error('Missing settings slot');
   window.slotLabel=entries[0].options.label;
   const root=createRoot(document.getElementById('app'));
   root.render(React.createElement(entries[0].component));
+  window.previewTaskCard=()=>root.render(React.createElement(window.taskToolView,{toolName:'native_browser_task',callId:'ui-test',phase:'result',block:{content:[{type:'text',text:JSON.stringify({closed:2,retained:1,skipped:0})}]}}));
   window.disposeSetup=()=>{root.unmount();for(const dispose of effects)dispose?.()};
 }};
 `;
@@ -59,7 +61,10 @@ const server = http.createServer(async (req, res) => {
     else if (req.url === '/rpc' && req.method === 'POST') {
       let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 4096) throw new Error('request too big'); }
       const { endpoint, payload } = JSON.parse(data); calls.push(endpoint);
-      const result = endpoint === 'setup.status' && statusPreview ? { ok: true, value: statusPreview }
+      const result = endpoint === 'task.status' ? {ok:true,value:{phase:'ready',action:'observe',pages:[],pending:0}}
+        : endpoint === 'task.stop' ? {ok:true,value:{phase:'handed-off'}}
+        : endpoint === 'task.finish' ? {ok:true,value:{closed:2,retained:1,skipped:0}}
+        : endpoint === 'setup.status' && statusPreview ? { ok: true, value: statusPreview }
         : endpoint === 'foreground' ? { ok: true, value: { accepted: true } }
         : await setup(endpoint, payload, new AbortController().signal);
       res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(result));
@@ -112,6 +117,12 @@ try {
   assert.equal(installs, 2);
   await mkdir('output/playwright', { recursive: true });
   await page.screenshot({ path: 'output/playwright/setup-ui.png', fullPage: true });
+  await page.getByRole('heading',{name:'当前对话的浏览器任务'}).waitFor();
+  await page.getByRole('button',{name:'完成并清理临时页'}).click();
+  await page.getByText('收尾返回：关闭 2 页；失效或失败的页面不会强行关闭。',{exact:true}).waitFor();
+  await page.evaluate(() => window.previewTaskCard());
+  await page.getByText('关闭 2 页，保留 1 页，待处理 0 页',{exact:true}).waitFor();
+  await page.screenshot({path:'output/playwright/task-card.png'});
   await page.evaluate(() => window.disposeSetup());
   assert.deepEqual(errors, []);
   const report = { passed: true, scope: 'Real DSH SlotCore and React component; isolated installer without LaunchAgent; not full Desktop shell',

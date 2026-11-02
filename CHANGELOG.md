@@ -2,6 +2,13 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Add `native_browser_task` for task status, explicit page-purpose marks and finish. In personal mode, a Host turn explicitly ending as completed cleans still-controlled temporary pages and releases control. Retain deliverable/handoff pages and all user-created pages; interrupted, unknown and background endings never close pages.
+- Fence cleanup before asynchronous connection work and through final release acknowledgement. Skip revoked/expired pages, report incomplete cleanup, and never automatically reclaim or replay a failed close.
+- Add metadata-only task status and explicit Stop/finish controls in browser settings, plus optional conversation tool cards for running actions, unverified outcomes and cleanup counts. Screenshots retain the Host's image-capable rendering.
+- This is in-memory task bookkeeping for the loaded plugin. Restarts do not recover authority or clean historical tabs. New UI endpoints use the existing authenticated owner routes; no additional browser-provider protocol is required.
+
 ## 0.1.2 - 2026-11-02
 
 - Render focused-target pointer feedback for fill, append and keyboard input, without synthesizing mouse clicks. Acknowledge pointer messages and suppress late reinjection feedback after Stop.

@@ -103,8 +103,8 @@ try {
   const plugin = await loadPackage('index.js');
   await ctx.plugin(plugin, { runtimeDirectory: directory });
   const names = ctx.tools.schemas().map(t => t.name);
-  assert.equal(names.filter(n => n.startsWith('native_browser_')).length, 13); assert.ok(names.includes('browser_claim'));
-  passed.push('All 13 native_browser tools register beside an existing browser_claim tool without aliases or collisions');
+  assert.equal(names.filter(n => n.startsWith('native_browser_')).length, 14); assert.ok(names.includes('browser_claim'));
+  passed.push('All 14 native_browser tools register beside an existing browser_claim tool without aliases or collisions');
   const session = Session.create(SessionId('installation-acceptance')); session.append('turn/start', { turn: 1 });
   let number = 0;
   const call = async (short, args) => {
@@ -182,6 +182,23 @@ try {
   const stopped = await ctx.tools.execute({ name: 'native_browser_observe', callId: 'after-stop', arguments: { leaseId: lease.id }, agent: { session }, signal: AbortSignal.timeout(5000) });
   assert.equal(stopped.isError, true);
   passed.push('Real extension Stop invalidates the held DSH lease');
+  const temporaryPage = await call('open', { instanceId: instance.id, url: origin + '/temporary' });
+  const deliveredPage = await call('open', { instanceId: instance.id, url: origin + '/deliverable' });
+  const pendingPage = await call('open', { instanceId: instance.id, url: origin + '/waiting' });
+  await call('task', { action: 'mark', leaseId: deliveredPage.id, purpose: 'deliverable' });
+  await call('task', { action: 'mark', leaseId: pendingPage.id, purpose: 'handoff' });
+  const cleanup = await call('task', { action: 'finish' });
+  assert.equal(cleanup.closed, 1); assert.equal(cleanup.retained, 2); assert.equal(cleanup.skipped, 0);
+  const remainingTabs = await call('list', { instanceId: instance.id });
+  assert.equal(remainingTabs.some(t => t.id === temporaryPage.tab), false);
+  assert.ok(remainingTabs.some(t => t.id === deliveredPage.tab));
+  assert.ok(remainingTabs.some(t => t.id === pendingPage.tab));
+  assert.equal(page.isClosed(), false);
+  const repeatedCleanup = await call('task', { action: 'finish' }); assert.equal(repeatedCleanup.closed, 0);
+  const autoPage = await call('open', { instanceId: instance.id, url: origin + '/auto-cleanup' });
+  ctx.emit('session/event', session, { type: 'turn/end', data: { reason: { kind: 'completed' } } });
+  await eventual(async () => { try { return !(await call('list', { instanceId: instance.id })).some(t => t.id === autoPage.tab); } catch { return false; } }, 'completed-turn automatic cleanup');
+  passed.push('Task finish closes only its temporary page, preserves deliverable/handoff/user tabs, repeats safely, and a completed Host turn automatically cleans an unmarked page');
   report.outcome = 'passed';
 } catch (error) { report.outcome = 'failed'; report.failure = error.message; console.error(error); process.exitCode = 1; }
 finally {

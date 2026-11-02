@@ -123,6 +123,8 @@ dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome
 
 ## 当前能力与边界
 
+开发分支已加入[任务收尾与执行状态](docs/task-lifecycle.zh-CN.md)：任务页用途标记、正常完成时清理仍受控的临时页、聊天操作卡，以及设置页的 Stop/收尾入口。**这些改动尚未发布，不属于 0.1.2**；旧宿主结束格式不明确时使用显式收尾，跨轮次未完成页面需标记保留。
+
 `0.1.0` 提供页面语义读取、点击、输入、滚动、复选框及单选框操作、批处理、多标签页、截图、受控视觉点击，以及文件上传、下载和原生对话框相关动作。各动作的具体条件见[版本说明](CHANGELOG.md)与该版本随包提供的文档。[实现文档](docs/current-implementation.zh-CN.md)描述开发版本，可能包含尚未发布的改动。
 
 - 跨域 iframe 内容与动作仍有边界；发现一个 frame 不等于获得读取权限。

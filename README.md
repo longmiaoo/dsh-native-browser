@@ -128,6 +128,8 @@ Then remove the Chrome extension and uninstall the DSH plugin using the plugin m
 
 ## Current capabilities and limits
 
+The development branch adds [task lifecycle and status](docs/task-lifecycle.zh-CN.md): explicit page-purpose marks, cleanup of still-controlled temporary tabs on confirmed completed turns, conversation action cards, and settings controls. **These changes are unreleased and are not part of 0.1.2.** Use explicit finish when the Host ending is unknown; mark unfinished multi-turn pages for handoff.
+
 `0.1.0` includes semantic reads, clicks, text entry, scrolling, checkbox/radio actions, batches, multiple tabs, screenshots, guarded visual clicks, and actions for uploads, downloads and native dialogs. See the [changelog](CHANGELOG.md) and that version's bundled documentation for exact conditions. The [implementation inventory](docs/current-implementation.zh-CN.md) describes the development version, which can contain changes that have not shipped.
 
 - Cross-origin iframe content and actions remain bounded. Discovering a frame does not authorize reading it.

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  BrowserError, checkAbort, errorCode, originOf,
+  BrowserError, checkAbort, errorCode, isPrivateHost, originOf,
   type ActionRequest, type ActionResult, type BatchRequest, type BatchResult, type BatchStepResult, type ApproveBatchStep, type Authorize, type BrowserProvider,
   type Lease, type FullObservation, type ObserveOptions, type ObservationUpdate, type TabSummary, type ErrorCode,
 } from '../../contracts/src/index.js';
@@ -17,7 +17,7 @@ type Entry = {
   controller: AbortController; timer: ReturnType<typeof setTimeout>;
   tail: Promise<void>; queued: number;
 };
-type JournalEntry = { hash: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
+type JournalEntry = { hash: string; leaseId: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
 type Claim = { owner: string; scope: string; instanceId: string; controller: AbortController };
 type LeaseRevocation = Readonly<{ owner: string; scope: string; leaseId: string }>;
 const defaultLimits = { leaseMs: 120_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
@@ -114,6 +114,15 @@ export class BrowserRuntime {
     const target = new URL(url);
     if (target.protocol !== 'http:' && target.protocol !== 'https:') {
       throw new BrowserError('INVALID_REQUEST', 'Only HTTP(S) tabs can be opened');
+    }
+    // A model-supplied URL must not reach this machine or a private network unless the user
+    // already has a tab on that exact origin (claim it instead); that tab is the user's own intent.
+    if (isPrivateHost(target.href)) {
+      const existing = await provider.listTabs(signal);
+      checkAbort(signal);
+      if (!existing.some(tab => { try { return originOf(tab.url) === target.origin; } catch { return false; } })) {
+        throw new BrowserError('POLICY_DENIED', 'Opening local or private-network addresses is not allowed; open the page yourself, then claim its tab');
+      }
     }
     // Authorize the exact origin before creating anything.
     if (!await this.authorize({ owner, tab: { id: 'pending', instanceId, url: target.href, title: '' }, operation: 'claim' }, signal)) {
@@ -430,8 +439,9 @@ export class BrowserRuntime {
     if (recovered) return Promise.resolve(recoveredAction(request.requestId, recovered));
     const entry = this.entry(owner, request.leaseId);
     // Never evict and silently permit a duplicate side effect within this runtime epoch.
+    if (this.journal.size >= this.limits.journalSize) this.evictDurablyFencedIdentity();
     if (this.journal.size >= this.limits.journalSize) throw new BrowserError('JOURNAL_FULL', 'Action journal is full');
-    const record: JournalEntry = { hash };
+    const record: JournalEntry = { hash, leaseId: request.leaseId };
     this.journal.set(key, record);
     const result = execute(entry, frozen, durableKey, hash);
     record.pending = result;
@@ -442,10 +452,34 @@ export class BrowserRuntime {
       // Never retain full page data after authority ended, including during durable settlement.
       try { this.entry(owner, frozen.leaseId); if (!this.closed) this.results.put(key, frozen.leaseId, value); }
       catch { /* Metadata fence remains even if payload caching is unavailable. */ }
+      this.retireIfReleased(key, record);
     }, error => {
       record.failure = errorCode(error); delete record.pending; this.inFlight.delete(result);
+      this.retireIfReleased(key, record);
     });
     return result.then(value => this.deliverAction(owner, frozen.leaseId, value, record.recovery));
+  }
+
+  /** A released lease ID can never be live again, so its settled identities cannot
+   * authorize anything: every later lookup ends in LEASE_REVOKED or durable recovery,
+   * exactly as if the entry were present. Retiring them keeps a long-lived Broker from
+   * reaching JOURNAL_FULL; the durable journal remains the cross-lease replay fence. */
+  /** With a durable journal, a settled in-memory identity is only a cache of that
+   * journal's fence: a later duplicate misses here, then finds the same request hash
+   * and recovery metadata in durable storage, so nothing replays. Evict the oldest
+   * settled one so a single long-lived lease cannot exhaust the journal. Without a
+   * durable journal, the in-memory entry IS the fence and is never evicted. */
+  private evictDurablyFencedIdentity(): void {
+    if (!this.durable) return;
+    for (const [key, record] of this.journal) {
+      if (record.pending) continue;
+      this.journal.delete(key); this.results.delete(key);
+      return;
+    }
+  }
+
+  private retireIfReleased(key: string, record: JournalEntry): void {
+    if (!record.pending && !this.leases.has(record.leaseId) && this.journal.get(key) === record) this.journal.delete(key);
   }
 
   private actionMetadata(value: ActionResult): RecoveryRecord {
@@ -542,6 +576,11 @@ export class BrowserRuntime {
     try {
       const perform = async (): Promise<ActionResult> => {
         await this.authorized(entry, 'act', signal, request.action, request.frame);
+        // Never pivot from a public page to a local/private address; same-origin and private-to-private stay free.
+        if (request.action.kind === 'navigate' && isPrivateHost(request.action.url) && !isPrivateHost(entry.lease.origin)
+          && originOf(request.action.url) !== entry.lease.origin) {
+          throw new BrowserError('POLICY_DENIED', 'Navigating from a public page to a local or private-network address is not allowed');
+        }
         if(request.frame){
           if(!entry.provider.frames||!entry.provider.actFrame)throw new BrowserError('UNSUPPORTED_CAPABILITY','Provider cannot act in child frames');
           sameOriginFrame(frameInventory(await entry.provider.frames(entry.lease,signal),entry.lease),request.frame,entry.lease);
@@ -626,6 +665,7 @@ export class BrowserRuntime {
     if (!entry) return;
     if (entry.lease.owner !== owner) throw new BrowserError('LEASE_REVOKED', 'Lease belongs to another session');
     this.leases.delete(leaseId);
+    for (const [key, record] of this.journal) if (record.leaseId === leaseId) this.retireIfReleased(key, record);
     this.observations.revokeLease(leaseId);
     this.results.revokeLease(leaseId);
     this.tabs.delete(JSON.stringify([entry.lease.instanceId, entry.lease.tab]));

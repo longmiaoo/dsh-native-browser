@@ -8,6 +8,8 @@ import { journalKinds, type ActionJournal, type JournalKind, type RecoveryRecord
 type Stored = { v: 1; key: string; hash: string; kind: JournalKind; at: number; expires: number;
   state: 'reserved' | 'settled'; dispatch: 'notDispatched' | 'dispatched'; priorOutcome?: ActionResult['outcome'] };
 const hex = /^[a-f0-9]{64}$/;
+/** Journal file name before the MAC key was derived from the auth token. */
+export const legacyJournalFile = 'action-journal.jsonl';
 const unavailable = () => new BrowserError('JOURNAL_UNAVAILABLE', 'Action journal is unavailable; no new action may dispatch');
 
 /** One writer, owned by the Broker after binding its exclusive socket. Unix local disk only. */
@@ -22,10 +24,11 @@ export class FileActionJournal implements ActionJournal {
   private bytes = 0;
   private sweep: ReturnType<typeof setInterval> | undefined;
   private constructor(private readonly directory: string, private readonly secret: string, private fd: FileHandle,
-    private readonly limits: { maxEntries: number; maxBytes: number; ttlMs: number }, private readonly now: () => number) {}
+    private readonly limits: { maxEntries: number; maxBytes: number; ttlMs: number }, private readonly now: () => number,
+    private readonly fileName: string) {}
 
   static async open(directory: string, secret: string, options: {
-    maxEntries?: number; maxBytes?: number; ttlMs?: number; now?: () => number;
+    maxEntries?: number; maxBytes?: number; ttlMs?: number; now?: () => number; fileName?: string;
   } = {}): Promise<FileActionJournal> {
     const dir = await lstat(directory);
     if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid?.() || dir.mode & 0o077 || !hex.test(secret)) {
@@ -34,7 +37,9 @@ export class FileActionJournal implements ActionJournal {
     const limits = { maxEntries: options.maxEntries ?? 10000, maxBytes: options.maxBytes ?? 20 * 1024 * 1024,
       ttlMs: options.ttlMs ?? 24 * 60 * 60 * 1000 };
     if (Object.values(limits).some(v => !Number.isSafeInteger(v) || v < 1)) throw new BrowserError('INVALID_REQUEST', 'Invalid journal limits');
-    const file = path.join(directory, 'action-journal.jsonl');
+    const fileName = options.fileName ?? legacyJournalFile;
+    if (path.basename(fileName) !== fileName) throw new BrowserError('INVALID_REQUEST', 'Invalid journal file name');
+    const file = path.join(directory, fileName);
     // NOFOLLOW rejects symlinks; NONBLOCK avoids hanging on a substituted FIFO before fstat.
     let fd: FileHandle;
     try { fd = await open(file, constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600); }
@@ -44,7 +49,7 @@ export class FileActionJournal implements ActionJournal {
       }
       throw unavailable();
     }
-    const journal = new FileActionJournal(directory, secret, fd, limits, options.now ?? Date.now);
+    const journal = new FileActionJournal(directory, secret, fd, limits, options.now ?? Date.now, fileName);
     try {
       const stat = await fd.stat();
       if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== dir.uid || stat.mode & 0o077) throw new BrowserError('POLICY_DENIED', 'Journal must be a private, singly-linked regular file');
@@ -155,7 +160,7 @@ export class FileActionJournal implements ActionJournal {
       fd = await open(temporary, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
       const data = Buffer.concat(retained.map(record => this.line(record)));
       await fd.writeFile(data); await fd.sync();
-      await rename(temporary, path.join(this.directory, 'action-journal.jsonl'));
+      await rename(temporary, path.join(this.directory, this.fileName));
       await this.syncDirectory();
       const old = this.fd; this.fd = fd; fd = undefined; await old.close();
       this.records.clear(); for (const v of retained) this.records.set(v.key, v);

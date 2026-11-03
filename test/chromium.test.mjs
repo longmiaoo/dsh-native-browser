@@ -34,6 +34,7 @@ function fixture() {
         ...(state.editor === true && state.axEditable !== false ? [{ name: 'focusable', value: { value: true } }, { name: 'editable', value: { value: 'richtext' } }] : []),
         ...(state.checked === undefined ? [] : [{ name: 'checked', value: { value: state.axChecked ?? state.checked } }])] },
       ...state.text.map(text => ({ role: { value: 'StaticText' }, name: { value: text } }))] };
+    if (cdp === 'Page.createIsolatedWorld') return { executionContextId: 7 };
     if (cdp === 'DOM.resolveNode') return { object: { objectId: 'object-17' } };
     if (cdp === 'Runtime.callFunctionOn' && p.functionDeclaration === radioBindingFunction) return {result:state.customRadio?{value:null}:{objectId:'radio-binding-17'}};
     if (cdp === 'Runtime.callFunctionOn' && p.functionDeclaration === radioBindingCheckFunction) {

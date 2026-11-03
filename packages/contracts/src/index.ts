@@ -257,6 +257,32 @@ export function originOf(value: string): string {
   return url.origin;
 }
 
+/** True for hosts that name this machine or a private network: loopback, RFC 1918, link-local
+ * (cloud metadata), CGNAT, unique-local IPv6, `.local`/`.internal` names and single-label names. */
+export function isPrivateHost(value: string): boolean {
+  let host: string;
+  try { host = new URL(value).hostname.toLowerCase(); } catch { return false; }
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')
+    || host.endsWith('.lan') || host.endsWith('.home.arpa')) return true;
+  if (host.includes(':')) {
+    // WHATWG URL normalises ::ffff:10.0.0.1 to ::ffff:a00:1.
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+    if (mapped) {
+      const hi = parseInt(mapped[1]!, 16), lo = parseInt(mapped[2]!, 16);
+      return isPrivateHost(`http://${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}/`);
+    }
+    return host === '::' || host === '::1' || /^f[cd]/.test(host) || /^fe[89ab]/.test(host);
+  }
+  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31
+      || a === 192 && b === 168 || a === 100 && b >= 64 && b <= 127;
+  }
+  return !host.includes('.');
+}
+
 export function checkAbort(signal: AbortSignal): void {
   if (signal.aborted) {
     if (signal.reason instanceof BrowserError) throw signal.reason;

@@ -15,6 +15,8 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
+import { pageFunctions } from '../../provider-chromium/src/page-functions.js';
+import { rememberRequestId } from '../../contracts/src/request-ids.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
@@ -40,7 +42,7 @@ const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocumen
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
   'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
-  'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
+  'Page.createIsolatedWorld', 'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -433,6 +435,32 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
         throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease scope');
       }
     }
+    if (command === 'DOM.resolveNode' && (Object.keys(params).some(key => !['backendNodeId', 'executionContextId'].includes(key))
+      || !Number.isSafeInteger(params.backendNodeId) || Number(params.backendNodeId) < 1
+      || params.executionContextId !== undefined && (!Number.isSafeInteger(params.executionContextId) || Number(params.executionContextId) < 1))) {
+      throw new BrowserError('POLICY_DENIED', 'Only a backend node and optional execution context may be resolved');
+    }
+    if (command === 'Page.createIsolatedWorld' && (Object.keys(params).length !== 2 || typeof params.frameId !== 'string'
+      || !params.frameId || params.frameId.length > 128 || params.worldName !== 'dsh-native-browser')) {
+      throw new BrowserError('POLICY_DENIED', 'Only the extension isolated world may be created');
+    }
+    if (command === 'Runtime.callFunctionOn') {
+      // Root-session calls run only the fixed, reviewed functions; arguments are plain values or object handles.
+      const args = params.arguments;
+      if (Object.keys(params).some(key => !['objectId', 'functionDeclaration', 'arguments', 'returnByValue'].includes(key))
+        || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
+        || typeof params.functionDeclaration !== 'string' || !pageFunctions.has(params.functionDeclaration)
+        || params.returnByValue !== undefined && typeof params.returnByValue !== 'boolean'
+        || args !== undefined && (!Array.isArray(args) || args.length > 4 || args.some(arg => {
+          const a = record(arg), keys = Object.keys(a);
+          return keys.length !== 1 || (keys[0] === 'objectId' ? typeof a.objectId !== 'string' || !a.objectId || a.objectId.length > 4096
+            : keys[0] !== 'value' || !(typeof a.value === 'number' && Number.isFinite(a.value) || typeof a.value === 'boolean'
+              || typeof a.value === 'string' && a.value.length <= 64 || a.value !== null && typeof a.value === 'object' && !Array.isArray(a.value)
+                && Object.keys(a.value).length === 2 && Number.isFinite((a.value as any).x) && Number.isFinite((a.value as any).y)));
+        }))) {
+        throw new BrowserError('POLICY_DENIED', 'Only fixed page functions with plain arguments may run');
+      }
+    }
     if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
       || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {
       throw new BrowserError('POLICY_DENIED', 'Only the fixed document-readiness query is exposed');
@@ -506,6 +534,13 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
         return { ...image, data: redacted.data,
           redaction: { policy: 'cross-origin-frames', frames: plan.frameCount, regions: redacted.regions } };
       }
+      if (command === 'Page.createIsolatedWorld') {
+        // Only the leased root document: a child frame's world would reach another origin's DOM.
+        const root = ((await chrome.debugger.sendCommand({ tabId: id }, 'Page.getFrameTree')) as any)?.frameTree?.frame;
+        if (!root || root.id !== params.frameId || originOf(root.url) !== lease.origin) {
+          throw new BrowserError('POLICY_DENIED', 'Isolated worlds are only created in the leased root document');
+        }
+      }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
       if (command === 'Input.insertText' || command === 'Input.dispatchKeyEvent' && params.type === 'keyDown') {
@@ -561,8 +596,8 @@ function connect(): void {
       if (!accepted || m.type === 'event' || m.type === 'response') throw new BrowserError('PROTOCOL_MISMATCH', 'Unexpected message before or after handshake');
       const id = m.id;
       if (m.type === 'cancel') { pending.get(id)?.abort(); return; }
-      if (seen.has(id) || seen.size >= 10000 || pending.size >= 32) throw new Error('Duplicate request or capacity');
-      seen.add(id);
+      if (seen.has(id) || pending.has(id) || pending.size >= 32) throw new Error('Duplicate request or capacity');
+      rememberRequestId(seen, id, pending);
       const controller = new AbortController(); pending.set(id, controller);
       void execute(string(m.method), m.params, controller.signal).then(value => {
         checkAbort(controller.signal);
@@ -665,17 +700,31 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 // chrome.debugger rejects browser-level download commands, so downloads are
 // observed through the extension's own downloads API and attributed to the
 // lease armed immediately before the trigger click.
+// Only downloads attributed to an armed lease ever reach the Broker: the user's
+// own unrelated downloads (names, paths) stay private, even while one is armed.
+const attributedDownloads = new Set<number>();
+const downloadOrigin = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value); // blob:https://site/... reports its creator's origin.
+    return ['http:', 'https:'].includes(url.protocol) || url.protocol === 'blob:' && url.origin !== 'null' ? originOf(url.origin) : undefined;
+  } catch { return undefined; }
+};
 chrome.downloads.onCreated.addListener(item => {
-  const referrer = (() => { try { return item.referrer ? originOf(item.referrer) : undefined; } catch { return undefined; } })();
-  const index = pendingDownloads.findIndex(lease => referrer !== undefined && lease.origin === referrer);
-  const lease = pendingDownloads.splice(index >= 0 ? index : 0, 1)[0];
-  if (!lease || lease.expiresAt <= Date.now()) return;
+  const origins = [downloadOrigin(item.referrer), downloadOrigin(item.url), downloadOrigin(item.finalUrl)].filter(Boolean);
+  const index = pendingDownloads.findIndex(lease => origins.includes(lease.origin));
+  if (index < 0) return; // Never guess: an unmatched download is not the agent's.
+  const lease = pendingDownloads.splice(index, 1)[0]!;
+  if (lease.expiresAt <= Date.now()) return;
+  attributedDownloads.add(item.id);
+  while (attributedDownloads.size > 64) attributedDownloads.delete(attributedDownloads.values().next().value!);
   try { port?.postMessage({ type: 'event', event: 'download.started', value: { tab: lease.tab, leaseId: lease.id,
     id: item.id } }); } catch {}
 });
 chrome.downloads.onChanged.addListener(async delta => {
   const state = delta.state?.current;
-  if (state !== 'complete' && state !== 'interrupted') return;
+  if (state !== 'complete' && state !== 'interrupted' || !attributedDownloads.has(delta.id)) return;
+  attributedDownloads.delete(delta.id);
   let item: chrome.downloads.DownloadItem | undefined;
   try { item = (await chrome.downloads.search({ id: delta.id }))[0]; } catch {}
   const filename = typeof item?.filename === 'string' && item.filename ? item.filename : undefined;

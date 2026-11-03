@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { chmod } from 'node:fs/promises';
+import { chmod, lstat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserError, originOf, type BrowserInstance } from '../../contracts/src/index.js';
 import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string } from '../../contracts/src/validation.js';
@@ -8,13 +8,22 @@ import { BrowserRuntime } from '../../runtime-core/src/runtime.js';
 import { ChromiumProvider } from '../../provider-chromium/src/provider.js';
 import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { localState } from './local-state.js';
-import { FileActionJournal } from './action-journal.js';
+import { FileActionJournal, legacyJournalFile } from './action-journal.js';
+import { deriveSecret, journalFile } from './keys.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
+import { authorizeUploadFiles, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
 import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
   if (typeof supplied !== 'string' || supplied.length !== actual.length ||
     !timingSafeEqual(Buffer.from(supplied), Buffer.from(actual))) throw new BrowserError('POLICY_DENIED', 'Authentication failed');
+}
+/** The tab inventory lists pages the user opened, including ones never claimed.
+ * Query strings and fragments routinely carry OAuth codes, reset links and session
+ * tokens, so the model sees only origin + path until it claims a tab. */
+function inventoryUrl(url: string): string {
+  try { const parsed = new URL(url); return parsed.search || parsed.hash ? parsed.origin + parsed.pathname : url; }
+  catch { return url; }
 }
 function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
   const v = record(raw);
@@ -24,7 +33,9 @@ function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
       keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, tabScopedNavigation: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
-type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number };
+type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number;
+  /** Complete upload allowlist; defaults to Downloads, Desktop and Documents. An empty list disables file upload. */
+  uploadRoots?: string[] };
 export async function startBroker(options: BrokerOptions) {
   options = { ...options, directory: path.resolve(options.directory) };
   if (options.accessMode !== undefined && options.accessMode !== 'restricted' && options.accessMode !== 'personal') {
@@ -46,6 +57,12 @@ export async function startBroker(options: BrokerOptions) {
 async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ownership: BrokerOwnership) {
   const personal = options.accessMode === 'personal';
   const state = await localState(options.directory, true);
+  const uploadRoots = await resolveUploadRoots(options.uploadRoots ?? defaultUploadRoots());
+  // The Broker's own token, journal and socket are never uploadable, even under an allowed root.
+  const forbiddenUploads = await resolveUploadRoots([options.directory]);
+  const fileAction = async (action: ReturnType<typeof actionRequest>['action']) =>
+    action.kind === 'upload' || action.kind === 'choose'
+      ? { ...action, files: await authorizeUploadFiles(action.files, uploadRoots, forbiddenUploads) } : action;
   const recoveredSocket = await ownership.prepareSocket(state.socket);
   let runtime: BrowserRuntime;
   let journal: FileActionJournal;
@@ -73,7 +90,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
     });
     peer.handle(async (method, params, signal) => {
       await ready;
-      if (signal.aborted) throw new BrowserError('CANCELLED', 'Connection closed during Broker startup');
+      if (signal.aborted || stopping || !runtime) throw new BrowserError('CANCELLED', 'Connection closed during Broker startup');
       const p = record(params);
       if (!role) {
         if (method !== 'hello' || negotiating) throw new BrowserError('POLICY_DENIED', 'Handshake required');
@@ -110,7 +127,8 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       if (method === 'browser.instances') return runtime.instances();
       const owner = JSON.stringify([connection, string(p.sessionId)]);
       if (method === 'browser.tabs') return (await runtime.listTabs(string(p.instanceId), signal))
-        .filter(tab => { try { return personal || allowed.has(originOf(tab.url)); } catch { return false; } });
+        .filter(tab => { try { return personal || allowed.has(originOf(tab.url)); } catch { return false; } })
+        .map(tab => ({ ...tab, url: inventoryUrl(tab.url) }));
       if (method === 'browser.claim') {
         return runtime.claim(owner, string(p.instanceId), string(p.tab), signal, connection);
       }
@@ -132,7 +150,10 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
         if (!personal) throw new BrowserError('POLICY_DENIED', 'Automatic renewal requires explicit personal access mode');
         return runtime.renew(owner, string(p.leaseId), signal);
       }
-      if (method === 'browser.act') return runtime.act(owner, actionRequest(p.request), signal, JSON.stringify([journalKey, string(p.sessionId)]));
+      if (method === 'browser.act') {
+        const request = actionRequest(p.request);
+        return runtime.act(owner, { ...request, action: await fileAction(request.action) }, signal, JSON.stringify([journalKey, string(p.sessionId)]));
+      }
       if (method === 'browser.batch') {
         const request = batchRequest(p.request), approvalId = string(p.approvalId, 128);
         return runtime.batch(owner, request, signal, async (index, stepSignal) => {
@@ -161,11 +182,17 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
   try {
     await chmod(state.socket, 0o600);
     // Both process-lifetime ownership and a bound socket precede journal recovery or writes.
-    journal = await FileActionJournal.open(options.directory, state.token);
+    journal = await FileActionJournal.open(options.directory, deriveSecret(state.token, 'journal-mac/v1'), { fileName: journalFile });
+    // The v1 journal was MACed with the auth token itself and cannot be verified under the derived key.
+    // Its records are retired (only 24h of replay protection); never follow a link.
+    const legacy = path.join(options.directory, legacyJournalFile);
+    if ((await lstat(legacy).catch(() => undefined))?.isFile()) await unlink(legacy);
     runtime = new BrowserRuntime(async request => personal || allowed.has(originOf(request.tab.url)), undefined, journal,
       { leaseScope: personal ? 'tab' : 'origin' });
     markReady();
   } catch (error) {
+    // Refuse queued and new peers before releasing them: the runtime never came up.
+    stopping = true;
     for (const peer of peers) peer.close();
     markReady();
     await new Promise<void>(resolve => server.close(() => resolve()));

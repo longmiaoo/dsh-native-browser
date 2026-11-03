@@ -11,6 +11,7 @@ import { diagnose } from '../../installer/src/doctor.js';
 import { extensionIdFromManifestKey } from '../../installer/src/extension.js';
 import { quickInstall } from '../../installer/src/quick-install.js';
 import { serviceIsLoaded, uninstallBrokerService } from '../../installer/src/service.js';
+import { defaultUploadRoots } from './upload-policy.js';
 
 async function packagedExtension(brand: 'chrome' | 'edge') {
   const extensionPath = fileURLToPath(new URL(`../../../../dist/extension/${brand}`, import.meta.url));
@@ -30,7 +31,9 @@ export async function main(args: string[]): Promise<void> {
     const allowedOrigins = args.filter(arg => arg.startsWith('--allow-origin=')).map(arg => arg.slice(15));
     const accessMode = option('access-mode') ?? 'restricted';
     if (accessMode !== 'restricted' && accessMode !== 'personal') throw new Error('Access mode must be restricted or personal');
-    const broker = await startBroker({ directory, allowedOrigins, accessMode });
+    // --upload-root extends the default upload folders; it never replaces them.
+    const uploadRoots = [...defaultUploadRoots(), ...args.filter(arg => arg.startsWith('--upload-root=')).map(arg => arg.slice(14))];
+    const broker = await startBroker({ directory, allowedOrigins, accessMode, uploadRoots });
     console.error(`DSH Browser Broker listening at ${broker.socket}; ${accessMode === 'personal' ? 'personal user-authorized tabs' : `${allowedOrigins.length} approved origin(s)`}${broker.recoveredSocket ? '; recovered stale socket' : ''}`);
     let stopping = false;
     const stop = () => { if (!stopping) { stopping = true; void broker.close().catch(error => { console.error(error); process.exitCode = 1; }); } };
@@ -53,8 +56,9 @@ export async function main(args: string[]): Promise<void> {
     const packaged = await packagedExtension(brand);
     const extensionId = option('extension-id') ?? packaged.extensionId;
     if (!extensionId) throw new Error('Packaged extension has no stable key; pass --extension-id explicitly');
+    const uploadRoots = args.filter(arg => arg.startsWith('--upload-root=')).map(arg => arg.slice(14));
     const result = await quickInstall({ browser: brand, extensionSource: packaged.extensionPath, extensionId,
-      directory, ...registration, accessMode, allowedOrigins, service: !flag('no-service'), open: !flag('no-open'),
+      directory, ...registration, accessMode, allowedOrigins, uploadRoots, service: !flag('no-service'), open: !flag('no-open'),
       cliPath: fileURLToPath(new URL('../../../../bin/dsh-native-browser.mjs', import.meta.url)) });
     if (flag('json')) console.log(JSON.stringify(result, null, 2));
     else {
@@ -110,6 +114,6 @@ export async function main(args: string[]): Promise<void> {
     try { console.log(JSON.stringify({ connected: true, instances: await peer.call('browser.instances', {}) }, null, 2)); }
     finally { peer.close(); }
   } else {
-    console.log('dsh-native-browser install --browser=chrome\ndsh-native-browser uninstall --browser=chrome\ndsh-native-browser service-status\ndsh-native-browser setup --browser=chrome\ndsh-native-browser extension-path --browser=chrome\ndsh-native-browser broker --allow-origin=https://example.com\ndsh-native-browser broker --access-mode=personal\ndsh-native-browser install-host --browser=chrome\ndsh-native-browser uninstall-host --browser=chrome\ndsh-native-browser doctor --browser=chrome\ndsh-native-browser status\nAll commands accept --runtime-dir=<private-directory>.\ninstall defaults to a personal-mode macOS LaunchAgent and opens Chrome plus the staged extension folder.\nHost commands default to the packaged stable extension ID; use --extension-id=<id> for an older or externally supplied build.\nHost install/uninstall/doctor also accept an explicit --manifest-dir=<registration-directory>.');
+    console.log('dsh-native-browser install --browser=chrome\ndsh-native-browser uninstall --browser=chrome\ndsh-native-browser service-status\ndsh-native-browser setup --browser=chrome\ndsh-native-browser extension-path --browser=chrome\ndsh-native-browser broker --allow-origin=https://example.com\ndsh-native-browser broker --access-mode=personal\ndsh-native-browser broker --upload-root=/absolute/extra/folder\ndsh-native-browser install-host --browser=chrome\ndsh-native-browser uninstall-host --browser=chrome\ndsh-native-browser doctor --browser=chrome\ndsh-native-browser status\nAll commands accept --runtime-dir=<private-directory>.\ninstall defaults to a personal-mode macOS LaunchAgent and opens Chrome plus the staged extension folder.\nHost commands default to the packaged stable extension ID; use --extension-id=<id> for an older or externally supplied build.\nHost install/uninstall/doctor also accept an explicit --manifest-dir=<registration-directory>.');
   }
 }

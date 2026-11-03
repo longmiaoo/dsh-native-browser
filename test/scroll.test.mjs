@@ -23,6 +23,7 @@ function fixture() {
     if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame', loaderId: state.loader, url: state.url } } };
     if (command.startsWith('Accessibility.')) return { nodes: [{ backendDOMNodeId: 30, role: { value: 'region' }, name: { value: state.name } }] };
     if (command === 'DOM.getDocument') { assert.deepEqual(p, { depth: 0, pierce: false }); return { root: { backendNodeId: 1 } }; }
+    if (command === 'Page.createIsolatedWorld') return { executionContextId: 7 };
     if (command === 'DOM.resolveNode') return { object: { objectId: `object-${p.backendNodeId}` } };
     const target = p.objectId === 'object-1' ? state.document : state.pane;
     if (command === 'Runtime.callFunctionOn' && p.functionDeclaration === scrollStateFunction) {

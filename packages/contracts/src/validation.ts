@@ -255,6 +255,8 @@ export function batchRequest(value: unknown): BatchRequest {
     if (Object.keys(step).some(key => !['action', 'timeoutMs'].includes(key))) throw new BrowserError('INVALID_REQUEST', 'Unsupported batch step field');
     const parsed = actionRequest({ requestId: 'step', leaseId, documentEpoch, action: step.action, timeoutMs: step.timeoutMs });
     if (parsed.action.kind === 'navigate' && index !== count - 1) throw new BrowserError('INVALID_REQUEST', 'Explicit navigation must end a batch');
+    // Local-file actions always need their own separately approved native_browser_act call.
+    if (['upload', 'choose', 'download'].includes(parsed.action.kind)) throw new BrowserError('INVALID_REQUEST', 'File upload, choose and download are not allowed in a batch; use native_browser_act');
     return { action: parsed.action, ...(parsed.timeoutMs === undefined ? {} : { timeoutMs: parsed.timeoutMs }) };
   });
   if (v.timeoutMs !== undefined && (!Number.isInteger(v.timeoutMs) || Number(v.timeoutMs) < 1 || Number(v.timeoutMs) > 30000))

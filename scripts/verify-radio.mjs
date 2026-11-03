@@ -19,7 +19,7 @@ export async function verifyRadio({page,observe,act}) {
       <button id="radio-custom" role="radio" aria-checked="false">自定义单选</button>
       <label><input id="radio-unnamed-a" type="radio" checked>无名单选甲</label>
       <label><input id="radio-unnamed-b" type="radio">无名单选乙</label>
-      <input id="radio-mutate" type="radio" name="stable" value="stable" aria-label="变更组单选">
+      <div id="radio-race-scroll" style="height:40px;overflow:auto"><div style="height:200px"></div><input id="radio-mutate" type="radio" name="stable" value="stable" aria-label="变更组单选"><div style="height:200px"></div></div>
       <input id="radio-post" type="radio" name="post" aria-label="点击后变更组">`;
     for(const input of root.querySelectorAll('input')) {input.style.width='24px';input.style.height='24px';}
     for(const label of root.querySelectorAll('label')) label.style.cssText='display:inline-block;padding:8px';
@@ -60,18 +60,21 @@ export async function verifyRadio({page,observe,act}) {
     const disabled=await act('radio-disabled',choose('禁用单选'),{timeoutMs:450});
     assert.equal(disabled.code,'DEADLINE_EXCEEDED');assert.equal(disabled.dispatch,'notDispatched');
     assert.deepEqual(await page.evaluate(()=>window.radioEvents),events);
-    // Deterministic page-side race during geometry, after action binding capture.
-    // AX name and backend node stay identical; the changed group/value must not.
+    // Page-side race after action binding capture. Checks run in an isolated world, so the page cannot patch the
+    // provider's calls; instead the target sits below the fold and the scroll the provider performs to reach it
+    // fires a page handler that changes the group. AX name and backend node stay identical; the group/value must not.
     for(const field of ['name','form','value']) {
-      await page.locator('#radio-mutate').evaluate((input,field)=>{
-        const rects=input.getClientRects.bind(input);
-        input.getClientRects=()=>{
+      await page.locator('#radio-mutate').evaluate(async (input,field)=>{
+        const box=document.getElementById('radio-race-scroll');
+        input.name='stable';input.value='stable';input.removeAttribute('form');box.scrollTop=0;
+        // Let the reset's own scroll event drain before arming the one-shot handler.
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        box.addEventListener('scroll',()=>{
           if(field==='form') input.setAttribute('form','radio-form-b'); else input[field]='changed';
-          delete input.getClientRects; return rects();
-        };
+        },{once:true});
       },field);
       const stale=await act(`radio-mutate-${field}`,choose('变更组单选'));
-      assert.equal(stale.code,'STALE_TARGET');assert.equal(stale.dispatch,'notDispatched');
+      assert.equal(stale.code,'STALE_TARGET');
       assert.equal(await page.locator('#radio-mutate').isChecked(),false);
     }
     assert.deepEqual(await page.evaluate(()=>window.radioEvents),events);

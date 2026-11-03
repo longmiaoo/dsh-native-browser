@@ -25,6 +25,7 @@ function fixture() {
     if(command==='Page.getFrameTree') return {frameTree:{frame:{id:'frame',loaderId:'loader',url:'https://example.test/'}}};
     if(command.startsWith('Accessibility.')) return {nodes:[{backendDOMNodeId:30,role:{value:'region'},name:{value:state.name}},
       ...state.text.map(text=>({role:{value:'StaticText'},name:{value:text}}))]};
+    if(command==='Page.createIsolatedWorld') return {executionContextId:7};
     if(command==='DOM.resolveNode') return {object:{objectId:'object-30'}};
     if(command==='Runtime.callFunctionOn') return {result:{value:{ok:!state.covered,connected:true,inViewport:true,x:50,y:60,left:0,top:0,width:100,height:120}}};
     if(command==='Input.dispatchMouseEvent') state.text=['Wheel complete'];

@@ -2,6 +2,14 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- **Security:** file upload, file chooser and download now ask the user for each call in every approval mode, including the default personal mode; the prompt lists the exact local paths. Without a DSH approval service they are refused. Batches no longer accept these actions.
+- **Security:** the Broker only uploads existing, non-hidden regular files inside allowed folders (default `~/Downloads`, `~/Desktop`, `~/Documents`). Symlinks are resolved first, and the Broker's runtime directory is always excluded. Add folders with `--upload-root=/absolute/path` on `broker` or `install`.
+- **Security:** the action journal is now authenticated with a key derived (HKDF-SHA256) from the local token rather than the token itself, so the credential that peers present no longer doubles as the journal's integrity key. **Upgrade note:** the existing `action-journal.jsonl` cannot be verified under the new key and is deleted on first start; its up-to-24-hour replay protection is lost once, and the new journal is `action-journal.v2.jsonl`.
+- Fix a long-lived Broker or extension connection closing at its 10,000th request; replay protection now keeps a bounded window of recent request IDs.
+- Fix a long-running Broker failing every action with `JOURNAL_FULL` after 10,000 actions; identity fences of released leases are retired, while the durable journal keeps cross-lease replay protection.
+
 ## 0.1.9 - 2026-11-03
 
 - Refresh the setup page with clearer connection progress, a return-to-chat action, light/dark themes and narrow-window support. Keep setup and permissions accessible from the same authenticated component.

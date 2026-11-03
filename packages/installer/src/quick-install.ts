@@ -18,6 +18,8 @@ export interface QuickInstallOptions {
   manifestDir?: string;
   accessMode?: 'restricted' | 'personal';
   allowedOrigins?: string[];
+  /** Extra upload folders added to the Broker's defaults. */
+  uploadRoots?: string[];
   service?: boolean;
   open?: boolean;
   plistDirectory?: string;
@@ -51,6 +53,7 @@ export async function quickInstall(options: QuickInstallOptions) {
   let service: BrokerServiceResult | undefined;
   if (options.service !== false) {
     service = await installBrokerService({ directory, cliPath: options.cliPath, accessMode, allowedOrigins,
+      ...(options.uploadRoots?.length ? { uploadRoots: options.uploadRoots } : {}),
       electronRunAsNode: options.electronRunAsNode ?? Boolean(process.versions.electron),
     ...(options.nodePath ? { nodePath: options.nodePath } : {}),
       ...(options.plistDirectory ? { plistDirectory: options.plistDirectory } : {}),

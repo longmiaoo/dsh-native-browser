@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import { BrowserError, checkAbort, errorCode } from '../../contracts/src/index.js';
 import { wireMessage } from '../../contracts/src/wire.js';
+import { rememberRequestId } from '../../contracts/src/request-ids.js';
 import { encodeFrame, FrameDecoder } from './framing.js';
 
 type Pending = { resolve(value: unknown): void; reject(error: unknown): void; cleanup(): void };
@@ -83,9 +84,8 @@ export class RpcPeer {
     } else if (m.type === 'cancel') {
       this.executing.get(m.id)?.abort(new BrowserError('CANCELLED', 'Peer cancelled operation'));
     } else if (m.type === 'request') {
-      if (this.seen.has(m.id)) throw new Error('Duplicate transport request ID');
-      if (this.seen.size >= 10_000) { this.close(); return; }
-      this.seen.add(m.id);
+      if (this.seen.has(m.id) || this.executing.has(m.id)) throw new Error('Duplicate transport request ID');
+      rememberRequestId(this.seen, m.id, this.executing);
       if (this.executing.size >= this.maxPending) {
         this.send({ type: 'response', id: m.id, ok: false, code: 'QUEUE_FULL' }); return;
       }

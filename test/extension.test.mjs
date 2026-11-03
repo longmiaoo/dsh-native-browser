@@ -241,6 +241,23 @@ test('download arming is lease-gated and chrome.downloads events forward real fi
   await f.ui('stop');
 });
 
+test('unrelated downloads are never attributed or reported, even while a lease is armed', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('downloads.arm', { lease: f.lease })).ok, true);
+  const events = () => f.sent.filter(m => m.type === 'event' && m.event.startsWith('download.'));
+  // The user's own download from another site, with or without a referrer.
+  f.chrome.downloads.onCreated.emit({ id: 7, referrer: 'https://bank.example/statements', url: 'https://bank.example/s.pdf' });
+  f.chrome.downloads.onCreated.emit({ id: 8, referrer: '', url: 'data:text/plain,hi' });
+  f.chrome.downloads.onChanged.emit({ id: 5, state: { current: 'complete' } });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(events(), [], 'no unmatched download or its saved path reaches the Broker');
+  // A no-referrer download is still attributed from its own blob/URL origin.
+  f.chrome.downloads.onCreated.emit({ id: 5, referrer: '', url: 'blob:https://example.test/0d3f' });
+  assert.equal(events().length, 1); assert.equal(events()[0].value.leaseId, f.lease.id);
+  await f.ui('stop');
+});
+
 test('tabs.create is HTTP(S)-only and tabs.activate is lease-gated', async () => {
   const f = await fixture();
   const created = await f.call('tabs.create', { url: 'https://example.test/new' });
@@ -922,4 +939,52 @@ test('an old mouse dispatch settling after Stop and regrant cannot paint into th
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(f.tabMessages.filter(m=>m.action==='show').length,0,'Only the matching lease may paint its action');
   await f.ui('stop');
+});
+
+test('extension bridge keeps serving past its request-ID replay window and still rejects live duplicates', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  for (let i = 0; i < 10_050; i++) {
+    const reply = await f.call('dialog.pending', { lease: f.lease });
+    if (!reply.ok) assert.fail(`request ${i + 1} failed: ${reply.code}`);
+  }
+  assert.equal(f.ports.at(-1).disconnected, false);
+  const before = f.sent.length;
+  f.ports.at(-1).onMessage.emit({ type: 'request', id: 'r-10050', method: 'dialog.pending', params: { lease: f.lease } });
+  assert.equal(f.ports.at(-1).disconnected, true, 'a recent duplicate ID is still a protocol violation');
+  assert.equal(f.sent.slice(before).some(m => m.type === 'response' && m.id === 'r-10050'), false);
+});
+
+test('isolated worlds are created only in the leased root document with a fixed name; resolveNode params are bounded', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const cdp = (method, params) => f.call('cdp', { lease: f.lease, method, params });
+  f.chrome.debugger.sendCommand = async (_target, method) => {
+    f.commands.push({ method });
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame', loaderId: 'loader', url: f.tab.url } } };
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: 9 };
+    return {};
+  };
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'dsh-native-browser' })).ok, true);
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'child', worldName: 'dsh-native-browser' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'other' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'dsh-native-browser', grantUniveralAccess: true })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 5, executionContextId: 9 })).ok, true);
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 5, objectGroup: 'x' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 'five' })).code, 'POLICY_DENIED');
+});
+
+test('root-session callFunctionOn only runs the fixed page functions with plain arguments', async () => {
+  const [{ checkedFunction }, { scrollByFunction }] = await Promise.all([
+    import('../dist/packages/provider-chromium/src/checked.js'), import('../dist/packages/provider-chromium/src/scroll.js')]);
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const call = params => f.call('cdp', { lease: f.lease, method: 'Runtime.callFunctionOn', params });
+  const ok = { objectId: 'o1', returnByValue: true };
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction })).ok, true);
+  assert.equal((await call({ ...ok, functionDeclaration: scrollByFunction, arguments: [{ value: 0 }, { value: 40 }] })).ok, true);
+  assert.equal((await call({ ...ok, functionDeclaration: 'function(){return fetch("https://evil.test")}' })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction + ' ' })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, awaitPromise: true })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, executionContextId: 1 })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ value: { a: 1 } }] })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ unserializableValue: 'NaN' }] })).code, 'POLICY_DENIED');
 });

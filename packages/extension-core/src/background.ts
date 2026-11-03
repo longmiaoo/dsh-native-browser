@@ -1,8 +1,6 @@
 import { feedbackType, type Activity } from './feedback.js';
 import { BrowserError, checkAbort, errorCode, originOf, type Lease } from '../../contracts/src/index.js';
 import { record, string, uploadFile } from '../../contracts/src/validation.js';
-import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
-import { allowedMouseEvent } from '../../provider-chromium/src/mouse.js';
 import { axReadRequest, readAXTree } from '../../provider-chromium/src/ax-reader.js';
 import { axFindRequest, findAXNodes } from '../../provider-chromium/src/ax-query.js';
 import { AXPager, axPageRequest } from '../../provider-chromium/src/ax-pager.js';
@@ -15,7 +13,7 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
-import { pageFunctions } from '../../provider-chromium/src/page-functions.js';
+import { checkCdpCommand, cdpMethods } from './cdp-guard.js';
 import { InboundRequests } from '../../contracts/src/request-tracker.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
@@ -38,11 +36,6 @@ let instanceId = crypto.randomUUID();
 let status = 'Disconnected';
 let brokerPersonal = false;
 const nonNegative = (value: unknown): number | undefined => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : undefined;
-const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocument',
-  'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
-  'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
-  'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
-  'Page.createIsolatedWorld', 'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -198,7 +191,7 @@ async function frameGraph(lease: Lease, signal: AbortSignal) {
 async function execute(method: string, raw: unknown, signal: AbortSignal): Promise<unknown> {
   const p = record(raw);
   const phase: Activity | undefined = method.startsWith('ax.') || method === 'frames.list' || method === 'frame.geometry' || method === 'frame.click.prepare'
-    ? 'reading' : method === 'frame.click' ? 'acting' : method === 'cdp' && methods.has(String(p.method))
+    ? 'reading' : method === 'frame.click' ? 'acting' : method === 'cdp' && cdpMethods.has(String(p.method))
       ? p.method === 'Page.navigate' ? 'navigating' : p.method === 'Page.captureScreenshot' ? 'capturing'
         : String(p.method).startsWith('Input.') ? 'acting' : 'reading' : undefined;
   if (!phase) return executeRaw(method, raw, signal);
@@ -418,86 +411,9 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
   }
   if (method === 'cdp') {
     const command = string(p.method);
-    if (!methods.has(command)) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'CDP method is not exposed');
     const params = record(p.params);
-    if (command === 'DOM.getDocument' && (params.depth !== 0 || params.pierce !== false || Object.keys(params).length !== 2)) {
-      throw new BrowserError('POLICY_DENIED', 'Only the root document handle is exposed');
-    }
-    if (command === 'Input.dispatchKeyEvent' && !allowedKeyEvent(params)) {
-      throw new BrowserError('POLICY_DENIED', 'Only canonical page-key events are exposed');
-    }
-    if (command === 'Input.dispatchMouseEvent' && !allowedMouseEvent(params)) {
-      throw new BrowserError('POLICY_DENIED', 'Only canonical left-click and unmodified wheel events are exposed');
-    }
-    if (command === 'Page.navigate') {
-      const targetOrigin = originOf(string(params.url, 8192));
-      if (targetOrigin !== lease.origin || (lease.scope ?? 'origin') === 'origin' && targetOrigin !== allowed.get(id)?.origin) {
-        throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease scope');
-      }
-    }
-    if (command === 'DOM.resolveNode' && (Object.keys(params).some(key => !['backendNodeId', 'executionContextId'].includes(key))
-      || !Number.isSafeInteger(params.backendNodeId) || Number(params.backendNodeId) < 1
-      || params.executionContextId !== undefined && (!Number.isSafeInteger(params.executionContextId) || Number(params.executionContextId) < 1))) {
-      throw new BrowserError('POLICY_DENIED', 'Only a backend node and optional execution context may be resolved');
-    }
-    if (command === 'Page.createIsolatedWorld' && (Object.keys(params).length !== 2 || typeof params.frameId !== 'string'
-      || !params.frameId || params.frameId.length > 128 || params.worldName !== 'dsh-native-browser')) {
-      throw new BrowserError('POLICY_DENIED', 'Only the extension isolated world may be created');
-    }
-    if (command === 'Runtime.callFunctionOn') {
-      // Root-session calls run only the fixed, reviewed functions; arguments are plain values or object handles.
-      const args = params.arguments;
-      if (Object.keys(params).some(key => !['objectId', 'functionDeclaration', 'arguments', 'returnByValue'].includes(key))
-        || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
-        || typeof params.functionDeclaration !== 'string' || !pageFunctions.has(params.functionDeclaration)
-        || params.returnByValue !== undefined && typeof params.returnByValue !== 'boolean'
-        || args !== undefined && (!Array.isArray(args) || args.length > 4 || args.some(arg => {
-          const a = record(arg), keys = Object.keys(a);
-          return keys.length !== 1 || (keys[0] === 'objectId' ? typeof a.objectId !== 'string' || !a.objectId || a.objectId.length > 4096
-            : keys[0] !== 'value' || !(typeof a.value === 'number' && Number.isFinite(a.value) || typeof a.value === 'boolean'
-              || typeof a.value === 'string' && a.value.length <= 64 || a.value !== null && typeof a.value === 'object' && !Array.isArray(a.value)
-                && Object.keys(a.value).length === 2 && Number.isFinite((a.value as any).x) && Number.isFinite((a.value as any).y)));
-        }))) {
-        throw new BrowserError('POLICY_DENIED', 'Only fixed page functions with plain arguments may run');
-      }
-    }
-    if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
-      || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {
-      throw new BrowserError('POLICY_DENIED', 'Only the fixed document-readiness query is exposed');
-    }
-    if (command === 'DOM.setFileInputFiles') {
-      const files = params.files;
-      if (Object.keys(params).length !== 2 || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
-        || !Array.isArray(files) || files.length < 1 || files.length > 64) {
-        throw new BrowserError('POLICY_DENIED', 'File selection requires one resolved file input and bounded local files');
-      }
-      try { files.forEach(uploadFile); }
-      catch { throw new BrowserError('POLICY_DENIED', 'Upload files must be absolute local paths'); }
-    }
-    if (command === 'Page.setInterceptFileChooserDialog') {
-      if (Object.keys(params).length !== 1 || params.enabled !== true) {
-        throw new BrowserError('POLICY_DENIED', 'File chooser interception only enables for the leased tab');
-      }
-    }
-    if (command === 'Page.handleFileChooser') {
-      const files = params.files;
-      if (params.action !== 'accept' || Object.keys(params).length !== 2 || !Array.isArray(files)
-        || files.length < 1 || files.length > 64) {
-        throw new BrowserError('POLICY_DENIED', 'File chooser accept requires bounded local files');
-      }
-      try { files.forEach(uploadFile); }
-      catch { throw new BrowserError('POLICY_DENIED', 'Chosen files must be absolute local paths'); }
-    }
+    checkCdpCommand(command, params, { lease, allowedOrigin: allowed.get(id)?.origin, pendingDialog: pendingDialogs.get(id) });
     if (command === 'Page.handleJavaScriptDialog') {
-      if (typeof params.accept !== 'boolean' || Object.keys(params).some(key => !['accept', 'promptText'].includes(key))
-        || params.promptText !== undefined && (typeof params.promptText !== 'string' || params.promptText.length > 1000 || !params.accept)) {
-        throw new BrowserError('POLICY_DENIED', 'JavaScript dialogs accept only a boolean and bounded prompt text');
-      }
-      const pending = pendingDialogs.get(id);
-      if (!pending) throw new BrowserError('NOT_ACTIONABLE', 'No JavaScript dialog is pending on the leased tab');
-      if (params.promptText !== undefined && pending.type !== 'prompt') {
-        throw new BrowserError('POLICY_DENIED', 'Prompt text is only valid for a JavaScript prompt dialog');
-      }
       // A synchronous page dialog can keep the originating Runtime.callFunctionOn
       // command pending. Dispatch this control command outside the per-tab queue
       // so it can unblock that command instead of deadlocking behind it.

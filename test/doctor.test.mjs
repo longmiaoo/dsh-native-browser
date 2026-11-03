@@ -54,7 +54,7 @@ test('doctor distinguishes installed-but-stopped from a connected matching brows
   provider.instance.brand = 'chrome'; provider.instance.profileLabel = 'private-profile-secret';
   f.broker.runtime.register(provider);
   const before = await readFile(path.join(f.directory, 'auth-token'), 'utf8');
-  const journalBefore = await readFile(path.join(f.directory, 'action-journal.jsonl'));
+  const journalBefore = await readFile(path.join(f.directory, 'action-journal.v2.jsonl'));
   const filesBefore = await readdir(f.directory);
   const lockBefore = await lstat(path.join(f.directory, 'broker-lock.sqlite'), { bigint: true });
   const result = await diagnose(f.options);
@@ -64,7 +64,7 @@ test('doctor distinguishes installed-but-stopped from a connected matching brows
   const encoded = JSON.stringify(result);
   for (const secret of [before.trim(), origin, extensionId, 'private-profile-secret', 'https://example.test', f.directory]) assert.equal(encoded.includes(secret), false);
   assert.deepEqual(await readdir(f.directory), filesBefore);
-  assert.deepEqual(await readFile(path.join(f.directory, 'action-journal.jsonl')), journalBefore);
+  assert.deepEqual(await readFile(path.join(f.directory, 'action-journal.v2.jsonl')), journalBefore);
   assert.equal((await lstat(path.join(f.directory, 'broker-lock.sqlite'), { bigint: true })).ino, lockBefore.ino);
   assert.equal(await readFile(path.join(f.directory, 'auth-token'), 'utf8'), before);
   await f.broker.close();

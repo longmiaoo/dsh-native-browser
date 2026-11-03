@@ -314,7 +314,7 @@ test('Broker restart recovers only private metadata, rejects changed payloads an
   const next = await client.call('browser.claim', { sessionId, instanceId: 'fake-1', tab: 'tab-1' });
   await assert.rejects(client.call('browser.act', { sessionId, request: { ...request, leaseId: next.id } }), e => e.code === 'REQUEST_ID_CONFLICT');
   assert.equal(provider.calls.length, 1);
-  const disk = await readFile(path.join(directory, 'action-journal.jsonl'), 'utf8');
+  const disk = await readFile(path.join(directory, 'action-journal.v2.jsonl'), 'utf8');
   for (const value of [key, lease.id, 'secret-value', 'submit-once', 'same-turn']) assert.equal(disk.includes(value), false);
 });
 
@@ -323,9 +323,9 @@ test('an additional Broker cannot bind the live socket or compact its active jou
   broker.runtime.register(new FakeProvider());
   const lease = await client.call('browser.claim', { sessionId: 's', instanceId: 'fake-1', tab: 'tab-1' });
   await client.call('browser.act', { sessionId: 's', request: { requestId: 'one', leaseId: lease.id, documentEpoch: 'doc-1', action: { kind: 'click', ref: 'node-1' } } });
-  const before = await readFile(path.join(directory, 'action-journal.jsonl'), 'utf8');
+  const before = await readFile(path.join(directory, 'action-journal.v2.jsonl'), 'utf8');
   await assert.rejects(startBroker({ directory, allowedOrigins: ['https://example.test'] }), e => e.code === 'BROKER_BUSY');
-  assert.equal(await readFile(path.join(directory, 'action-journal.jsonl'), 'utf8'), before);
+  assert.equal(await readFile(path.join(directory, 'action-journal.v2.jsonl'), 'utf8'), before);
   assert.equal((await client.call('browser.observe', { sessionId: 's', leaseId: lease.id })).tab, 'tab-1');
 });
 

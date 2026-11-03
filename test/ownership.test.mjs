@@ -82,12 +82,12 @@ test('unsafe lock paths fail before any socket recovery or journal initializatio
     else { await writeFile(file, mode === 'corrupt' ? 'not sqlite' : '', { mode: 0o600 }); if (mode === 'permissions') await chmod(file, 0o644); }
     await assert.rejects(startBroker({ directory, allowedOrigins: [] }), e => e.code === 'BROKER_STATE_UNSAFE');
     assert.equal(await readFile(target, 'utf8'), 'untouched');
-    await assert.rejects(lstat(path.join(directory, 'action-journal.jsonl')), e => e.code === 'ENOENT');
+    await assert.rejects(lstat(path.join(directory, 'action-journal.v2.jsonl')), e => e.code === 'ENOENT');
   }
 });
 
 test('startup failure releases ownership without discarding a corrupt action journal', async t => {
-  const { directory } = await fixture(t), file = path.join(directory, 'action-journal.jsonl');
+  const { directory } = await fixture(t), file = path.join(directory, 'action-journal.v2.jsonl');
   await writeFile(file, 'torn record', { mode: 0o600 });
   for (let n = 0; n < 2; n++) await assert.rejects(startBroker({ directory, allowedOrigins: [] }), e => e.code === 'JOURNAL_UNAVAILABLE');
   assert.equal(await readFile(file, 'utf8'), 'torn record');
@@ -141,4 +141,14 @@ test('real Broker SIGKILL during an action recovers the stale endpoint and never
   assert.equal(recovery.outcome, 'unknown'); assert.equal(recovery.observation, undefined);
   await assert.rejects(second.call('browser.observe', { sessionId, leaseId: lease.id }), e => e.code === 'LEASE_REVOKED');
   assert.equal(await readFile(path.join(directory, 'effects'), 'utf8'), 'effect\n');
+});
+
+test('a legacy token-keyed journal is retired on upgrade and the Broker starts', async t => {
+  const { directory } = await fixture(t), legacy = path.join(directory, 'action-journal.jsonl');
+  await writeFile(legacy, '{"record":{},"mac":"signed-with-the-auth-token"}\n', { mode: 0o600 });
+  const broker = await startBroker({ directory, allowedOrigins: [] });
+  try {
+    await assert.rejects(lstat(legacy), e => e.code === 'ENOENT');
+    await lstat(path.join(directory, 'action-journal.v2.jsonl'));
+  } finally { await broker.close(); }
 });

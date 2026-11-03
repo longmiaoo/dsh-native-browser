@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { chmod } from 'node:fs/promises';
+import { chmod, lstat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserError, originOf, type BrowserInstance } from '../../contracts/src/index.js';
 import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string } from '../../contracts/src/validation.js';
@@ -8,7 +8,8 @@ import { BrowserRuntime } from '../../runtime-core/src/runtime.js';
 import { ChromiumProvider } from '../../provider-chromium/src/provider.js';
 import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { localState } from './local-state.js';
-import { FileActionJournal } from './action-journal.js';
+import { FileActionJournal, legacyJournalFile } from './action-journal.js';
+import { deriveSecret, journalFile } from './keys.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
 import { authorizeUploadFiles, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
 import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
@@ -181,7 +182,11 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
   try {
     await chmod(state.socket, 0o600);
     // Both process-lifetime ownership and a bound socket precede journal recovery or writes.
-    journal = await FileActionJournal.open(options.directory, state.token);
+    journal = await FileActionJournal.open(options.directory, deriveSecret(state.token, 'journal-mac/v1'), { fileName: journalFile });
+    // The v1 journal was MACed with the auth token itself and cannot be verified under the derived key.
+    // Its records are retired (only 24h of replay protection); never follow a link.
+    const legacy = path.join(options.directory, legacyJournalFile);
+    if ((await lstat(legacy).catch(() => undefined))?.isFile()) await unlink(legacy);
     runtime = new BrowserRuntime(async request => personal || allowed.has(originOf(request.tab.url)), undefined, journal,
       { leaseScope: personal ? 'tab' : 'origin' });
     markReady();

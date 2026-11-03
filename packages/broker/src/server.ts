@@ -89,7 +89,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
     });
     peer.handle(async (method, params, signal) => {
       await ready;
-      if (signal.aborted) throw new BrowserError('CANCELLED', 'Connection closed during Broker startup');
+      if (signal.aborted || stopping || !runtime) throw new BrowserError('CANCELLED', 'Connection closed during Broker startup');
       const p = record(params);
       if (!role) {
         if (method !== 'hello' || negotiating) throw new BrowserError('POLICY_DENIED', 'Handshake required');
@@ -186,6 +186,8 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       { leaseScope: personal ? 'tab' : 'origin' });
     markReady();
   } catch (error) {
+    // Refuse queued and new peers before releasing them: the runtime never came up.
+    stopping = true;
     for (const peer of peers) peer.close();
     markReady();
     await new Promise<void>(resolve => server.close(() => resolve()));

@@ -15,6 +15,7 @@ export class ActionResultCache {
       || this.limits.maxEntries > 4096 || this.limits.maxBytes > 64 * 1024 * 1024
       || this.limits.maxResultBytes > 1024 * 1024) throw new BrowserError('INVALID_REQUEST', 'Invalid action result cache limits');
   }
+  delete(key: string): void { this.remove(key); }
   private remove(key: string): void {
     const value = this.values.get(key);
     if (value) { this.bytes -= value.data.byteLength; this.values.delete(key); }

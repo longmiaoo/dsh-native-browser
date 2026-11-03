@@ -154,3 +154,21 @@ test('an action still pending at release keeps its fence until it settles, then 
   assert.ok(provider.calls.length <= 1, 'the duplicate never executes a second time');
   assert.equal(runtime.journalUsage().identities, 0);
 });
+
+test('with a durable journal, one long-lived lease evicts settled identities instead of failing, and duplicates never replay', async t => {
+  const { mkdtemp, rm } = await import('node:fs/promises'), { tmpdir } = await import('node:os'), path = await import('node:path');
+  const { FileActionJournal } = await import('../dist/packages/broker/src/action-journal.js');
+  const directory = await mkdtemp(path.join(tmpdir(), 'dsh-evict-'));
+  const durable = await FileActionJournal.open(directory, 'a'.repeat(64));
+  t.after(async () => { await durable.close(); await rm(directory, { recursive: true, force: true }); });
+  const { runtime, provider, request } = await fixture(t, { journalSize: 2 }, durable);
+  for (const id of ['first', 'second', 'third', 'fourth', 'fifth']) {
+    assert.equal((await runtime.act('owner', { ...request, requestId: id }, signal())).outcome, 'succeeded');
+  }
+  assert.equal(runtime.journalUsage().identities, 2); assert.equal(provider.calls.length, 5);
+  const replay = await runtime.act('owner', { ...request, requestId: 'first' }, signal());
+  assert.equal(replay.code, 'RECOVERY_REQUIRED'); assert.equal(replay.observation, undefined);
+  assert.equal(provider.calls.length, 5, 'the evicted duplicate is fenced by the durable journal');
+  await assert.rejects(async () => runtime.act('owner', { ...request, requestId: 'first', action: { ...request.action, text: 'changed' } }, signal()),
+    { code: 'REQUEST_ID_CONFLICT' });
+});

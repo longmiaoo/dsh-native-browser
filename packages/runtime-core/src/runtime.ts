@@ -430,6 +430,7 @@ export class BrowserRuntime {
     if (recovered) return Promise.resolve(recoveredAction(request.requestId, recovered));
     const entry = this.entry(owner, request.leaseId);
     // Never evict and silently permit a duplicate side effect within this runtime epoch.
+    if (this.journal.size >= this.limits.journalSize) this.evictDurablyFencedIdentity();
     if (this.journal.size >= this.limits.journalSize) throw new BrowserError('JOURNAL_FULL', 'Action journal is full');
     const record: JournalEntry = { hash, leaseId: request.leaseId };
     this.journal.set(key, record);
@@ -454,6 +455,20 @@ export class BrowserRuntime {
    * authorize anything: every later lookup ends in LEASE_REVOKED or durable recovery,
    * exactly as if the entry were present. Retiring them keeps a long-lived Broker from
    * reaching JOURNAL_FULL; the durable journal remains the cross-lease replay fence. */
+  /** With a durable journal, a settled in-memory identity is only a cache of that
+   * journal's fence: a later duplicate misses here, then finds the same request hash
+   * and recovery metadata in durable storage, so nothing replays. Evict the oldest
+   * settled one so a single long-lived lease cannot exhaust the journal. Without a
+   * durable journal, the in-memory entry IS the fence and is never evicted. */
+  private evictDurablyFencedIdentity(): void {
+    if (!this.durable) return;
+    for (const [key, record] of this.journal) {
+      if (record.pending) continue;
+      this.journal.delete(key); this.results.delete(key);
+      return;
+    }
+  }
+
   private retireIfReleased(key: string, record: JournalEntry): void {
     if (!record.pending && !this.leases.has(record.leaseId) && this.journal.get(key) === record) this.journal.delete(key);
   }

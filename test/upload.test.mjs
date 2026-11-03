@@ -21,6 +21,7 @@ function fixture() {
       return { nodes: [{ backendDOMNodeId: 30, role: { value: 'button' }, name: { value: state.name } },
         { role: { value: 'StaticText' }, name: { value: 'Fixture' } }] };
     }
+    if (command === 'Page.createIsolatedWorld') return { executionContextId: 7 };
     if (command === 'DOM.resolveNode') return { object: { objectId: 'object-30' } };
     if (command === 'Runtime.callFunctionOn' && typeof p.functionDeclaration === 'string'
       && p.functionDeclaration.includes('instanceof HTMLInputElement')) {

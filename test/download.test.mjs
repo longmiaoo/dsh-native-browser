@@ -29,6 +29,7 @@ function fixture(downloadRoot) {
         return { nodes: [{ backendDOMNodeId: 30, role: { value: 'button' }, name: { value: state.name } },
           { role: { value: 'StaticText' }, name: { value: '已开始下载' } }] };
       }
+      if (command === 'Page.createIsolatedWorld') return { executionContextId: 7 };
       if (command === 'DOM.resolveNode') return { object: { objectId: 'object-30' } };
       if (command === 'Runtime.callFunctionOn') {
         return { result: { value: { ok: true, connected: true, inViewport: true, x: 50, y: 60, left: 0, top: 0, width: 100, height: 40, tag: 'BUTTON' } } };

@@ -41,7 +41,7 @@ const methods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocumen
   'Runtime.callFunctionOn', 'Runtime.releaseObject', 'Input.insertText', 'Input.dispatchMouseEvent',
   'Page.getLayoutMetrics', 'Page.captureScreenshot', 'Accessibility.getPartialAXTree',
   'DOM.scrollIntoViewIfNeeded', 'Input.dispatchKeyEvent', 'Page.navigate', 'Runtime.evaluate',
-  'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
+  'Page.createIsolatedWorld', 'DOM.setFileInputFiles', 'Page.setInterceptFileChooserDialog', 'Page.handleFileChooser', 'Page.handleJavaScriptDialog']);
 
 function tabIdOf(lease: Lease): number {
   const prefix = `${instanceId}:`;
@@ -434,6 +434,15 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
         throw new BrowserError('POLICY_DENIED', 'Navigation target is outside the lease scope');
       }
     }
+    if (command === 'DOM.resolveNode' && (Object.keys(params).some(key => !['backendNodeId', 'executionContextId'].includes(key))
+      || !Number.isSafeInteger(params.backendNodeId) || Number(params.backendNodeId) < 1
+      || params.executionContextId !== undefined && (!Number.isSafeInteger(params.executionContextId) || Number(params.executionContextId) < 1))) {
+      throw new BrowserError('POLICY_DENIED', 'Only a backend node and optional execution context may be resolved');
+    }
+    if (command === 'Page.createIsolatedWorld' && (Object.keys(params).length !== 2 || typeof params.frameId !== 'string'
+      || !params.frameId || params.frameId.length > 128 || params.worldName !== 'dsh-native-browser')) {
+      throw new BrowserError('POLICY_DENIED', 'Only the extension isolated world may be created');
+    }
     if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
       || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {
       throw new BrowserError('POLICY_DENIED', 'Only the fixed document-readiness query is exposed');
@@ -506,6 +515,13 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
           typeof params.quality === 'number' ? params.quality : 70);
         return { ...image, data: redacted.data,
           redaction: { policy: 'cross-origin-frames', frames: plan.frameCount, regions: redacted.regions } };
+      }
+      if (command === 'Page.createIsolatedWorld') {
+        // Only the leased root document: a child frame's world would reach another origin's DOM.
+        const root = ((await chrome.debugger.sendCommand({ tabId: id }, 'Page.getFrameTree')) as any)?.frameTree?.frame;
+        if (!root || root.id !== params.frameId || originOf(root.url) !== lease.origin) {
+          throw new BrowserError('POLICY_DENIED', 'Isolated worlds are only created in the leased root document');
+        }
       }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);

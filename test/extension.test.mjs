@@ -954,3 +954,21 @@ test('extension bridge keeps serving past its request-ID replay window and still
   assert.equal(f.ports.at(-1).disconnected, true, 'a recent duplicate ID is still a protocol violation');
   assert.equal(f.sent.slice(before).some(m => m.type === 'response' && m.id === 'r-10050'), false);
 });
+
+test('isolated worlds are created only in the leased root document with a fixed name; resolveNode params are bounded', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const cdp = (method, params) => f.call('cdp', { lease: f.lease, method, params });
+  f.chrome.debugger.sendCommand = async (_target, method) => {
+    f.commands.push({ method });
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame', loaderId: 'loader', url: f.tab.url } } };
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: 9 };
+    return {};
+  };
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'dsh-native-browser' })).ok, true);
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'child', worldName: 'dsh-native-browser' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'other' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('Page.createIsolatedWorld', { frameId: 'frame', worldName: 'dsh-native-browser', grantUniveralAccess: true })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 5, executionContextId: 9 })).ok, true);
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 5, objectGroup: 'x' })).code, 'POLICY_DENIED');
+  assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 'five' })).code, 'POLICY_DENIED');
+});

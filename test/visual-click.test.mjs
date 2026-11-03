@@ -25,6 +25,7 @@ function fixture() {
       ...state.text.map(name => ({ role: { value: 'StaticText' }, name: { value: name } }))] };
     if (command === 'Page.getLayoutMetrics') return { cssVisualViewport: { clientWidth: 1200, clientHeight: 900, pageX: 0, pageY: state.pageY } };
     if (command === 'DOM.getDocument') return { root: { backendNodeId: 1 } };
+    if (command === 'Page.createIsolatedWorld') return { executionContextId: 7 };
     if (command === 'DOM.resolveNode') return { object: { objectId: 'root-obj' } };
     if (command === 'Runtime.callFunctionOn' && String(p.functionDeclaration).includes('elementFromPoint')) return { result: { value: state.hit } };
     if (command === 'Input.dispatchMouseEvent') {

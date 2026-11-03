@@ -74,6 +74,7 @@ const visualHitFunction = `function(x, y) {
 }`;
 
 /** Shared Chromium semantics: brand differences stay in BrowserInstance/installer. */
+const isolatedWorldName = 'dsh-native-browser';
 export class ChromiumProvider implements BrowserProvider {
   private readonly pages = new Map<string, PageState>();
   constructor(readonly instance: BrowserInstance, private readonly channel: CommandChannel) {}
@@ -117,6 +118,16 @@ export class ChromiumProvider implements BrowserProvider {
   private async cdp(lease: Lease, method: string, params: unknown, signal: AbortSignal): Promise<Dict> {
     checkAbort(signal);
     return await this.channel.call('cdp', { lease, method, params }, signal) as Dict;
+  }
+  /** Resolve a node inside an isolated world, never the page's own JS world. Every check function
+   * runs there, so a page that patches prototypes, getters or Symbol.hasInstance cannot forge results. */
+  private async resolveNode(lease: Lease, backendNodeId: number, signal: AbortSignal): Promise<Dict> {
+    const { frame } = await this.document(lease, signal);
+    const world = await this.cdp(lease, 'Page.createIsolatedWorld', { frameId: frame.id, worldName: isolatedWorldName }, signal);
+    if (!Number.isSafeInteger(world.executionContextId) || world.executionContextId < 1) {
+      throw new BrowserError('STALE_TARGET', 'Isolated execution context is unavailable');
+    }
+    return await this.cdp(lease, 'DOM.resolveNode', { backendNodeId, executionContextId: world.executionContextId }, signal);
   }
   private async document(lease: Lease, signal: AbortSignal) {
     const result = await this.cdp(lease, 'Page.getFrameTree', {}, signal);
@@ -577,7 +588,7 @@ export class ChromiumProvider implements BrowserProvider {
     await identity();
     const backendId = target?.backendId ?? (await this.cdp(lease, 'DOM.getDocument', { depth: 0, pierce: false }, signal)).root?.backendNodeId;
     if (!backendId) throw new BrowserError('STALE_TARGET', 'Document scroll root is unavailable');
-    const objectId = (await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: backendId }, signal)).object?.objectId;
+    const objectId = (await this.resolveNode(lease, backendId, signal)).object?.objectId;
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Scroll target is unavailable');
     try {
       const read = async () => {
@@ -615,7 +626,7 @@ export class ChromiumProvider implements BrowserProvider {
     const target = this.pages.get(lease.tab)?.byRef.get(action.ref);
     if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale upload target');
     await this.checkIdentity(lease, target, signal);
-    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const resolved = await this.resolveNode(lease, target.backendId, signal);
     const objectId = resolved.object?.objectId;
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Upload target was removed');
     try {
@@ -640,7 +651,7 @@ export class ChromiumProvider implements BrowserProvider {
     if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale choose target');
     if (!controlRoles.has(target.role)) throw new BrowserError('NOT_ACTIONABLE', 'File chooser trigger must be an observed control');
     await this.checkIdentity(lease, target, signal);
-    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const resolved = await this.resolveNode(lease, target.backendId, signal);
     const objectId = resolved.object?.objectId;
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Choose target was removed');
     let chooserOpened = false;
@@ -701,7 +712,7 @@ export class ChromiumProvider implements BrowserProvider {
     if (!target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'Unknown or stale download trigger');
     if (!controlRoles.has(target.role)) throw new BrowserError('NOT_ACTIONABLE', 'Download trigger must be an observed control');
     await this.checkIdentity(lease, target, signal);
-    const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+    const resolved = await this.resolveNode(lease, target.backendId, signal);
     const objectId = resolved.object?.objectId;
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Download trigger was removed');
     let started: { id: number } | undefined;
@@ -791,7 +802,7 @@ export class ChromiumProvider implements BrowserProvider {
       throw new BrowserError('STALE_TARGET', 'Viewport scrolled or resized since the screenshot');
     }
     const rootBackend = (await this.cdp(lease, 'DOM.getDocument', { depth: 0, pierce: false }, signal)).root?.backendNodeId;
-    const objectId = rootBackend ? (await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: rootBackend }, signal)).object?.objectId : undefined;
+    const objectId = rootBackend ? (await this.resolveNode(lease, rootBackend, signal)).object?.objectId : undefined;
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Document root is unavailable');
     try {
       const hit = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId, functionDeclaration: visualHitFunction,
@@ -918,7 +929,7 @@ export class ChromiumProvider implements BrowserProvider {
         const { state } = await this.document(lease, signal), target = state.byRef.get(action.expected.ref);
         if (state.epoch !== request.documentEpoch || !target || target.epoch !== request.documentEpoch) throw new BrowserError('STALE_TARGET', 'State expectation requires a current known ref');
         await this.checkIdentity(lease, target, signal);
-        const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: target.backendId }, signal);
+        const resolved = await this.resolveNode(lease, target.backendId, signal);
         if (!resolved.object?.objectId) throw new BrowserError('STALE_TARGET', 'State target disappeared before the action');
         stateBinding = { objectId: resolved.object.objectId, epoch: request.documentEpoch, ref: action.expected.ref };
         await this.stateMatches(lease, action.expected, stateBinding, signal); // Validate support before any side effect.
@@ -972,7 +983,7 @@ export class ChromiumProvider implements BrowserProvider {
         || current.role === 'radio' && !action.checked || action.expected?.kind === 'value')) {
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Check requires a checkbox/switch boolean state or native radio checked:true');
       }
-      const resolved = await this.cdp(lease, 'DOM.resolveNode', { backendNodeId: current.backendId }, signal);
+      const resolved = await this.resolveNode(lease, current.backendId, signal);
       objectId = resolved.object?.objectId;
       if (!objectId) throw new BrowserError('STALE_TARGET', 'Target was removed');
       const targetObject = objectId;

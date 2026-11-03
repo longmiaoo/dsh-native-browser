@@ -241,6 +241,23 @@ test('download arming is lease-gated and chrome.downloads events forward real fi
   await f.ui('stop');
 });
 
+test('unrelated downloads are never attributed or reported, even while a lease is armed', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  assert.equal((await f.call('downloads.arm', { lease: f.lease })).ok, true);
+  const events = () => f.sent.filter(m => m.type === 'event' && m.event.startsWith('download.'));
+  // The user's own download from another site, with or without a referrer.
+  f.chrome.downloads.onCreated.emit({ id: 7, referrer: 'https://bank.example/statements', url: 'https://bank.example/s.pdf' });
+  f.chrome.downloads.onCreated.emit({ id: 8, referrer: '', url: 'data:text/plain,hi' });
+  f.chrome.downloads.onChanged.emit({ id: 5, state: { current: 'complete' } });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(events(), [], 'no unmatched download or its saved path reaches the Broker');
+  // A no-referrer download is still attributed from its own blob/URL origin.
+  f.chrome.downloads.onCreated.emit({ id: 5, referrer: '', url: 'blob:https://example.test/0d3f' });
+  assert.equal(events().length, 1); assert.equal(events()[0].value.leaseId, f.lease.id);
+  await f.ui('stop');
+});
+
 test('tabs.create is HTTP(S)-only and tabs.activate is lease-gated', async () => {
   const f = await fixture();
   const created = await f.call('tabs.create', { url: 'https://example.test/new' });

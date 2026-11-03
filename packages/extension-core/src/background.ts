@@ -666,17 +666,31 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 // chrome.debugger rejects browser-level download commands, so downloads are
 // observed through the extension's own downloads API and attributed to the
 // lease armed immediately before the trigger click.
+// Only downloads attributed to an armed lease ever reach the Broker: the user's
+// own unrelated downloads (names, paths) stay private, even while one is armed.
+const attributedDownloads = new Set<number>();
+const downloadOrigin = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value); // blob:https://site/... reports its creator's origin.
+    return ['http:', 'https:'].includes(url.protocol) || url.protocol === 'blob:' && url.origin !== 'null' ? originOf(url.origin) : undefined;
+  } catch { return undefined; }
+};
 chrome.downloads.onCreated.addListener(item => {
-  const referrer = (() => { try { return item.referrer ? originOf(item.referrer) : undefined; } catch { return undefined; } })();
-  const index = pendingDownloads.findIndex(lease => referrer !== undefined && lease.origin === referrer);
-  const lease = pendingDownloads.splice(index >= 0 ? index : 0, 1)[0];
-  if (!lease || lease.expiresAt <= Date.now()) return;
+  const origins = [downloadOrigin(item.referrer), downloadOrigin(item.url), downloadOrigin(item.finalUrl)].filter(Boolean);
+  const index = pendingDownloads.findIndex(lease => origins.includes(lease.origin));
+  if (index < 0) return; // Never guess: an unmatched download is not the agent's.
+  const lease = pendingDownloads.splice(index, 1)[0]!;
+  if (lease.expiresAt <= Date.now()) return;
+  attributedDownloads.add(item.id);
+  while (attributedDownloads.size > 64) attributedDownloads.delete(attributedDownloads.values().next().value!);
   try { port?.postMessage({ type: 'event', event: 'download.started', value: { tab: lease.tab, leaseId: lease.id,
     id: item.id } }); } catch {}
 });
 chrome.downloads.onChanged.addListener(async delta => {
   const state = delta.state?.current;
-  if (state !== 'complete' && state !== 'interrupted') return;
+  if (state !== 'complete' && state !== 'interrupted' || !attributedDownloads.has(delta.id)) return;
+  attributedDownloads.delete(delta.id);
   let item: chrome.downloads.DownloadItem | undefined;
   try { item = (await chrome.downloads.search({ id: delta.id }))[0]; } catch {}
   const filename = typeof item?.filename === 'string' && item.filename ? item.filename : undefined;

@@ -10,6 +10,7 @@ import { frameTargetGeometryFunction, frameBoundOwnerHitFunction, frameOwnerMetr
 import { frameQueryDocumentFunction, frameQueryNodeFunction, frameWithinRootFunction } from '../dist/packages/provider-chromium/src/frame-query-functions.js';
 import { screenshotRedactionRects } from '../dist/packages/extension-core/src/screenshot-redaction.js';
 import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
+const pointerMessages = f => f.tabMessages.filter(m => m.action !== 'activity').map(({revision, expiresAt, ...m}) => m);
 const source = await readFile(new URL('../dist/extension/chrome/background.js', import.meta.url), 'utf8');
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); }, emit(...args) { for (const fn of this.listeners) fn(...args); } });
 
@@ -17,7 +18,8 @@ test('built extension keeps HTTPS host access required and plaintext HTTP option
   const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url), 'utf8'));
   assert.match(manifest.key, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(extensionIdFromManifestKey(manifest.key), 'cpllfhogobecjohhnonijgmooggjilho');
-  assert.equal(manifest.version, '0.1.0');
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(manifest.version, pkg.version.replace('-alpha.', '.'));
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('downloads'));
   assert.ok(manifest.permissions.includes('tabs'));
@@ -48,7 +50,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
       create: async ({ url }) => ({ id: 9, url, title: 'New Tab' }), update: async (id, properties) => ({ id, ...properties }),
       group: async ({ tabIds }) => { grouped.push(...tabIds); return 42; },
       remove: async id => { removed.push(id); },
-      sendMessage: async (_id, message) => { tabMessages.push(message); return true; }, onRemoved: event(), onUpdated: event() },
+      sendMessage: async (_id, message) => { tabMessages.push(message); return { version: 2 }; }, onRemoved: event(), onUpdated: event() },
     tabGroups: { update: async (id, properties) => { groupUpdates.push({ id, ...properties }); } },
     scripting: { executeScript: async details => { scripts.push(details); return []; } },
     downloads: { onCreated: event(), onChanged: event(),
@@ -99,6 +101,31 @@ test('file selection is allowlisted, resolved-object-only and bounded to absolut
   assert.equal((await f.call('cdp', { lease: f.lease, method: 'DOM.setFileInputFiles',
     params: { files: Array.from({ length: 65 }, (_, i) => `/tmp/${i}`), objectId: 'object' } })).code, 'POLICY_DENIED');
   await f.ui('stop');
+});
+
+test('text and key-down input render focused-target feedback without synthesizing mouse input', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  for (const [method, params] of [['Input.insertText', { text: 'test' }],
+    ['Input.dispatchKeyEvent', keyEvent('ArrowLeft', false, 'keyDown')],
+    ['Input.dispatchKeyEvent', keyEvent('ArrowLeft', false, 'keyUp')]]) {
+    assert.equal((await f.call('cdp', { lease: f.lease, method, params })).ok, true);
+  }
+  assert.equal(f.tabMessages.filter(m => m.action === 'focus').length, 2);
+  assert.equal(f.commands.some(c => c.method === 'Input.dispatchMouseEvent'), false);
+  await f.ui('stop');
+  assert.equal((await f.call('cdp', { lease: f.lease, method: 'Input.insertText', params: { text: 'late' } })).code, 'LEASE_REVOKED');
+  assert.equal(f.tabMessages.filter(m => m.action === 'focus').length, 2);
+});
+
+test('Stop during pointer script injection prevents late keyboard feedback', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  let finish;
+  f.chrome.tabs.sendMessage = async (_id, m) => { f.tabMessages.push(m); if (m.action === 'focus') throw Error('No content script'); return {version:2}; };
+  f.chrome.scripting.executeScript = async () => new Promise(resolve => { finish = resolve; });
+  await f.call('cdp', { lease: f.lease, method: 'Input.insertText', params: { text: 'test' } });
+  assert.ok(finish); await f.ui('stop'); finish([]);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.deepEqual(pointerMessages(f).map(m => m.action), ['focus', 'remove']);
 });
 
 test('file chooser interception and accept are allowlisted, enabled-only and bounded to absolute local files', async () => {
@@ -417,9 +444,9 @@ test('extension child-click commands bind semantic target, refuse coordinate inj
   const input=f.geometryCalls.filter(c=>c.method.startsWith('Input.'));assert.deepEqual(input.map(c=>c.p.type),['mousePressed','mouseReleased']);
   assert.ok(input.every(c=>c.target.sessionId===undefined&&Math.abs(c.p.x-220)<1e-6&&Math.abs(c.p.y-130)<1e-6));
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(JSON.stringify(f.tabMessages), JSON.stringify([
-    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'move'},
-    {type:'dsh.pointer.v1',action:'show',x:220,y:130,phase:'click'},
+  assert.equal(JSON.stringify(pointerMessages(f)), JSON.stringify([
+    {type:'dsh.pointer.v2',action:'show',x:220,y:130,phase:'move'},
+    {type:'dsh.pointer.v2',action:'show',x:220,y:130,phase:'click'},
   ]));
   assert.equal(f.geometryCalls.filter(c=>c.method==='Runtime.releaseObjectGroup').length,2);
   await f.ui('stop');assert.equal((await f.call('frame.click',params)).code,'LEASE_REVOKED');
@@ -601,6 +628,33 @@ test('new origin, unsupported CDP and expired lease all fail closed', async () =
   assert.equal(f.commands.some(c => c.method === 'Input.insertText'), false);
 });
 
+test('renewal extends only an exact live gate and refreshes feedback without new input', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const next = { ...f.lease, expiresAt: f.lease.expiresAt + 1000 };
+  const renew = lease => f.call('lease.renew', { lease, previousExpiresAt: f.lease.expiresAt });
+  assert.equal((await f.call('cdp', { lease: next, method: 'Page.getFrameTree', params: {} })).code, 'LEASE_REVOKED');
+  for (const lease of [{ ...next, owner: 'intruder' }, { ...next, id: 'other' }, { ...next, token: 'other' }, { ...next, scope: 'tab' }])
+    assert.equal((await renew(lease)).code, 'LEASE_REVOKED');
+  const renewed = await renew(next);
+  assert.equal(renewed.ok, true); assert.equal(renewed.value.renewed, true); assert.equal(renewed.value.expiresAt, next.expiresAt);
+  assert.ok(f.tabMessages.some(m => m.action === 'activity' && m.expiresAt === next.expiresAt));
+  assert.equal((await renew(next)).code, 'LEASE_REVOKED', 'Duplicate old deadline cannot renew twice');
+  assert.equal((await f.call('cdp', { lease: next, method: 'Page.getFrameTree', params: {} })).ok, true);
+  assert.equal(f.commands.some(c => c.method.startsWith('Input.')), false);
+  await f.ui('stop');
+  assert.equal((await f.call('lease.renew', { lease: { ...next, expiresAt: next.expiresAt + 1000 }, previousExpiresAt: next.expiresAt })).code, 'LEASE_REVOKED');
+});
+
+test('Stop during asynchronous renewal validation cannot reopen the gate', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  let finish, entered; const started = new Promise(resolve => { entered = resolve; });
+  f.chrome.tabs.get = async () => { entered(); return new Promise(resolve => { finish = () => resolve(f.tab); }); };
+  const pending = f.call('lease.renew', { lease: { ...f.lease, expiresAt: f.lease.expiresAt + 1000 }, previousExpiresAt: f.lease.expiresAt });
+  await started; const stopped = f.ui('stop'); finish();
+  assert.equal((await pending).code, 'LEASE_REVOKED'); await stopped;
+  assert.equal((await f.ui('status')).controlled, false);
+});
+
 test('explicit tab-scoped consent survives HTTP(S) origin changes while exact-origin leases still close', async () => {
   const f = await fixture();
   const personal = { ...f.lease, scope: 'tab' };
@@ -701,13 +755,13 @@ test('mouse gate accepts one canonical wheel sample but rejects modifiers and bl
   for(const patch of [{modifiers:2},{deltaY:10001},{buttons:1},{type:'mouseMoved'},{deltaX:0,deltaY:0}]) {
     assert.equal((await send({...event,...patch})).code,'POLICY_DENIED');
   }
-  assert.equal(f.tabMessages.length,0);
+  assert.equal(pointerMessages(f).length,0);
   assert.equal((await send(event)).ok,true);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(JSON.stringify(f.tabMessages),JSON.stringify([{type:'dsh.pointer.v1',action:'show',x:20,y:30,phase:'wheel'}]));
+  assert.equal(JSON.stringify(pointerMessages(f)),JSON.stringify([{type:'dsh.pointer.v2',action:'show',x:20,y:30,phase:'wheel'}]));
   await f.ui('stop'); assert.equal((await send(event)).code,'LEASE_REVOKED');
-  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(f.tabMessages.length,2);
-  assert.equal(JSON.stringify(f.tabMessages[1]),JSON.stringify({type:'dsh.pointer.v1',action:'remove'}));
+  assert.equal(f.commands.filter(c=>c.method==='Input.dispatchMouseEvent').length,1);assert.equal(pointerMessages(f).length,2);
+  assert.equal(JSON.stringify(pointerMessages(f)[1]),JSON.stringify({type:'dsh.pointer.v2',action:'remove'}));
 });
 
 test('scroll document discovery only permits a shallow non-piercing root handle', async () => {
@@ -790,4 +844,82 @@ test('Stop while a semantic query is pending discards its result and does not di
   const result = await read; await stopped;
   assert.equal(result.code, 'LEASE_REVOKED'); assert.equal(f.commands.length, count);
   assert.equal(JSON.stringify(result).includes('secret-query-result'), false);
+});
+
+test('read-only requests publish control/read/wait presentation without mouse input or lease secrets', async () => {
+  const f = await fixture(); await f.call('lease.grant', {lease:f.lease});
+  assert.equal(f.tabMessages.at(-1).phase,'controlled');
+  assert.equal((await f.call('cdp',{lease:f.lease,method:'Page.getFrameTree',params:{}})).ok,true);
+  for (let i=0;i<10;i++) await f.call('cdp',{lease:f.lease,method:'Page.getFrameTree',params:{}});
+  assert.deepEqual(f.tabMessages.filter(m=>m.action==='activity').map(m=>m.phase),['controlled','reading'], 'Bursts coalesce presentation IPC');
+  await new Promise(resolve=>setTimeout(resolve,220));
+  const activities=f.tabMessages.filter(m=>m.action==='activity');
+  assert.deepEqual(activities.map(m=>m.phase),['controlled','reading','waiting']);
+  assert.ok(activities.every(m=>Number.isSafeInteger(m.revision)&&m.expiresAt===f.lease.expiresAt));
+  assert.ok(activities.every((m,i)=>i===0||m.revision>activities[i-1].revision));
+  assert.equal(f.commands.some(c=>c.method.startsWith('Input.')),false);
+  assert.equal(f.tabMessages.some(m=>'lease' in m || 'token' in m || 'owner' in m),false);
+  await f.ui('stop');
+});
+
+test('document-ready restores only the same extension top-frame indicator while its lease is live', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  const ready=sender=>{
+    let response;
+    f.chrome.runtime.onMessage.listeners[0]({type:'dsh.pointer.v2',action:'ready'},sender,value=>response=value);
+    return response;
+  };
+  const sender={id:f.chrome.runtime.id,frameId:0,tab:{id:7}};
+  assert.equal(ready(sender).phase,'controlled');
+  assert.equal(ready({...sender,frameId:1}),undefined);
+  assert.equal(ready({...sender,id:'other-extension'}),undefined);
+  assert.equal(ready({...sender,tab:{id:8}}),undefined);
+  await f.ui('stop'); assert.equal(ready(sender),undefined);
+});
+
+test('Stop during an outstanding read suppresses its late waiting indicator', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let done,started;
+  const dispatched=new Promise(resolve=>started=resolve);
+  f.chrome.debugger.sendCommand=async()=>{started();return new Promise(resolve=>done=resolve);};
+  const pending=f.call('cdp',{lease:f.lease,method:'Page.getLayoutMetrics',params:{}});
+  await dispatched;
+  const stopping=f.ui('stop');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.at(-1).action,'remove');
+  const count=f.tabMessages.length;done({}); await pending;await stopping;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.length,count,'A completed old operation must not recreate presentation');
+});
+
+test('a legacy content-script acknowledgement triggers one renderer injection without replaying input', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let delivered=0;
+  f.chrome.tabs.sendMessage=async()=>++delivered===1?{ok:true}:{ok:true,version:2};
+  const before=f.scripts.length;
+  await f.call('cdp',{lease:f.lease,method:'Input.insertText',params:{text:'once'}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.scripts.length,before+1);
+  assert.equal(f.commands.filter(c=>c.method==='Input.insertText').length,1);
+  await f.ui('stop');
+});
+
+test('an old mouse dispatch settling after Stop and regrant cannot paint into the new lease', async () => {
+  const f=await fixture(); await f.call('lease.grant',{lease:f.lease});
+  let finish,started;
+  const dispatched=new Promise(resolve=>started=resolve),original=f.chrome.debugger.sendCommand;
+  f.chrome.debugger.sendCommand=async(...args)=>{
+    if(args[1]==='Input.dispatchMouseEvent'){started();return new Promise(resolve=>finish=resolve);}
+    return original(...args);
+  };
+  const click=f.call('cdp',{lease:f.lease,method:'Input.dispatchMouseEvent',params:wheelEvent({x:20,y:30},{deltaX:0,deltaY:100})});
+  await dispatched;
+  const stopping=f.ui('stop');await new Promise(resolve=>setImmediate(resolve));
+  await f.ui('allow');
+  const regrant=f.call('lease.grant',{lease:{...f.lease,id:'new',token:'new-token'}});
+  await new Promise(resolve=>setImmediate(resolve));
+  finish({});await click;await stopping;assert.equal((await regrant).ok,true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.tabMessages.filter(m=>m.action==='show').length,0,'Only the matching lease may paint its action');
+  await f.ui('stop');
 });

@@ -1,24 +1,31 @@
 # 安装、升级与故障处理
 
-0.1.0 的正式支持范围为 macOS + Chrome。Node.js ≥ 22.19、pnpm 11、可正常对话的 DSH 是前置条件。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
+0.1.8 的正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
 
-## 安装
+## 推荐：DSH 内配置（0.1.8）
 
-使用 DSH 当前正在运行的 Profile。以下以 `web` 为例；如果使用 `desktop` 或 `browser-lab`，一致替换两处名称：
+从当前 DSH 的插件市场安装后，按宿主提示重载，打开左侧 **浏览器** 或 **插件 → dsh-native-browser** 详情中的配置向导（0.1.7 起提供，0.1.8 修复重载后入口丢失）。已发布 `0.1.6` 及更早版本请点 **左下角更多 → 设置 → 设置左侧浏览器配置**。然后点击 **完成浏览器配置**。无需输入 Profile；安装使用当前加载的插件包和它的运行目录。点击会注册本机组件、安装或更新登录后自动运行的服务并打开 Chrome，不会更改 DSH 审批设置或授权标签页。连接检查只读取状态。
+
+在 Chrome 加载扩展后，回到此页点击 **检查连接**。升级插件后再点击 **完成浏览器配置**，并在 Chrome 重载扩展。尚无 Chrome 商店版本，不能承诺完全无点击安装。详细限制和验证见[配置页说明](setup-ui.zh-CN.md)。
+
+## CLI/Web 命令行安装（高级用法）
+
+以下仅以已知的 CLI/Web Profile `web` 为例；使用 `browser-lab` 等其他 CLI Profile 时，两处名称必须一致。Desktop 用户应从桌面应用内的插件市场管理插件，不要把公共 CLI 命令直接替换成 `desktop`；它可能拒绝操作桌面专属 Profile。
+
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.8 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。安装完成不会自动批准任何标签页，也不会修改 DSH 的审批模式。
+这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。标准安装启用个人模式后台；已有显式插件审批配置与 DSH 全局权限继续生效。
 
 Chrome 首次加载需要你确认：在 `chrome://extensions` 开启开发者模式，点击“加载已解压的扩展程序”。在目录选择窗口按 Command+Shift+G，粘贴安装器输出的完整目录，回车并选择。该快捷键可以直接进入隐藏目录。
 
-重启对应 DSH Profile，在 Chrome 普通网页打开扩展，选择“允许当前标签页并连接”。在 DSH 输入：
+重载对应 DSH，在“浏览器配置”检查连接，默认个人模式无需逐页授权。在 Chrome 打开普通网页，然后在 DSH 输入：
 
-> 使用 native_browser 工具读取刚才授权页面的标题和主要内容，然后交还浏览器控制。
+> 使用 native_browser 工具读取当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
 
-默认采用逐动作审批。确认首次连接正常后，可选择 README 中的 `per-lease` 或显式的 `personal` 模式。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
+`0.1.8` 默认个人模式；已有显式审批配置仍优先。升级后重新运行浏览器配置以更新后台和固定目录中的扩展，再在 Chrome 重新加载扩展，并重载 DSH。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
 
 ## 升级
 

@@ -4,11 +4,45 @@
   <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser icon" />
 </p>
 
-> Fluid, native Chrome automation for DeepSeek Harness.
+> Native browser control for DSH, inspired by Codex workflows. Smooth virtual-cursor feedback in the Chrome you already use.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.9-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
+
+**Like this direction? [Star the project](https://github.com/longmiaoo/dsh-native-browser) and [build with us](CONTRIBUTING.md). Real-task feedback, reproducible issues, docs, demos and code contributions are welcome.**
+
+## Quick start: connect Chrome after installing
+
+**Upgrading to 0.1.9? Update the plugin, reload DSH, run Set up Chrome to synchronize the Broker and extension files, then Reload the extension in Chrome. This release adds long-task lease renewal and requires the updated extension.**
+
+**For macOS + Google Chrome. Install in the DSH app you actually use. No terminal command or Profile name is needed.**
+
+1. **Install and enable**: DSH → **Plugins → Plugin market**, search `dsh-native-browser`, install and enable it. Reload if DSH asks.
+2. **Open setup**: use **Browser** in the sidebar, or **Plugins → the top-level Installed tab → dsh-native-browser** details. Use DSH’s top-level Installed tab, outside Plugin market’s own installed list. Click **Set up Chrome** to open Chrome extensions and its folder.
+   **Missing those entries? Published `0.1.6` and earlier use the full fallback path: bottom-left More → Settings → Browser setup → Set up Chrome.** Version 0.1.7 added plugin-detail and sidebar entries; 0.1.8 fixes their cold-boot registration; older hosts can continue using Settings.
+3. **Load the extension once**: in `chrome://extensions`, enable **Developer mode** and click **Load unpacked**. Copy the extension path from setup; in the folder picker press **Command + Shift + G**, paste it, press Return and select the entire `chrome` folder. If already loaded, click **Reload** on its extension card instead.
+4. **Check and chat**: return to setup and click **Check connection**. Once Chrome is connected, open an ordinary webpage in Chrome and paste this into DSH:
+
+```text
+Use native_browser tools to read the title and main content of my current Chrome page, then hand control back to me.
+```
+
+**After setup, ask for tasks directly in chat.** After upgrading the plugin, rerun setup to sync its extension, then click **Reload** on the Chrome extension card.
+
+Chrome Web Store distribution is pending, so the initial Load unpacked confirmation remains. Setup opens the relevant Chrome page automatically. A public README cannot link to every user's authenticated local DSH; the in-app entry uses the DSH instance you are running.
+
+---
+
+## See it in action
+
+![Native browser setup for DSH: connection, first task and community links](assets/screenshots/browser-setup.png)
+
+*Actual setup component: connection status and your first task in one place.*
+
+![Virtual cursor and page-reading status](assets/screenshots/cursor-feedback.png)
+
+*Actual cursor and status feedback on an isolated test page. Motion follows dispatched actions; page reads use a separate status indicator.*
 
 Let DSH work in the Chrome you already use—with your existing tabs, signed-in sessions and extensions. Ask it to read pages, fill forms and work through browser tasks, with visible actions and explicit handoff when you need control.
 
@@ -22,7 +56,7 @@ We want browser work to feel smooth enough that you choose to delegate more of i
 |---|---|
 | Work in a familiar browser | Connect to existing Chrome tabs, logins and extensions. |
 | Keep actions connected | Preserve browser connections; use semantic observations, scoped reads, incremental results and bounded batches. |
-| See what the agent is doing | Operate real pages and show pointer feedback for dispatched clicks and wheel actions. |
+| See what the agent is doing | Show smooth cursor motion for dispatched clicks, scrolling and typing, plus a separate control/read/navigation/wait indicator. |
 | Take control when needed | Release control through the extension Stop button or explicit handoff. Switching DSH conversations also revokes the previous conversation's control. |
 | Recover without guessing | Check actionability and distinguish verified results from unknown outcomes, avoiding blind duplicate actions. |
 
@@ -51,17 +85,23 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-Version **0.1.0 supports macOS + Google Chrome**. You need Node.js ≥ 22.19, pnpm 11 and a working DSH installation. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
+Version **0.1.9 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-### 1 Configure the local components
+### Recommended: setup inside DSH (0.1.9)
+
+Version `0.1.9` keeps the **Browser** sidebar entry available after reload and provides setup directly in **Plugins → top-level Installed → dsh-native-browser** details. Install or update in the DSH app you use, reload as instructed, then click **Set up Chrome**. Older hosts retain **More → Settings → Browser setup**. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
+
+The extension is not on the Chrome Web Store yet, so initial unpacked loading remains. A future store release can replace directory selection with the user's **Add to Chrome** confirmation and automatic extension updates; that distribution path has not shipped. See the [setup design and validation](docs/setup-ui.zh-CN.md).
+
+### CLI installation (advanced CLI/Web usage)
 
 Paste this entire line into a terminal:
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.9 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-Replace **both** occurrences of `web` with your actual DSH profile, such as `desktop` or `browser-lab`. Installing into a different profile does not register tools in your current chat.
+Use this only for a known CLI/Web profile such as `web` or `browser-lab`, with the same name in both places. `web` is not a universal default. **Desktop users should manage plugins through the Desktop plugin market, not substitute `desktop` into the public CLI**, which restricts management of Desktop-owned profiles. Installing into a different profile does not register tools in the current chat.
 
 The installer stages the extension in a stable private directory, registers Native Messaging, starts and checks a macOS background Broker, and opens Chrome extensions plus Finder. The service continues after you close the terminal.
 
@@ -73,15 +113,19 @@ The extension is currently distributed unpacked through npm; Chrome Web Store di
 
 ### 3 Connect and ask DSH
 
-Restart the DSH profile where you installed the plugin. Open a normal webpage in Chrome, open the extension popup, and choose **允许当前标签页并连接** (allow the current tab and connect). Then ask DSH:
+Reload the DSH environment where you installed the plugin. Check the connection in Browser setup, open a normal webpage in Chrome, and ask DSH. Default personal mode needs no per-tab popup consent:
 
 ```text
-Use the native_browser tools to read the title and main content of the page I just authorized, then hand browser control back to me.
+Use the native_browser tools to read the title and main content of the Chrome page I have open, then hand browser control back to me.
 ```
 
-DSH should return the page contents and leave the tab open. The default approval mode is per-action; installation does not change DSH approval configuration. Screenshot understanding depends on your selected model; Vision Router is optional.
+DSH should return the page contents and leave the tab open. Version `0.1.9` defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
 
 ### Approval modes
+
+**Since 0.1.2:** the adapter now defaults to `personal`, matching the standard installer. Ordinary pages need no per-tab popup consent and the plugin adds no per-action approval prompts. Explicit `per-action`, `per-lease` and `trusted` configurations remain effective. Stop, handoff, conversation switching, lease checks and DSH's own permissions still apply.
+
+Upgrade existing installations to `0.1.9`, rerun setup to update the staged extension and Broker, reload the extension in Chrome, and reload DSH. Existing explicit approval settings take precedence. A personal Broker is required for personal mode.
 
 For one confirmation per tab claim, add this to the **existing** plugin entry in your actual profile and restart it:
 
@@ -91,7 +135,7 @@ For one confirmation per tab claim, add this to the **existing** plugin entry in
     approvalMode: per-lease
 ```
 
-For ordinary personal browsing, explicitly choose `approvalMode: personal`. The installer already provides a matching personal Broker. After the extension connects, personal mode can discover and claim ordinary HTTP(S) tabs in that Chrome instance. Enable it only for a personal browser whose pages you intend to make available. Stop, handoff, foreground conversation changes and lease expiry revoke control. Personal mode can retain control across turns in the same conversation. The plugin cannot reliably identify every consequential business action; let a human handle payment, publishing and irreversible operations. See [approval modes](docs/development.md#approval-modes).
+For ordinary personal browsing, explicitly choose `approvalMode: personal`. The installer already provides a matching personal Broker. After the extension connects, personal mode can discover and claim ordinary HTTP(S) tabs in that Chrome instance. Enable it only for a personal browser whose pages you intend to make available. Stop, handoff, foreground conversation changes and lease expiry revoke control. During active personal-mode browser work, control renews automatically. Turn end, handoff, Stop, conversation switching and disconnect stop maintenance; ten minutes without browser-tool activity also stops it. Older peers retain the fixed deadline until updated. The plugin cannot reliably identify every consequential business action; let a human handle payment, publishing and irreversible operations. See [approval modes](docs/development.md#approval-modes).
 
 ### Upgrade, diagnose and uninstall
 
@@ -117,6 +161,8 @@ dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome
 Then remove the Chrome extension and uninstall the DSH plugin using the plugin manager. This stops the service belonging to the selected runtime and unregisters the browser Host; local state, the staged extension and user tabs are preserved.
 
 ## Current capabilities and limits
+
+Version 0.1.3 adds [task lifecycle and status](docs/task-lifecycle.zh-CN.md): explicit page-purpose marks, cleanup of still-controlled temporary tabs on confirmed completed turns, conversation action cards, and settings controls. Temporary pages are cleaned only while control is valid; retained and user-owned pages remain open. Use explicit finish when the Host ending is unknown; mark unfinished multi-turn pages for handoff.
 
 `0.1.0` includes semantic reads, clicks, text entry, scrolling, checkbox/radio actions, batches, multiple tabs, screenshots, guarded visual clicks, and actions for uploads, downloads and native dialogs. See the [changelog](CHANGELOG.md) and that version's bundled documentation for exact conditions. The [implementation inventory](docs/current-implementation.zh-CN.md) describes the development version, which can contain changes that have not shipped.
 
@@ -183,13 +229,13 @@ These directions welcome proposals; use discussions in concrete issues and repro
 
 ## Tool names and coexistence
 
-The stable version registers 13 `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix avoids name collisions with plugins using `browser_*`. Old aliases are opt-in through `legacyToolNames: true`; occupied aliases are skipped. Use the canonical names for new tasks.
+The stable version registers 14 `native_browser_*` tools, including `native_browser_claim`, `native_browser_observe`, `native_browser_act` and `native_browser_handoff`. The dedicated prefix avoids name collisions with plugins using `browser_*`. Old aliases are opt-in through `legacyToolNames: true`; occupied aliases are skipped. Use the canonical names for new tasks.
 
 Source development, manual Broker setup and experimental features are documented in [development.md](docs/development.md).
 
 ## Technical foundations and evidence
 
-Semantic observations describe the page, actionability checks confirm targets, the local runtime preserves connection and session state, and the virtual pointer shows dispatched actions. Reducing repeated reads and model round trips is an important part of making tasks feel continuous.
+Semantic observations describe the page, actionability checks confirm targets, the local runtime preserves connection and session state, and the virtual pointer shows dispatched actions. Version 0.1.6 adds smooth motion between actual targets and a separate indicator for reads, navigation, screenshots and waiting; read-only work never invents a mouse target. Animation does not add browser input or delay dispatch, and respects reduced-motion preferences. Reducing repeated reads and model round trips is an important part of making tasks feel continuous.
 
 Existing executor tests and local benchmarks validate these foundations. Complete model-driven tasks, real sites and sustained use need broader evidence as we work toward the Codex experience benchmark.
 

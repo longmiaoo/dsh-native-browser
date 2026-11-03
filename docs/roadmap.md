@@ -1,5 +1,7 @@
 # Chrome-first roadmap
 
+> Updated product priorities (2026-11-02): see [产品核心、竞争力与实施规划](plans/product-strategy-and-roadmap.zh-CN.md). The phases below preserve the earlier technical roadmap; their historical release labels and unchecked items are not a current implementation inventory.
+
 > Current release scope: 0.1.0 supports macOS + Chrome. See the README and release acceptance record. The phases below describe the broader multi-browser/multi-platform vision, not prerequisites that are claimed complete by this scoped release.
 
 This roadmap is ordered by risk retirement, not feature count. Dates are intentionally absent until the first benchmark harness is running.

@@ -2,6 +2,69 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.9 - 2026-11-03
+
+- Refresh the setup page with clearer connection progress, a return-to-chat action, light/dark themes and narrow-window support. Keep setup and permissions accessible from the same authenticated component.
+- Keep personal-mode control alive during active browser work instead of unconditionally expiring after two minutes. Renew the existing owner/token through the authenticated Broker and live extension gate; recheck current origin, policy, expiry and cancellation. Stop maintenance at turn end, handoff, conversation change, disconnect or disposal, and after ten minutes without browser-tool activity. Never resurrect expired control or retry a failed renewal.
+- Negotiate renewal as an optional capability. Old Brokers/extensions keep the previous fixed deadline; restricted approval modes do not receive automatic renewal. Renewal refreshes the page activity/pointer deadline without extra input or debugger reattachment.
+- Preserve bounded action outcome metadata in task status. Unknown outcomes and failed postconditions request verification; stale targets, control loss and connection problems receive distinct recovery guidance. A successful read alone does not clear an uncertain action receipt, and no input is automatically replayed.
+- Add lifecycle, policy, socket-negotiation and Stop-race regressions, plus real isolated Chrome MV3 renewal/feedback checks. See [continuity implementation notes](docs/browser-continuity.zh-CN.md) for scope and upgrade requirements.
+
+## 0.1.8 - 2026-11-03
+
+- Fix the Browser sidebar entry disappearing after reload: register its main panel from the slot declaration, without requiring optional Layout lookup while the provider fiber is still loading. Resolve navigation at click time instead.
+- Add a CI regression using pinned real Cordis and SlotRegistry SDKs for cold boot, warm boot, Layout reactivation and plugin disposal; the previous direct SlotCore fixture did not model provider activation.
+
+## 0.1.7 - 2026-11-03
+
+- Put browser setup directly in the plugin bundle and component details, add native post-enable guidance and a sidebar Browser panel, and retain Settings as the fallback on older clients. Opening guidance only reads status; installation and browser opening still require the user's setup click.
+- Bring beginner installation steps, the exact More → Settings fallback, Chrome's folder-picker shortcut and a first-task prompt to the top of both READMEs. Add setup instructions to package metadata and copyable first-task guidance in the setup page.
+- Refresh connection diagnostics when returning to the setup window after loading the Chrome extension. Share the same authenticated setup component across every entry.
+
+## 0.1.6 - 2026-11-02
+
+- Animate the virtual cursor between actual dispatched targets with distance-based 160–420 ms transitions, continuous retargeting and arrival feedback for clicks, wheel and typing. Rendering never dispatches extra input or delays browser commands; reduced-motion users receive immediate placement.
+- Show a separate, metadata-only control/activity indicator for reads, navigation, capture and waiting. Restore the indicator in new documents without inventing cursor coordinates; remove presentation on Stop, handoff and lease expiry, rejecting late feedback.
+- Use a versioned content-script acknowledgement with deduplicated on-demand injection. Build the overlay without HTML string injection for Trusted Types compatibility, and fence animation/status updates by monotonic revisions.
+- Exercise actual rendered intermediate frames, retargeting, no synthetic input, reduced motion, navigation reset, Stop and expiry in isolated Chrome MV3. Give the multi-action Chrome smoke suite a 60-second total budget; per-request deadlines and product action timeouts are unchanged.
+
+## 0.1.5 - 2026-11-02
+
+- Fix foreground selection on current DSH Session Controller catalogs: derive the selected session from unique local `retainedBy.mainView` ownership instead of the removed `list.current` field. Use the same selection projection for task settings; preserve explicit-current compatibility for older hosts and avoid guessing from cached/sidebar rows.
+- Do not cache a failed foreground notification as synchronized. Distinguish missing foreground synchronization from a busy Chrome lease so recovery does not ask users to close unrelated tabs.
+
+## 0.1.4 - 2026-11-02
+
+- Fix a 0.1.3 settings crash before Desktop selects or hydrates a conversation: an undefined selected ID must not match a nonexistent task snapshot. Browser setup remains available without an active chat.
+- Ignore malformed task-status payloads, and extend the real React/SlotCore smoke test to start with no conversation and cover cleared selections.
+
+## 0.1.3 - 2026-11-02
+
+- Add `native_browser_task` for task status, explicit page-purpose marks and finish. In personal mode, a Host turn explicitly ending as completed cleans still-controlled temporary pages and releases control. Retain deliverable/handoff pages and all user-created pages; interrupted, unknown and background endings never close pages.
+- Fence cleanup before asynchronous connection work and through final release acknowledgement. Skip revoked/expired pages, report incomplete cleanup, and never automatically reclaim or replay a failed close.
+- Add metadata-only task status and explicit Stop/finish controls in browser settings, plus optional conversation tool cards for running actions, unverified outcomes and cleanup counts. Screenshots retain the Host's image-capable rendering.
+- This is in-memory task bookkeeping for the loaded plugin. Restarts do not recover authority or clean historical tabs. New UI endpoints use the existing authenticated owner routes; no additional browser-provider protocol is required.
+
+## 0.1.2 - 2026-11-02
+
+- Render focused-target pointer feedback for fill, append and keyboard input, without synthesizing mouse clicks. Acknowledge pointer messages and suppress late reinjection feedback after Stop.
+- Fence new browser calls from a conversation after it loses foreground ownership; return an explicit handoff explanation instead of allowing repeated background reclaims. Selecting that conversation again permits a fresh lease.
+- Ignore foreground notifications from visible but unfocused DSH windows; reassert the selected conversation on window focus. Explain that user-visible browsing should activate the controlled Chrome tab.
+- Align the default adapter approval mode with the installer's personal Broker. Ordinary browser actions and batch steps no longer add plugin-owned per-action prompts; explicit approval configurations and DSH host permissions remain in force.
+- Require the personal capability during every Broker connection/reconnection before issuing browser commands. A restricted Broker cannot receive an unapproved tab-open request from a personal adapter.
+- Report the live Broker access mode and effective plugin approval mode separately in setup. Remove incorrect per-tab consent instructions in personal mode, retain restricted-mode guidance, and flag mode mismatches.
+- Hide completed loading steps once Chrome connects, and explain the macOS hidden-folder picker shortcut in words.
+- Verify default-mode packed installation with real Chrome/Native Messaging without per-tab popup approval; keep a no-service acceptance path for machines with an active user Broker.
+
+- Keep task-created tabs open after completion in this release. Automatic temporary-tab cleanup is planned for a later version.
+
+## 0.1.1 - 2026-10-30
+
+- Add a DSH settings page for explicit Chrome setup, connection diagnostics, extension path copying and reopening the extension manager. Use the running plugin's package and runtime directory without asking users for a Profile name.
+- Fix activation on DSH 0.2.1-rc.3 by using authenticated owner-only shared routes; retain the legacy RPC route on older hosts. Keep setup outside model-facing browser tools. Validate fixed request shapes, deduplicate concurrent installs, retain read-only status checks and reject unsupported automatic platforms before writes.
+- Verify Desktop's Electron Node mode and persist it in Native Messaging launchers and LaunchAgents; retain compatibility with existing standalone Node registrations.
+- Correct documentation that previously suggested substituting `desktop` into the public DSH CLI. Chrome Web Store distribution is still pending.
+
 ## 0.1.0 - 2026-10-30
 
 First stable release, scoped to macOS + Google Chrome. DSH host-component validation covers 0.1.5-rc.1 and 0.2.1-rc.3; Edge and complete Linux/Windows installation remain experimental.

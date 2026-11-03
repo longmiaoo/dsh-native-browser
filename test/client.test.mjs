@@ -7,28 +7,36 @@ import vm from 'node:vm';
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
-function fixture() {
-  let definition, current = 'chat-a';
+function fixture(respond) {
+  let definition;
+  const catalog = id => ({ ids: id ? [id] : [], byId: id ? { [id]: { id, retainedBy: { mainView: 1 } } } : {}, phase: 'ready' });
+  let snapshot = catalog('chat-a');
   const listListeners = new Set(), eventListeners = new Map(), documentListeners = new Map(), disposers = [], calls = [];
-  const window = { __ModuleLoader__: { load(value) { definition = value; } } };
+  const windowListeners = new Map();
+  const window = { __ModuleLoader__: { load(value) { definition = value; } },
+    addEventListener(name, listener) { windowListeners.set(name, listener); },
+    removeEventListener(name, listener) { if (windowListeners.get(name) === listener) windowListeners.delete(name); } };
   const document = {
     visibilityState: 'visible',
+    focused: true, hasFocus() { return this.focused; },
     addEventListener(name, listener) { documentListeners.set(name, listener); },
     removeEventListener(name, listener) { if (documentListeners.get(name) === listener) documentListeners.delete(name); },
   };
   vm.runInNewContext(source, { window, document, crypto: webcrypto, AbortController, AbortSignal, Date, Promise, Object, Number, Symbol });
   const plugin = definition.factory();
   const ctx = {
-    sessions: { list: { getSnapshot: () => ({ current }), subscribe: listener => { listListeners.add(listener); return () => listListeners.delete(listener); } } },
-    connection: { rpc: { call: async (channel, endpoint, payload, signal) => { calls.push({ channel, endpoint, payload: structuredClone(payload), signal }); return { ok: true, value: {} }; } } },
+    sessions: { list: { getSnapshot: () => snapshot, subscribe: listener => { listListeners.add(listener); return () => listListeners.delete(listener); } } },
+    connection: { rpc: { call: async (channel, endpoint, payload, signal) => { calls.push({ channel, endpoint, payload: structuredClone(payload), signal }); return respond ? respond(channel, endpoint) : { ok: true, value: {} }; } } },
     on(name, listener) { eventListeners.set(name, listener); return () => eventListeners.delete(name); },
     effect(callback) { disposers.push(callback()); },
   };
   plugin.apply(ctx);
   return { plugin, calls, document,
-    select(value) { current = value; for (const listener of listListeners) listener(); },
+    select(value) { snapshot = catalog(value); for (const listener of listListeners) listener(); },
+    snapshot(value) { snapshot = value; for (const listener of listListeners) listener(); },
     reset() { eventListeners.get('connection/reset')?.(); },
     visible() { documentListeners.get('visibilitychange')?.(); },
+    focus() { document.focused = true; windowListeners.get('focus')?.(); },
     dispose() { for (const dispose of disposers) dispose(); },
   };
 }
@@ -36,13 +44,52 @@ function fixture() {
 test('client reports canonical current-session changes over authenticated Connection RPC only', async () => {
   const f = fixture(); await flush();
   assert.equal(f.calls.length, 1);
-  assert.equal(f.calls[0].channel, '/dsh-native-browser'); assert.equal(f.calls[0].endpoint, 'foreground');
+  assert.equal(f.calls[0].channel, '/api'); assert.equal(f.calls[0].endpoint, 'dsh-native-browser/foreground');
   assert.equal(f.calls[0].payload.sessionId, 'chat-a');
   assert.match(f.calls[0].payload.clientId, /^[0-9a-f-]{36}$/i);
   assert.deepEqual(Object.keys(f.calls[0].payload).sort(), ['clientId', 'issuedAt', 'revision', 'sessionId']);
   f.select('chat-b'); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'chat-b');
   const count = f.calls.length; f.select('chat-b'); await flush(); assert.equal(f.calls.length, count);
   assert.equal(f.calls[1].payload.revision, f.calls[0].payload.revision + 1);
+});
+
+test('modern catalog follows only unique mainView retention; cached/sidebar rows do not select or steal', async () => {
+  const f = fixture(); await flush();
+  f.snapshot({ phase: 'ready', byId: {
+    cached: { id: 'cached', retainedBy: { sidebar: 2 } },
+    active: { id: 'chat-b', retainedBy: { mainView: 1 } },
+  } }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'chat-b');
+  const count = f.calls.length;
+  f.snapshot({phase:'pending',byId:{}}); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({unknown:true}); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({phase:'ready',byId:{a:{id:'a',retainedBy:{mainView:1}},b:{id:'b',retainedBy:{mainView:1}}}});
+  await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({phase:'ready',byId:{cached:{id:'cached',retainedBy:{sidebar:1}}}});
+  await flush(); assert.equal(f.calls.at(-1).payload.sessionId, null); f.dispose();
+});
+test('legacy explicit current remains supported without treating undefined as a deliberate deselection', async () => {
+  const f = fixture(); await flush();
+  f.snapshot({ current: 'legacy-chat' }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, 'legacy-chat');
+  const count = f.calls.length;
+  f.snapshot({ current: undefined }); await flush(); assert.equal(f.calls.length, count);
+  f.snapshot({ current: null }); await flush(); assert.equal(f.calls.at(-1).payload.sessionId, null); f.dispose();
+});
+test('a failed foreground notification is retried on the next same-selection update', async () => {
+  let calls = 0;
+  const f = fixture(() => { if (++calls === 1) throw Error('temporarily unavailable'); return {ok:true,value:{accepted:true}}; });
+  await flush(); assert.equal(f.calls.length,1);
+  f.select('chat-a'); await flush(); assert.equal(f.calls.length,2);
+  f.select('chat-a'); await flush(); assert.equal(f.calls.length,2); f.dispose();
+});
+
+test('a visible unfocused DSH window cannot reclaim foreground on list updates or reconnect', async () => {
+  const f = fixture(); await flush();
+  f.document.focused = false;
+  f.select('background-chat'); f.reset(); f.visible(); await flush();
+  assert.equal(f.calls.length, 1);
+  f.focus(); await flush();
+  assert.equal(f.calls.length, 2); assert.equal(f.calls.at(-1).payload.sessionId, 'background-chat');
+  f.dispose(); f.focus(); await flush(); assert.equal(f.calls.length, 2);
 });
 
 test('hidden pages cannot steal foreground; visibility and reconnect reassert the latest selection', async () => {
@@ -53,4 +100,19 @@ test('hidden pages cannot steal foreground; visibility and reconnect reassert th
   f.reset(); await flush(); assert.equal(f.calls.length, 3); assert.equal(f.calls[2].payload.sessionId, 'chat-hidden');
   f.dispose(); assert.equal(f.calls[2].signal.aborted, true);
   f.select('chat-after-dispose'); f.reset(); await flush(); assert.equal(f.calls.length, 3);
+});
+
+
+test('legacy host fallback occurs only for a definite missing route', async () => {
+  const old = fixture(channel => {
+    if (channel === '/api') throw Error('transport failure for /api/dsh-native-browser/foreground: HTTP 404');
+    return { ok: true, value: {} };
+  });
+  await flush(); assert.equal(old.calls.length, 2);
+  assert.equal(old.calls[1].channel, '/dsh-native-browser');
+  assert.equal(old.calls[1].endpoint, 'foreground'); old.dispose();
+  for (const status of [401, 403, 500]) {
+    const denied = fixture(() => { throw Error(`transport failure: HTTP ${status}`); });
+    await flush(); assert.equal(denied.calls.length, 1); denied.dispose();
+  }
 });

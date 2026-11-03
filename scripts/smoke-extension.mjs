@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyFeedbackExtension } from './verify-feedback-extension.mjs';
 import { brokerCapabilities } from '../dist/packages/contracts/src/wire.js';
 import http from 'node:http';
 import { once } from 'node:events';
@@ -11,6 +12,7 @@ import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
 import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
 import { verifyFrameGeometryExtension } from './verify-frame-geometry-extension.mjs';
+import { verifyLeaseRenewalExtension } from './verify-lease-renewal-extension.mjs';
 
 // Only native transport is substituted. The production bundle, popup permission flow,
 // tabs API, debugger attachment, CDP dispatch, and Stop gate run in real MV3 Chrome.
@@ -55,7 +57,14 @@ try {
       }, disconnect() { this.disconnected = true; } };
     chrome.runtime.connectNative = () => port;
   });
+  const feedbackChecks = await verifyFeedbackExtension({ context, worker });
   const page = context.pages()[0]; await page.goto(`${origin}/`);
+  // Model an old v1 overlay left in an existing HTTP tab after extension reload.
+  await page.evaluate(() => {
+    const legacy = document.createElement('div'); legacy.dataset.dshPointer = 'v1';
+    legacy.setAttribute('aria-hidden','true'); legacy.setAttribute('inert','');
+    document.documentElement.append(legacy);
+  });
   const browserCDP = await context.browser().newBrowserCDPSession();
   // Test-harness only: keep page-triggered downloads inside the isolated profile.
   await browserCDP.send('Browser.setDownloadBehavior', { behavior: 'allow',
@@ -116,13 +125,16 @@ try {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
   })();
-  const instance = { ...hello.params.instance, capabilities: { ax: true, screenshot: true } };
+  const instance = { ...hello.params.instance, capabilities: { ax: true, screenshot: true, leaseRenewal: true } };
   const provider = new ChromiumProvider(instance, channel, { downloadRoot: path.join(profile, 'downloads') });
+  const renewalChecks = await verifyLeaseRenewalExtension({ provider, channel, page, popup });
   runtime = new BrowserRuntime(async request => new URL(request.tab.url).origin === origin);
   runtime.register(provider);
-  const signal = AbortSignal.timeout(20000), owner = 'mv3-smoke';
+  const signal = AbortSignal.timeout(60000), owner = 'mv3-smoke';
   const tabs = await runtime.listTabs(instance.id, signal); assert.equal(tabs.length, 1); assert.equal(tabs[0].url, `${origin}/`);
   const lease = await runtime.claim(owner, instance.id, tabs[0].id, signal);
+  await page.waitForFunction(() => document.querySelector('[data-dsh-activity="v1"]'));
+  assert.equal(await page.locator('[data-dsh-pointer="v1"]').count(), 0, 'New renderer removes a stale old cursor without inventing a replacement');
   let observation = await runtime.observe(owner, lease.id, signal);
   const act = async (requestId, action) => {
     const result = await runtime.act(owner, { requestId, leaseId: lease.id, documentEpoch: observation.documentEpoch, action }, signal);
@@ -266,7 +278,7 @@ try {
   await assert.rejects(runtime.observe(owner, multiA.id, signal), error => error.code === 'LEASE_REVOKED');
   await assert.rejects(runtime.observe(owner, multiB.id, signal), error => error.code === 'LEASE_REVOKED');
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
-    passed: ['Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
+    passed: [...feedbackChecks, ...renewalChecks, 'Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
       'Real visual-click from a screenshot box after hit-test and viewport checks',
       'Real multi-tab open, activate and release-all across two tabs',

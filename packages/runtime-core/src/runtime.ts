@@ -208,6 +208,35 @@ export class BrowserRuntime {
     return entry;
   }
 
+  async renew(owner: string, leaseId: string, signal: AbortSignal): Promise<Lease> {
+    checkAbort(signal);
+    const entry = this.entry(owner, leaseId);
+    if (!entry.provider.renew || entry.provider.instance.capabilities.leaseRenewal === false)
+      throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Provider does not support lease renewal');
+    const linked = AbortSignal.any([signal, entry.controller.signal, AbortSignal.timeout(this.limits.actionMs)]);
+    return this.serialized(entry, linked, async () => {
+      await this.authorized(entry, 'observe', linked);
+      const previous = entry.lease;
+      const next: Lease = Object.freeze({ ...previous, expiresAt: Math.max(previous.expiresAt + 1, Date.now() + this.limits.leaseMs) });
+      try {
+        await entry.provider.renew!(previous, next, linked);
+        checkAbort(linked);
+        this.entry(owner, leaseId); // The old deadline and Stop still win while the ACK is pending.
+        entry.lease = next;
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => { void this.release(owner, leaseId).catch(() => {}); }, next.expiresAt - Date.now());
+        entry.timer.unref();
+        return structuredClone(next);
+      } catch (error) {
+        // An ACK can be lost after the extension updates its gate. Retire this
+        // fence instead of guessing, retrying, or reviving it after a Stop.
+        if (this.leases.get(leaseId) === entry) void this.release(owner, leaseId).catch(() => {});
+        else void entry.provider.revoke(next).catch(() => {});
+        throw error;
+      }
+    });
+  }
+
   private async authorized(entry: Entry, operation: 'observe' | 'act', signal: AbortSignal,
     action?: ActionRequest['action'], frame?: ActionRequest['frame']): Promise<void> {
     checkAbort(signal);

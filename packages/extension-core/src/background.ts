@@ -1,3 +1,4 @@
+import { feedbackType, type Activity } from './feedback.js';
 import { BrowserError, checkAbort, errorCode, originOf, type Lease } from '../../contracts/src/index.js';
 import { record, string, uploadFile } from '../../contracts/src/validation.js';
 import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
@@ -14,7 +15,7 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
-import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
+import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
 type TabConsent = Readonly<{ origin: string; scope: 'tab' }>;
@@ -69,15 +70,65 @@ function checkGate(lease: Lease, signal: AbortSignal): number {
   const id = tabIdOf(lease);
   const gate = gates.get(id), consent = allowed.get(id), scope = lease.scope ?? 'origin';
   const personalGrant = brokerPersonal && scope === 'tab';
-  if (gate?.token !== lease.token || (gate.scope ?? 'origin') !== scope || !personalGrant && !consent
-    || !personalGrant && scope === 'origin' && consent!.origin !== lease.origin || lease.expiresAt <= Date.now()) {
+  if (gate?.token !== lease.token || gate.id !== lease.id || gate.owner !== lease.owner || (gate.scope ?? 'origin') !== scope || !personalGrant && !consent
+    || !personalGrant && scope === 'origin' && consent!.origin !== lease.origin
+    || lease.expiresAt <= Date.now() || gate.expiresAt <= Date.now() || lease.expiresAt > gate.expiresAt) {
     throw new BrowserError('LEASE_REVOKED', 'Local control gate is closed');
   }
   return id;
 }
 
 type PointerPhase = 'move' | 'click' | 'wheel';
-function showVirtualPointer(id: number, params: Record<string, unknown>): void {
+const activityRequests = new Map<number, Map<symbol, Activity>>();
+const presentations = new Map<number, { revision: number; phase: Activity }>();
+const activityTimers = new Map<number, ReturnType<typeof setTimeout>>();
+const pointerInjections = new Map<number, Promise<unknown>>();
+let feedbackRevision = Date.now() * 1000;
+function nextFeedbackRevision(): number {
+  feedbackRevision = Math.max(feedbackRevision + 1, Date.now() * 1000); return feedbackRevision;
+}
+function showActivity(id: number, phase: Activity, resetPointer = false): void {
+  clearTimeout(activityTimers.get(id)); activityTimers.delete(id);
+  const lease = gates.get(id);
+  if (!lease || lease.expiresAt <= Date.now()) return;
+  if (phase === 'waiting') {
+    // A burst of low-level reads gets one busy hint and one settled hint,
+    // rather than two extension IPC messages for every CDP command.
+    activityTimers.set(id, setTimeout(() => {
+      activityTimers.delete(id);
+      if (gates.get(id)?.token !== lease.token || lease.expiresAt <= Date.now() || activityRequests.get(id)?.size) return;
+      const revision = nextFeedbackRevision(); presentations.set(id, { revision, phase });
+      sendPointerFeedback(id, { action: 'activity', phase, revision });
+    }, 180));
+    return;
+  }
+  if (presentations.get(id)?.phase === phase && !resetPointer) return;
+  const revision = nextFeedbackRevision(); presentations.set(id, { revision, phase });
+  sendPointerFeedback(id, { action: 'activity', phase, revision, ...(resetPointer ? { resetPointer: true } : {}) });
+}
+
+function sendPointerFeedback(id: number, payload: Record<string, unknown>): void {
+  const lease = gates.get(id);
+  if (!lease || lease.expiresAt <= Date.now()) return;
+  const current = () => gates.get(id)?.token === lease.token && lease.expiresAt > Date.now();
+  const message = { ...payload, type: feedbackType, revision: payload.revision ?? nextFeedbackRevision(), expiresAt: lease.expiresAt };
+  // Rendering never holds the action queue. A versioned acknowledgement also
+  // detects old content scripts in pages that were open before an update.
+  void (async () => {
+    const response = await chrome.tabs.sendMessage(id, message, { frameId: 0 }).catch(() => undefined);
+    if (response?.version === 2 || !current()) return;
+    let injection = pointerInjections.get(id);
+    if (!injection) {
+      injection = chrome.scripting.executeScript({ target: { tabId: id }, files: ['pointer.js'] });
+      pointerInjections.set(id, injection);
+      void injection.finally(() => { if (pointerInjections.get(id) === injection) pointerInjections.delete(id); }).catch(() => {});
+    }
+    await injection;
+    if (current()) await chrome.tabs.sendMessage(id, message, { frameId: 0 });
+  })().catch(() => { /* Feedback failure never replays input or bypasses permissions. */ });
+}
+function showVirtualPointer(id: number, params: Record<string, unknown>, expectedToken: string): void {
+  if (gates.get(id)?.token !== expectedToken) return;
   const type = params.type;
   if (type !== 'mousePressed' && type !== 'mouseReleased' && type !== 'mouseWheel') return;
   const x = Number(params.x), y = Number(params.y);
@@ -85,14 +136,11 @@ function showVirtualPointer(id: number, params: Record<string, unknown>): void {
   const phase: PointerPhase = type === 'mouseReleased' ? 'click' : type === 'mouseWheel' ? 'wheel' : 'move';
   // The persistent isolated content script keeps pointer rendering independent
   // from the action queue. Existing tabs receive it once on demand.
-  const message = { type: 'dsh.pointer.v1', action: 'show', x, y, phase };
-  void chrome.tabs.sendMessage(id, message).catch(async () => {
-    await chrome.scripting.executeScript({ target: { tabId: id }, files: ['pointer.js'] });
-    await chrome.tabs.sendMessage(id, message);
-  }).catch(() => {});
+  const message = { type: feedbackType, action: 'show', x, y, phase };
+  sendPointerFeedback(id, message);
 }
 function removeVirtualPointer(id: number): void {
-  void chrome.tabs.sendMessage(id, { type: 'dsh.pointer.v1', action: 'remove' }).catch(() => {});
+  void chrome.tabs.sendMessage(id, { type: feedbackType, action: 'remove', revision: nextFeedbackRevision(), expiresAt: 0 }, { frameId: 0 }).catch(() => {});
 }
 async function ensure(lease: Lease, signal: AbortSignal): Promise<number> {
   const id = checkGate(lease, signal);
@@ -106,7 +154,8 @@ async function ensure(lease: Lease, signal: AbortSignal): Promise<number> {
 function stop(id: number, forget = true): Promise<void> {
   const lease = gates.get(id);
   // This synchronous change is the last-mile Stop guarantee, before any network/IPC.
-  gates.delete(id);
+  gates.delete(id); activityRequests.delete(id); presentations.delete(id);
+  clearTimeout(activityTimers.get(id)); activityTimers.delete(id);
   frameSessions.get(id)?.dispose(); frameSessions.delete(id);
   if (lease) pager.revoke(lease.token + '|');
   clearTimeout(changeTimers.get(id)); changeTimers.delete(id);
@@ -130,7 +179,7 @@ async function frameGraph(lease: Lease, signal: AbortSignal) {
     await ensure(lease, currentSignal); checkGate(lease, currentSignal);
     beforeDispatch?.();
     const result = await chrome.debugger.sendCommand({ tabId: id, ...(sessionId ? { sessionId } : {}) }, command, params) as Record<string, any>;
-    if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);
+    if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params, lease.token);
     await ensure(lease, currentSignal); return result;
   };
   let graph = frameSessions.get(id);
@@ -145,6 +194,26 @@ async function frameGraph(lease: Lease, signal: AbortSignal) {
 }
 
 async function execute(method: string, raw: unknown, signal: AbortSignal): Promise<unknown> {
+  const p = record(raw);
+  const phase: Activity | undefined = method.startsWith('ax.') || method === 'frames.list' || method === 'frame.geometry' || method === 'frame.click.prepare'
+    ? 'reading' : method === 'frame.click' ? 'acting' : method === 'cdp' && methods.has(String(p.method))
+      ? p.method === 'Page.navigate' ? 'navigating' : p.method === 'Page.captureScreenshot' ? 'capturing'
+        : String(p.method).startsWith('Input.') ? 'acting' : 'reading' : undefined;
+  if (!phase) return executeRaw(method, raw, signal);
+  const lease = leaseOf(p.lease), id = checkGate(lease, signal), request = Symbol();
+  let active = activityRequests.get(id);
+  if (!active) { active = new Map(); activityRequests.set(id, active); }
+  active.set(request, phase); showActivity(id, phase, phase === 'navigating');
+  try { return await executeRaw(method, raw, signal); }
+  finally {
+    active.delete(request);
+    if (activityRequests.get(id) === active && gates.get(id)?.token === lease.token) {
+      const pending = [...active.values()].at(-1);
+      showActivity(id, pending ?? 'waiting');
+    }
+  }
+}
+async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Promise<unknown> {
   const p = record(raw);
   if (method === 'tabs.list') {
     const result = [];
@@ -201,6 +270,7 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
         await chrome.debugger.sendCommand({ tabId: id }, 'Accessibility.enable');
         await chrome.debugger.sendCommand({ tabId: id }, 'DOM.enable');
         await ensure(lease, signal);
+        showActivity(id, 'controlled');
         return { granted: true };
       });
     } catch (error) { if (gates.get(id)?.token === lease.token) await stop(id, false); throw error; }
@@ -208,6 +278,21 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
   if (method === 'lease.revoke') {
     if (gates.get(id)?.token === lease.token) await stop(id, false);
     return { released: true };
+  }
+  if (method === 'lease.renew') {
+    if (Object.keys(p).length !== 2 || !Number.isSafeInteger(p.previousExpiresAt))
+      throw new BrowserError('INVALID_REQUEST', 'Renewal requires the exact previous deadline');
+    const previous = { ...lease, expiresAt: Number(p.previousExpiresAt) };
+    return enqueue(id, async () => {
+      await ensure(previous, signal);
+      const gate = gates.get(id);
+      if (!gate || gate.expiresAt !== previous.expiresAt || lease.expiresAt <= gate.expiresAt)
+        throw new BrowserError('LEASE_REVOKED', 'Renewal is stale or does not extend live control');
+      checkAbort(signal);
+      gates.set(id, lease);
+      sendPointerFeedback(id, { action: 'activity', phase: presentations.get(id)?.phase ?? 'controlled' });
+      return { renewed: true, expiresAt: lease.expiresAt };
+    });
   }
   if (method === 'tabs.activate') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab activation only accepts its lease');
@@ -423,9 +508,12 @@ async function execute(method: string, raw: unknown, signal: AbortSignal): Promi
       }
       // No await between final gate check and browser dispatch.
       checkGate(lease, signal);
+      if (command === 'Input.insertText' || command === 'Input.dispatchKeyEvent' && params.type === 'keyDown') {
+        sendPointerFeedback(id, { type: feedbackType, action: 'focus' });
+      }
       const result = await chrome.debugger.sendCommand({ tabId: id }, command, params);
       if (command === 'Page.handleJavaScriptDialog') pendingDialogs.delete(id);
-      if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params);
+      if (command === 'Input.dispatchMouseEvent') showVirtualPointer(id, params, lease.token);
       return result;
     });
   }
@@ -495,7 +583,7 @@ function connect(): void {
   });
   try {
     current.postMessage(wireMessage({ type: 'request', id: helloId, method: 'hello', params: {
-      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities],
+      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities, leaseRenewalCapability],
       requiredCapabilities: [...providerRequirements],
       instance: { id: instanceId, family: 'chromium', brand: __BROWSER_BRAND__,
         version: navigator.userAgent, profileLabel: 'User-authorized profile' },
@@ -504,6 +592,17 @@ function connect(): void {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === feedbackType && message.action === 'ready') {
+    // Only this extension's top-frame content script can restore presentation.
+    // It receives no lease, token, page data or new browser authority.
+    const id = sender.tab?.id, gate = id === undefined ? undefined : gates.get(id);
+    if (sender.id === chrome.runtime.id && sender.frameId === 0 && gate && gate.expiresAt > Date.now()) {
+      const presentation = presentations.get(id!);
+      respond({ type: feedbackType, action: 'activity', phase: presentation?.phase ?? 'controlled',
+        revision: presentation?.revision ?? nextFeedbackRevision(), expiresAt: gate.expiresAt });
+    }
+    return;
+  }
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html')) return;
   void (async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

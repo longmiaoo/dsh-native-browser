@@ -4,11 +4,45 @@
   <img src="https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png" width="140" alt="dsh-native-browser 图标" />
 </p>
 
-> 为 DeepSeek Harness 打造流畅、连贯的原生 Chrome 操作体验。
+> DSH 原生浏览器操作，让每一步更丝滑。以 Codex 浏览器工作流为体验标杆，直接使用你已登录的 Chrome。
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.9-blue)](#开始试用) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · 简体中文 · [开始试用](#开始试用) · [参与共建](#参与共建) · [反馈体验](https://github.com/longmiaoo/dsh-native-browser/issues/new)
+
+**喜欢这个方向？[给项目点一个 Star](https://github.com/longmiaoo/dsh-native-browser)，让更多 DSH 用户发现它。欢迎[参与共创](CONTRIBUTING.md)：真实任务反馈、问题复现、文档、录屏与代码贡献都很有价值。**
+
+## 快速开始：安装后先连接 Chrome
+
+**升级到 0.1.9：更新插件并重载 DSH，再点击「完成浏览器配置」同步后台和扩展文件，最后在 Chrome 扩展卡片点击「重新加载」。本版增加长任务自动续期，需要新版 Chrome 扩展。**
+
+**适用：Mac + Google Chrome。先在你正在使用的 DSH 应用里安装插件，再完成下面的 Chrome 连接。无需终端命令，也不用寻找 Profile。**
+
+1. **安装插件**：DSH 左侧点 **插件 → 插件市场**，搜索 `dsh-native-browser` 并安装、启用。按 DSH 提示重载。
+2. **打开配置向导**：优先点左侧 **浏览器**。也可以点 **插件 → 顶部「已安装」→ dsh-native-browser 卡片名称** 进入详情；这里是 DSH 顶部的「已安装」，不是插件市场内部的同名列表。点 **完成浏览器配置**，程序会打开 Chrome 扩展管理页和扩展文件夹。
+   **找不到上述入口？已发布的 `0.1.6` 及更早版本请走完整旧路径：DSH 左下角「更多」→「设置」→设置左侧「浏览器配置」→「完成浏览器配置」。** `0.1.7` 新增插件详情与侧栏入口，`0.1.8` 修复入口重载后消失的问题；旧宿主仍可使用上述设置路径。
+3. **首次加载 Chrome 扩展**：在打开的 `chrome://extensions` 页面开启右上角 **开发者模式**，点 **加载已解压的扩展程序**。复制配置向导显示的扩展目录；在文件选择窗口按 **Command + Shift + G**，粘贴目录、回车，再点 **选择**。请选择整个 `chrome` 文件夹。已经加载过的用户点扩展卡片的 **重新加载** 即可。
+4. **检查连接并开始聊天**：回到配置向导，点 **检查连接**。看到 **Chrome 已连接** 后，在 Chrome 打开一个普通网页，回到 DSH 输入：
+
+```text
+使用 native_browser 工具，读取当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
+```
+
+**以后直接在聊天中提需求，无需每次配置。** 升级插件后，重新点 **完成浏览器配置** 同步扩展，再到 Chrome 扩展卡片点 **重新加载**。
+
+Chrome 扩展尚未上架商店，首次仍需你确认加载；点击配置后会自动打开对应页面。GitHub/npm 的 README 无法用一个通用链接定位每个人的本地 DSH，应用内入口会连接到你当前使用的 DSH。
+
+---
+
+## 看看实际界面
+
+![DSH 原生浏览器：连接状态、首次任务和 Star／共创入口](assets/screenshots/browser-setup.png)
+
+*连接向导的实际组件截图。安装、连接和第一次使用集中在同一页面。*
+
+![虚拟鼠标与读取状态反馈](assets/screenshots/cursor-feedback.png)
+
+*隔离测试页中的实际指针与状态条；鼠标随已派发的动作移动，读取和等待使用独立状态反馈。*
 
 让 DSH 在你日常使用的 Chrome 中办事：沿用已有标签页、登录状态和扩展，通过自然语言读取页面、填写表单、完成连续操作，并在需要时交还控制。
 
@@ -22,7 +56,7 @@
 |---|---|
 | 直接使用熟悉的浏览器 | 接入现有 Chrome 标签页，复用已有登录状态和扩展。 |
 | 操作之间保持连贯 | 保持浏览器连接，使用语义观察、局部读取和增量结果；支持有界批量动作。 |
-| 看得见 AI 在做什么 | 在真实页面操作，提供点击和滚动的虚拟指针反馈。 |
+| 看得见 AI 在做什么 | 在真实页面操作，虚拟指针平滑移向点击、滚动和输入目标，并提供接管、读取、导航和等待状态条。 |
 | 需要时能接手 | 使用扩展中的 Stop 或明确的 handoff 释放控制；切换 DSH 会话也会撤销原会话的控制。 |
 | 遇到异常能判断下一步 | 检查目标是否可操作，区分已确认结果与结果未知，避免盲目重复动作。 |
 
@@ -48,17 +82,23 @@
 
 ## 开始试用
 
-正式版 `0.1.0` 的支持范围是 **macOS + Google Chrome**。需要 Node.js ≥ 22.19、pnpm 11，以及已能正常对话的 DSH。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
+正式版 `0.1.9` 的支持范围是 **macOS + Google Chrome**，需要已能正常对话的 DSH。CLI/Web 安装需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 配置复用经过验证的内置运行时。宿主声明为 `>=0.1.5-rc.1 <0.3.0`；已验证的宿主组件版本为 `0.1.5-rc.1` 和 `0.2.1-rc.3`。Chrome 最低清单版本为 125，验收使用的版本见[发布验收记录](docs/releases/0.1.0-acceptance.zh-CN.md)。Edge、Windows 和 Linux 的完整安装体验仍属实验范围。
 
-### 1 一条命令配置本机组件
+### 推荐：在 DSH 内完成配置（0.1.9）
+
+`0.1.9` 可直接打开左侧 **浏览器**，或 **插件 → 顶部已安装 → dsh-native-browser** 详情中的配置向导。安装或升级到 `0.1.9` 后按宿主提示重载，点击 **完成浏览器配置**；旧宿主仍可使用 **左下角更多 → 设置 → 浏览器配置**，**无需寻找或填写 Profile**。页面提供连接诊断、复制目录和重新打开 Chrome 的按钮。桌面端复用经过验证的 DSH 内置运行时，不要求另外安装 Node。
+
+Chrome 扩展目前尚未上架商店，首次仍需“加载已解压的扩展程序”。商店版将以“添加至 Chrome”的一次确认替代目录选择，并支持扩展自动更新；这部分尚未实现。参见[安装入口设计与验证](docs/setup-ui.zh-CN.md)。
+
+### 命令行安装（CLI/Web 高级用法）
 
 在终端粘贴这一整行：
 
 ```bash
-dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.9 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
-如果你使用 `desktop`、`browser-lab` 或其他 Profile，把整行中的两处 `web` 都换成实际名称。插件需要安装到你正在使用的 DSH Profile；装到另一个 Profile 不会在当前聊天中注册工具。
+这条命令仅用于你已知名称的 CLI/Web Profile，例如 `web` 或 `browser-lab`；两处名称必须一致。`web` 不是所有用户的默认值。**DSH Desktop 用户应通过桌面应用的插件市场管理插件，不要直接把它改成 `desktop`**：公开 CLI 对桌面专属 Profile 有管理限制。插件装到另一个 Profile 不会出现在当前聊天中。
 
 安装器会把扩展复制到固定目录，注册 Native Messaging Host，启动并检查后台 Broker，然后打开 Chrome 扩展页和 Finder。终端关闭后后台服务继续运行。
 
@@ -70,17 +110,19 @@ dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile we
 
 ### 3 连接并开始对话
 
-重启安装插件的 DSH Profile。在 Chrome 打开一个普通网页，点开 DSH Native Browser 扩展，点击“允许当前标签页并连接”。然后在 DSH 输入：
+重载已安装插件的 DSH，在“浏览器配置”检查连接。默认个人模式无需逐页授权。在 Chrome 打开一个普通网页，然后在 DSH 输入：
 
 ```text
-使用 native_browser 工具，读取我刚才授权页面的标题和主要内容，然后交还浏览器控制。
+使用 native_browser 工具，读取我当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
 ```
 
-成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。插件默认逐动作确认，安装器不会修改 DSH 的权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
+成功时，DSH 返回正确的页面内容；任务结束后页面仍保留。`0.1.9` 默认个人模式。安装器不会修改 DSH 的全局权限设置。页面截图由 DSH 交给所选模型，能否看懂图片取决于模型能力；不强制依赖 Vision Router。
 
 ### 权限模式
 
-默认 `per-action` 适合首次验收。希望每次接管只确认一次，可以在该 Profile **已有** 的 `native-browser` 配置行加入：
+**自 0.1.2 起**：默认 `personal` 与标准安装器保持一致，普通网页无需逐页点击授权，插件不再对每个动作追加确认。Stop、交还控制、会话切换、租约和 DSH 自身权限仍生效。显式配置的 `per-action` / `per-lease` / `trusted` 不会被覆盖。
+
+旧版用户升级到 `0.1.9` 后，重新运行浏览器配置以更新固定目录中的扩展与后台，在 Chrome 重新加载扩展，并重载 DSH。已有显式审批设置优先；个人模式需要匹配的个人后台。希望每次接管确认一次，则配置：
 
 ```yaml
 - id: native-browser
@@ -88,11 +130,11 @@ dsh plugin --profile web add dsh-native-browser@0.1.0 && dsh plugin --profile we
     approvalMode: per-lease
 ```
 
-个人日常浏览可显式选择 `approvalMode: personal`，再重启对应 Profile。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。同一会话中的控制可以跨轮次保留，Stop、交还控制、会话切换和租约到期仍会撤销控制。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
+`0.1.9` 默认采用 `approvalMode: personal`。安装器已经提供匹配的 personal Broker；此模式连接后可发现并接管该 Chrome 中的普通 HTTP(S) 标签页，减少逐动作确认；应只在你愿意开放这些页面的个人浏览器中启用。个人模式下，进行中的浏览器任务会自动续期；轮次结束、Stop、交还控制、会话切换和断线都会停止续期。十分钟没有浏览器工具活动也会停止；旧版组件在更新前仍使用固定期限。插件不能可靠判断任意按钮的业务后果，请由人完成付款、公开发布和其他不可逆业务步骤。详见[权限说明](docs/development.md#approval-modes)。
 
 ### 升级、排障与卸载
 
-升级也运行上面的安装命令，然后在 Chrome 扩展页点“重新加载”，并重启对应 DSH Profile。固定扩展目录不会随 npm 包路径变化。**从旧 Alpha 首次迁移时**，移除原先从 `node_modules` 或源码目录加载的旧扩展，改为加载安装器输出的固定目录，并重新授权标签页。
+升级也运行上面的安装命令，然后在 Chrome 扩展页点“重新加载”，并重启对应 DSH Profile。固定扩展目录不会随 npm 包路径变化。**从旧 Alpha 首次迁移时**，移除原先从 `node_modules` 或源码目录加载的旧扩展，改为加载安装器输出的固定目录，并检查连接；个人模式无需逐页授权。
 
 若旧版 Broker 仍在某个终端运行，先在那个终端按 Ctrl+C，再运行安装命令。不要同时运行手工 Broker 和后台服务。
 
@@ -114,6 +156,8 @@ dsh plugin --profile web exec dsh-native-browser uninstall --browser=chrome
 再在 Chrome 移除扩展，并从 DSH 插件管理器卸载插件。命令停止属于当前运行目录的后台服务并移除该浏览器的 Host 注册，保留本地状态和固定扩展目录；不会关闭你的标签页。
 
 ## 当前能力与边界
+
+0.1.3 加入[任务收尾与执行状态](docs/task-lifecycle.zh-CN.md)：任务页用途标记、正常完成时清理仍受控的临时页、聊天操作卡，以及设置页的 Stop/收尾入口。失效页面会跳过并报告；旧宿主结束格式不明确时使用显式收尾，跨轮次未完成页面需标记保留。
 
 `0.1.0` 提供页面语义读取、点击、输入、滚动、复选框及单选框操作、批处理、多标签页、截图、受控视觉点击，以及文件上传、下载和原生对话框相关动作。各动作的具体条件见[版本说明](CHANGELOG.md)与该版本随包提供的文档。[实现文档](docs/current-implementation.zh-CN.md)描述开发版本，可能包含尚未发布的改动。
 
@@ -180,7 +224,7 @@ pnpm test
 
 ## 工具命名与共存
 
-正式版默认注册 13 个 `native_browser_*` 工具，例如 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立命名避免与使用 `browser_*` 的插件重名。需要兼容旧提示词时，可在已有配置中显式设置 `legacyToolNames: true`；已被其他插件占用的旧别名会跳过。新任务直接使用标准名称。
+正式版默认注册 14 个 `native_browser_*` 工具，例如 `native_browser_claim`、`native_browser_observe`、`native_browser_act` 和 `native_browser_handoff`。独立命名避免与使用 `browser_*` 的插件重名。需要兼容旧提示词时，可在已有配置中显式设置 `legacyToolNames: true`；已被其他插件占用的旧别名会跳过。新任务直接使用标准名称。
 
 源码开发、手工 Broker 和实验功能见[开发文档](docs/development.md)。
 
@@ -203,6 +247,14 @@ pnpm test
 - [Chrome first 决策](docs/decisions/0001-chrome-first.md)
 
 Chrome DevTools MCP provider 仍属于后续规划，当前浏览器操作使用原生 Chromium 路径。
+
+### 0.1.6：更连贯的可视反馈
+
+本版增加按距离调整的 160–420 毫秒虚拟鼠标移动；连续动作从当前显示位置转向最新真实目标，点击、滚动和输入反馈在到达后播放。首次操作直接显示真实位置；只有读取时显示独立状态条，不让箭头随意游走。
+
+动画只呈现已派发的操作，不产生额外点击、不等待动画结束再执行操作，也不代表业务操作已成功。开启系统“减少动态效果”时直接定位。Stop、交还控制和租约到期会清除箭头与状态条，页面跳转后只恢复有效控制状态。
+
+更新到 `0.1.9` 后，需在 DSH 浏览器配置中同步扩展目录，并在 Chrome 扩展卡片上点“重新加载”；只升级 DSH 插件不会自动热替换 Chrome 正在运行的扩展代码。
 
 ## 致谢与许可
 

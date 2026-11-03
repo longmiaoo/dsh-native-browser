@@ -223,6 +223,8 @@ export interface BrowserProvider {
   activate?(lease: Lease, signal: AbortSignal): Promise<void>;
   close?(lease: Lease, signal: AbortSignal): Promise<void>;
   grant(lease: Lease, signal: AbortSignal): Promise<void>;
+  /** Extend an existing live fence; must never create or resurrect control. */
+  renew?(previous: Lease, next: Lease, signal: AbortSignal): Promise<void>;
   revoke(lease: Lease): Promise<void>;
   observe(lease: Lease, signal: AbortSignal): Promise<Observation>;
   observeSubtree?(lease: Lease, rootRef: string, signal: AbortSignal): Promise<Observation>;

@@ -96,14 +96,14 @@ try {
   const diagnosticOptions = { directory, brand: 'chrome', extensionId, manifestDir: path.join(profile, 'NativeMessagingHosts') };
   const diagnostic = await diagnose(diagnosticOptions);
   assert.equal(diagnostic.status, 'ready', JSON.stringify(diagnostic));
-  assert.deepEqual(diagnostic.connection, { connected: true, instanceCount: 1, matchingBrowserCount: 1 });
+  assert.deepEqual(diagnostic.connection, { connected: true, accessMode: 'restricted', instanceCount: 1, matchingBrowserCount: 1 });
   passed.push('Read-only doctor validates real isolated installation and Chrome connection');
 
   ctx = new Context();
   await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime);
   await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(directory, 'dsh-test-home') });
   ctx.provide('connection', { rpc: { handle: () => () => {} } });
-  await ctx.plugin(plugin, { runtimeDirectory: directory });
+  await ctx.plugin(plugin, { runtimeDirectory: directory, approvalMode: 'per-action' });
   const session = Session.create(SessionId('native-smoke')), otherSession = Session.create(SessionId('other-session'));
   session.append('turn/start', { turn: 1 });
   let callNumber = 0;

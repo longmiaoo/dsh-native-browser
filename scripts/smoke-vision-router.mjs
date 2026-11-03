@@ -86,7 +86,7 @@ try {
   await ctx.plugin(LocalAttachmentStore,{dshHome:path.join(directory,'fixture-host')});
   await ctx.plugin(LocalFileSystem,{cwd:directory});
   ctx.provide('connection',{rpc:{handle:()=>()=>{}}});
-  await ctx.plugin(browserPlugin,{runtimeDirectory:directory});
+  await ctx.plugin(browserPlugin,{runtimeDirectory:directory,approvalMode:'per-action'});
   await ctx.plugin(router,{tool:true,progressiveTools:false,freeFallback:false,freeCloudFirst:false,
     routing:false,stealth:false,autoWrapProviders:false,wrappedProviders:[],cache:false,instantDescribe:false,
     structuredVisionBootstrap:false,desktopScreenshot:false,autoActivateOnImage:false,

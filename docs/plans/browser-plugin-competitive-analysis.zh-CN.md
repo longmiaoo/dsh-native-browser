@@ -1,5 +1,7 @@
 # 浏览器插件竞品分析与 Codex 级体验计划
 
+> 2026-11-02 更新：本文件保留为历史快照。三个头部项目已有重要变化，且虚拟鼠标并非我们的独有能力；对其架构与优势的当前判断，以[三项目源码复核与吸收计划](browser-top3-comparison-2026-11-02.zh-CN.md)为准。
+
 日期：2026-10-30。数据源：awesome-dsh-plugin `plugins.json`（索引更新 2026-10-29）、npm registry `latest` 元数据、各项目 GitHub README/package.json。下载量为近 30 天滚动值，stars 为抓取时快照；索引可能滞后于 npm 最新版本。
 
 ## 1. 结论

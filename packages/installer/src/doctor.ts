@@ -7,7 +7,7 @@ import { BrowserError } from '../../contracts/src/index.js';
 import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { HOST_NAME, manifestDirectory } from './install.js';
 import { launcherPaths } from './launcher.js';
-import { acceptWelcome, clientRequirements, wireVersion } from '../../contracts/src/wire.js';
+import { acceptWelcome, clientRequirements, personalBrokerCapability, wireVersion } from '../../contracts/src/wire.js';
 
 type Check = { id: string; status: 'ok' | 'warning' | 'error' | 'skipped'; code: string; message: string; hint?: string };
 export interface DoctorReport {
@@ -15,7 +15,7 @@ export interface DoctorReport {
   browser: 'chrome' | 'edge';
   status: 'ready' | 'attention' | 'failed';
   checks: Check[];
-  connection: { connected: boolean; instanceCount: number; matchingBrowserCount: number };
+  connection: { connected: boolean; instanceCount: number; matchingBrowserCount: number; accessMode?: 'personal' | 'restricted' };
 }
 class Finding extends Error { constructor(readonly code: string) { super(code); } }
 const originPattern = /^chrome-extension:\/\/[a-p]{32}\/$/;
@@ -148,13 +148,15 @@ export async function diagnose(options: { directory: string; brand: 'chrome' | '
         peer = new RpcPeer(socket, socket);
         const hello = await peer.call('hello', { bootstrap: 1, versions: [wireVersion], role: 'client', token,
           requiredCapabilities: [...clientRequirements] }, controller.signal);
-        acceptWelcome(hello, clientRequirements);
+        const welcome = acceptWelcome(hello, clientRequirements);
+        const accessMode = welcome.capabilities.includes(personalBrokerCapability) ? 'personal' : 'restricted';
         const instances = await peer.call('browser.instances', {}, controller.signal);
         if (!Array.isArray(instances) || instances.length > 256 || instances.some(i => !i || typeof i !== 'object' || typeof i.brand !== 'string')) throw new Finding('INVALID_RESPONSE');
-        report.connection = { connected: true, instanceCount: instances.length,
+        report.connection = { connected: true, accessMode, instanceCount: instances.length,
           matchingBrowserCount: instances.filter(i => i.brand === options.brand).length };
         add('broker', 'ok', 'OK', 'Broker 协议握手与实例查询成功。');
-        if (!report.connection.matchingBrowserCount) add('browser-connection', 'warning', 'NO_MATCHING_BROWSER', '尚无所选浏览器连接。', '在目标 profile 打开扩展弹窗，明确允许标签页并连接；不会自动授权。');
+        if (!report.connection.matchingBrowserCount) add('browser-connection', 'warning', 'NO_MATCHING_BROWSER', '尚无所选浏览器连接。',
+          accessMode === 'personal' ? '在 Chrome 加载或重载扩展，再检查连接；个人模式无需逐页点击授权。' : '在目标 Chrome 加载扩展并连接；受限模式还需要在弹窗中允许目标标签页。');
         else add('browser-connection', 'ok', 'OK', '检测到所选浏览器连接；不代表已获得标签页租约或模型可理解图片。');
       } catch (error) {
         add('broker', 'error', timedOut ? 'BROKER_TIMEOUT' : code(error), 'Broker 连接或协议检查失败。', '检查独立 Broker 终端的启动错误及版本；诊断不会重启进程、获取锁或修复文件。');

@@ -1,7 +1,7 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.0",
-  "description": "Fluid, native Chrome automation for DeepSeek Harness, inspired by Codex browser workflows",
+  "version": "0.1.9",
+  "description": "DSH 原生浏览器操作：以 Codex 工作流为体验参考，平滑虚拟鼠标、复用 Chrome 登录状态、页面读取、填表与截图。安装后点侧栏「浏览器」连接 Chrome。欢迎 Star 与参与共创。",
   "type": "module",
   "main": "index.js",
   "types": "./dist/packages/dsh-adapter/src/index.d.ts",
@@ -23,6 +23,7 @@
     "bin",
     "dist",
     "assets",
+    "screenshots.json",
     "cordis.patch.yml",
     "docs/**/*.md",
     "docs/benchmark-results/*.json",
@@ -33,7 +34,8 @@
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    "PRIVACY.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/build-extension.mjs",
@@ -58,7 +60,9 @@
     "test:profile-install": "pnpm build && node scripts/smoke-dsh-install.mjs",
     "check": "node scripts/check-metadata.mjs && node scripts/check-boundaries.mjs",
     "test": "pnpm build && node --test test/*.test.mjs",
-    "prepack": "pnpm check && pnpm test"
+    "prepack": "pnpm check && pnpm test",
+    "test:setup-ui": "pnpm build && node scripts/smoke-setup-ui.mjs",
+    "package:chrome-store": "pnpm build && node scripts/package-chrome-store.mjs"
   },
   "bin": {
     "dsh-native-browser": "bin/dsh-native-browser.mjs"
@@ -74,7 +78,10 @@
     "chrome-extension",
     "cdp",
     "accessibility-tree",
-    "human-in-the-loop"
+    "human-in-the-loop",
+    "native-browser",
+    "virtual-cursor",
+    "codex-inspired"
   ],
   "author": "longmiaoo",
   "license": "MIT",
@@ -96,12 +103,16 @@
   },
   "packageManager": "pnpm@11.1.1",
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.3",
     "@types/chrome": "^0.2.9",
     "@types/node": "^22.20.2",
     "ajv": "8.20.0",
     "esbuild": "^0.28.2",
     "playwright-core": "^1.63.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "typescript": "5.9.3"
   },
   "dsh": {
@@ -109,7 +120,8 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-client-connection"
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
       ]
     },
     "bundle": {

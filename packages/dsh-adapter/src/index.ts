@@ -9,7 +9,7 @@ import { ScreenshotRegistry } from '../../vision-adapter/src/screenshots.js';
 import { visualActionFromScreenshot } from '../../vision-adapter/src/grounding.js';
 import { createSetupController } from './setup.js';
 import { registerHostRoutes } from './host-routes.js';
-import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from './approval-policy.js';
+import { DEFAULT_APPROVAL_MODE, fileActionKinds, fileActionNeedsExtraPrompt, batchStepNeedsPrompt, toolNeedsPrompt, type ApprovalMode } from './approval-policy.js';
 import { BrowserTasks, type PagePurpose } from './tasks.js';
 import { LeaseKeepAlive } from './lease-keepalive.js';
 
@@ -30,7 +30,6 @@ type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortCo
 type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
 type BatchApproval = { scope: TurnScope; request: BatchRequest; exec: Execution; peer: RpcPeer; signal: AbortSignal; next: number };
 const schemaString = { type: 'string' };
-const fileActionKinds: ReadonlySet<string> = new Set(['upload', 'choose', 'download']);
 const toolName = (shortName: string) => `${TOOL_NAMESPACE}_${shortName}`;
 
 /** Uses the public raw ToolDefinition seam. No DSH internal module imports. */
@@ -116,7 +115,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const signal = AbortSignal.any([pending.signal, remoteSignal, pending.scope.controller.signal]);
           checkAbort(signal);
           const index = pending.next++; // A lost/duplicate approval request cannot consume another grant.
-          if (approvalMode !== 'per-action') return { allowed: true };
+          if (!batchStepNeedsPrompt(approvalMode)) return { allowed: true };
           const approval = ctx.get?.('approval');
           if (typeof approval?.request !== 'function') return { allowed: false };
           const step = pending.request.steps[index]!;
@@ -238,7 +237,7 @@ export function apply(ctx: Context, config: Config = {}): void {
    * per-action already asked in tools/pre-execute for this exact call. Fails closed. */
   async function approveFileAction(action: ReturnType<typeof actionRequest>['action'], exec: Execution): Promise<void> {
     if (action.kind !== 'upload' && action.kind !== 'choose' && action.kind !== 'download') return;
-    if (approvalMode === 'per-action') return;
+    if (!fileActionNeedsExtraPrompt(approvalMode)) return;
     const approval = ctx.get?.('approval');
     if (typeof approval?.request !== 'function') {
       throw new BrowserError('POLICY_DENIED', 'File upload and download require the DSH approval service; none is available');
@@ -559,8 +558,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const denial = foregroundDenial(exec.agent.session.id);
     if (denial) return { kind: 'deny', reason: denial };
     bind(exec);
-    if ((approvalMode === 'per-action' && ['claim', 'open', 'close', 'act', 'screenshot', 'task'].includes(shortName))
-      || (approvalMode === 'per-lease' && ['claim', 'open'].includes(shortName))) {
+    if (toolNeedsPrompt(approvalMode, shortName)) {
       return { kind: 'ask', reason: 'Allow this browser control action on the selected signed-in page?' };
     }
     return next();

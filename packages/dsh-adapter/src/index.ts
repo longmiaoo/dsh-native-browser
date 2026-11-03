@@ -277,8 +277,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
   function register(shortName: string, description: string, properties: object, required: string[],
-    execute: (args: Record<string, unknown>, exec: Execution) => Promise<unknown>) {
-    const definition = { parameters: { type: 'object', properties, required, additionalProperties: false },
+    execute: (args: Record<string, unknown>, exec: Execution) => Promise<unknown>, defs?: object) {
+    const definition = { parameters: { type: 'object', properties, required, additionalProperties: false, ...(defs ? { $defs: defs } : {}) },
       output: { schema: {}, render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }] },
       timeoutMs: 30_000,
       execute: (args: unknown, exec: Execution) => execute(record(args), exec),
@@ -371,46 +371,51 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...(args.continuation === undefined ? {} : { continuation: args.continuation }) }) }, exec));
   register('frames', 'Discover bounded frame structure of the leased tab: opaque frame IDs, parents, document epochs and origins only; no child text, titles, URLs, CDP sessions or contexts. contextStatus=known is not permission to access it; originRelation is relative to the root; truncated/unavailable means incomplete. Frame IDs are not node refs. Same-origin children can be read with observe/read_page frame and clicked with act frame using fresh child refs; discovery alone grants no input or cross-origin screenshot.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => run('browser.frames', { leaseId: string(args.leaseId) }, exec));
-  const expected = { oneOf: [
-    { type: 'object', properties: { kind: { type: 'string', const: 'value' }, value: schemaString }, required: ['kind', 'value'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'url' }, url: schemaString }, required: ['kind', 'url'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'text' }, text: schemaString }, required: ['kind', 'text'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'state' }, ref: { type: 'string', minLength: 1, maxLength: 128 },
+  // Shared by act and batch through $defs/$ref so each kind of expectation is spelled out once.
+  const expectedDefs: Record<string, object> = {
+    expected_value: { type: 'object', properties: { kind: { type: 'string', const: 'value' }, value: schemaString }, required: ['kind', 'value'], additionalProperties: false },
+    expected_url: { type: 'object', properties: { kind: { type: 'string', const: 'url' }, url: schemaString }, required: ['kind', 'url'], additionalProperties: false },
+    expected_text: { type: 'object', properties: { kind: { type: 'string', const: 'text' }, text: schemaString }, required: ['kind', 'text'], additionalProperties: false },
+    expected_state: { type: 'object', properties: { kind: { type: 'string', const: 'state' }, ref: { type: 'string', minLength: 1, maxLength: 128 },
       state: { type: 'string', enum: elementStates } }, required: ['kind', 'ref', 'state'], additionalProperties: false },
-  ] };
-  const action = { oneOf: [
+  };
+  const expectedKinds = ['value', 'url', 'text', 'state'];
+  const exp = (from: number, to?: number) => ({ oneOf: expectedKinds.slice(from, to).map(kind => ({ $ref: `#/$defs/expected_${kind}` })) });
+  const actionSchema = { oneOf: [
     { type: 'object', properties: { kind: { type: 'string', const: 'check' }, ref: schemaString, checked: { type: 'boolean' },
-      expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'ref', 'checked'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'click' }, ref: schemaString, expected }, required: ['kind', 'ref'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'fill' }, ref: schemaString, text: schemaString, expected }, required: ['kind', 'ref', 'text'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'append' }, ref: schemaString, text: { type: 'string', maxLength: 10000 }, expected }, required: ['kind', 'ref', 'text'], additionalProperties: false },
+      expected: exp(1) }, required: ['kind', 'ref', 'checked'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'click' }, ref: schemaString, expected: exp(0) }, required: ['kind', 'ref'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'fill' }, ref: schemaString, text: schemaString, expected: exp(0) }, required: ['kind', 'ref', 'text'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'append' }, ref: schemaString, text: { type: 'string', maxLength: 10000 }, expected: exp(0) }, required: ['kind', 'ref', 'text'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'press' }, ref: schemaString,
-      key: { type: 'string', enum: browserKeys }, shift: { type: 'boolean' }, expected }, required: ['kind', 'ref', 'key'], additionalProperties: false },
-    { type: 'object', properties: { kind: { type: 'string', const: 'navigate' }, url: schemaString, expected: { oneOf: expected.oneOf.slice(1, 3) } }, required: ['kind', 'url'], additionalProperties: false },
+      key: { type: 'string', enum: browserKeys }, shift: { type: 'boolean' }, expected: exp(0) }, required: ['kind', 'ref', 'key'], additionalProperties: false },
+    { type: 'object', properties: { kind: { type: 'string', const: 'navigate' }, url: schemaString, expected: exp(1, 3) }, required: ['kind', 'url'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'scroll' }, ref: schemaString,
       deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
-      expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'deltaX', 'deltaY'], additionalProperties: false },
+      expected: exp(1) }, required: ['kind', 'deltaX', 'deltaY'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'wheel' }, ref: schemaString,
       deltaX: { type: 'integer', minimum: -10000, maximum: 10000 }, deltaY: { type: 'integer', minimum: -10000, maximum: 10000 },
-      expected: { oneOf: expected.oneOf.slice(1) } }, required: ['kind', 'ref', 'deltaX', 'deltaY'], additionalProperties: false },
+      expected: exp(1) }, required: ['kind', 'ref', 'deltaX', 'deltaY'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'upload' }, ref: schemaString,
       files: { type: 'array', minItems: 1, maxItems: 64, items: { type: 'string', minLength: 1, maxLength: 4096 } },
-      expected: { oneOf: expected.oneOf.slice(2, 4) } }, required: ['kind', 'ref', 'files'], additionalProperties: false },
+      expected: exp(2, 4) }, required: ['kind', 'ref', 'files'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'choose' }, ref: schemaString,
       files: { type: 'array', minItems: 1, maxItems: 64, items: { type: 'string', minLength: 1, maxLength: 4096 } },
-      expected: { oneOf: expected.oneOf.slice(2, 4) } }, required: ['kind', 'ref', 'files'], additionalProperties: false },
+      expected: exp(2, 4) }, required: ['kind', 'ref', 'files'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'download' }, ref: schemaString,
-      expected: { oneOf: expected.oneOf.slice(2, 4) } }, required: ['kind', 'ref'], additionalProperties: false },
+      expected: exp(2, 4) }, required: ['kind', 'ref'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'visual-click' }, screenshotId: schemaString,
       target: { type: 'string', minLength: 1, maxLength: 500 },
       box: { type: 'object', properties: { x1: { type: 'number' }, y1: { type: 'number' }, x2: { type: 'number' }, y2: { type: 'number' } },
         required: ['x1', 'y1', 'x2', 'y2'], additionalProperties: false },
-      expected: { oneOf: expected.oneOf.slice(2, 4) } },
+      expected: exp(2, 4) },
     required: ['kind', 'screenshotId', 'target', 'box'], additionalProperties: false },
     { type: 'object', properties: { kind: { type: 'string', const: 'dialog' }, accept: { type: 'boolean' },
-      promptText: { type: 'string', maxLength: 1000 }, expected: { oneOf: expected.oneOf.slice(2, 4) } },
+      promptText: { type: 'string', maxLength: 1000 }, expected: exp(2, 4) },
     required: ['kind', 'accept'], additionalProperties: false },
   ] };
+  const schemaDefs = { ...expectedDefs, action: actionSchema };
+  const action = { $ref: '#/$defs/action' };
   register('act', 'Perform one browser action on a leased tab: click, fill, append, press, scroll, wheel, check, upload, choose, download, dialog, visual-click or navigate. Use fresh node refs from the latest observe, the current documentEpoch and a unique requestId; reusing a requestId with a different payload is rejected.\nInput: fill replaces all text (may drop rich formatting) in an input, textarea or editing host (editable:true nodes). append adds only the suffix at the end and keeps the prefix (max 10000 UTF-16 units combined, respects maxlength). Password fields, IME and protected editors are unsupported. check sets a checkbox/switch to a boolean, or selects a native radio with checked:true only. press acts on a focused control (Enter/Space may submit); no browser/OS shortcuts. scroll changes DOM scroll offsets of the document (no ref) or a ref, and no movement stays unknown. wheel sends one real wheel sample at a verified point on a control/region ref; verify it with a text/URL expectation.\nNavigation: stays on the lease origin unless the lease has scope=tab (explicit personal Broker). Local and private-network addresses cannot be reached from a public page.\nFiles: upload and choose take absolute local paths of existing, non-hidden regular files inside the Broker\'s allowed folders (default Downloads, Desktop, Documents); otherwise POLICY_DENIED, so ask the user to move the file instead of trying other paths. upload targets a connected, enabled <input type=file>; choose clicks a file-chooser trigger. download clicks a trigger and returns the filename, absolute path and size; you never pick the destination. Upload, choose and download each need user approval per call in every approval mode and are not allowed in batch.\nDialogs and vision: dialog answers one pending alert/confirm/prompt/beforeunload (accept true/false; promptText max 1000, only when accepting a prompt). A click that opens a dialog may time out; call dialog, then observe. visual-click uses a screenshotId from native_browser_screenshot plus an image-pixel box; the provider rechecks epoch, scroll and hit target before clicking.\nExpectations (expected): value, url, text, or {kind:state,ref,state} with state attached/detached/visible/hidden/enabled/disabled/checked/unchecked on an already observed node; the schema lists which kinds each action accepts. State is the final condition, not proof of a transition or causation, and cannot cross navigation. Without an expectation the outcome is often unknown.\nOutcomes: unknown means do NOT retry with a new requestId; regain approved control and observe first. RECOVERY_REQUIRED is historical metadata, not current success or restored control.\nFrame: optional {frameId,documentEpoch} targets one same-origin child from native_browser_frames (top-level documentEpoch must equal the child epoch). Only click with an optional child-text expectation is supported there; the result is a fresh view of that child, not the root page.',
     { requestId: schemaString, leaseId: schemaString, documentEpoch: schemaString, action, timeoutMs: { type: 'integer' },
       frame:{type:'object',properties:{frameId:{type:'string',minLength:1,maxLength:128},documentEpoch:{type:'string',minLength:1,maxLength:512}},required:['frameId','documentEpoch'],additionalProperties:false} },
@@ -427,7 +432,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const parsed = actionRequest(request);
       if (!fileActionKinds.has(parsed.action.kind)) return run('browser.act', { request: parsed }, exec);
       return approveFileAction(parsed.action, exec).then(() => run('browser.act', { request: parsed }, exec));
-    });
+    }, schemaDefs);
   register('batch', 'Perform 1-8 explicit actions in order under one shared deadline (default and max 30000 ms). Each step has the same shape as native_browser_act and is approved separately; each rechecks lease, origin, target, actionability and postcondition. Not a script or transaction: completed side effects are never rolled back. Use only current refs from the initial document. Navigation is allowed only as the last step. A replaced document stops the remaining steps, and so does any failed, cancelled, unknown or unverified step, so give click/press/wheel an expectation to let the batch continue. Upload, choose and download are not allowed. The result lists attempted/notRun steps with metadata and only the last attempted observation. The requestId covers the WHOLE batch: reuse deduplicates it, and never mint a new one to resume. RECOVERY_REQUIRED is historical metadata, not a resumable plan or restored authority. No model JavaScript, new-ref variables or cross-origin authority expansion.',
     { requestId: { type: 'string', minLength: 1, maxLength: 128 }, leaseId: schemaString, documentEpoch: schemaString,
       timeoutMs: { type: 'integer', minimum: 1, maximum: 30000 },
@@ -447,7 +452,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         batchApprovals.set(approvalId, { scope, request, exec, peer: channel, signal, next: 0 });
         return await channel.call('browser.batch', { request, approvalId, sessionId: scope.wireSessionId }, signal);
       } finally { clearTimeout(timer); batchApprovals.delete(approvalId); }
-    });
+    }, schemaDefs);
   register('handoff', 'Release control and leave the page open for the user. Never closes user tabs.',
     { leaseId: schemaString }, ['leaseId'], (args, exec) => {
       const leaseId = string(args.leaseId), { scope } = executionScope(exec);

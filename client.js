@@ -279,15 +279,14 @@ window.__ModuleLoader__.load({
         return h('svg', { viewBox: '0 0 24 24', width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
           h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 3 }), h('path', { d: 'M3 9h18M7 6.5h.01M10 6.5h.01M11 12l5 3-3 1-1 3z' }));
       }
-      // main is declared by Layout; its lifetime also owns ctx.layout. Register
-      // sidebar navigation only after the matching panel exists.
+      // Slot declarations arrive while Layout's provider fiber is still loading;
+      // Cordis ctx.get() intentionally hides it until activation. Register from
+      // the declaration alone and resolve navigation only when the user clicks.
       ctx.slots.inject('main', () => {
-        const layout = getLayout();
-        if (typeof layout?.selectPanel !== 'function') return;
         const disposeMain = ctx.slots.register({ name: 'main', key: panelId }, () => h('main', {
           style: { height: '100%', overflow: 'auto', boxSizing: 'border-box', padding: 'max(24px, var(--dsh-frame-top-clearance, 24px)) 24px 32px' },
         }, h('div', { style: { maxWidth: 760, margin: '0 auto' } },
-          h('button', { type: 'button', onClick: () => layout.selectPanel(null) }, t('返回对话', 'Back to chat')), h(Setup))));
+          h('button', { type: 'button', onClick: () => getLayout()?.selectPanel(null) }, t('返回对话', 'Back to chat')), h(Setup))));
         const disposeSidebar = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: panelId,
           order: 20, label: t('浏览器', 'Browser') }, BrowserIcon));
         return () => { if (typeof disposeSidebar === 'function') disposeSidebar(); disposeMain?.(); };

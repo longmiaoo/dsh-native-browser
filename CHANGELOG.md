@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.8 - 2026-11-03
+
+- Fix the Browser sidebar entry disappearing after reload: register its main panel from the slot declaration, without requiring optional Layout lookup while the provider fiber is still loading. Resolve navigation at click time instead.
+- Add a CI regression using pinned real Cordis and SlotRegistry SDKs for cold boot, warm boot, Layout reactivation and plugin disposal; the previous direct SlotCore fixture did not model provider activation.
+
 ## 0.1.7 - 2026-11-03
 
 - Put browser setup directly in the plugin bundle and component details, add native post-enable guidance and a sidebar Browser panel, and retain Settings as the fallback on older clients. Opening guidance only reads status; installation and browser opening still require the user's setup click.

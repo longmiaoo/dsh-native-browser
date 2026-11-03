@@ -6,17 +6,19 @@
 
 > Fluid, native Chrome automation for DeepSeek Harness.
 
-[![Version](https://img.shields.io/badge/version-0.1.7-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.8-blue)](#try-it) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 English · [简体中文](README.zh-CN.md) · [Try it](#try-it) · [Contribute](#contribute) · [Share feedback](https://github.com/longmiaoo/dsh-native-browser/issues/new)
 
 ## Quick start: connect Chrome after installing
 
+**Already connected on 0.1.7? Update to 0.1.8 and reload DSH to restore the sidebar. This frontend fix does not require reinstalling or reloading the Chrome extension.**
+
 **For macOS + Google Chrome. Install in the DSH app you actually use. No terminal command or Profile name is needed.**
 
 1. **Install and enable**: DSH → **Plugins → Plugin market**, search `dsh-native-browser`, install and enable it. Reload if DSH asks.
 2. **Open setup**: use **Browser** in the sidebar, or **Plugins → the top-level Installed tab → dsh-native-browser** details. Use DSH’s top-level Installed tab, outside Plugin market’s own installed list. Click **Set up Chrome** to open Chrome extensions and its folder.
-   **Missing those entries? Published `0.1.6` and earlier use the full fallback path: bottom-left More → Settings → Browser setup → Set up Chrome.** Version 0.1.7 adds plugin-detail and sidebar entries; older hosts can continue using Settings.
+   **Missing those entries? Published `0.1.6` and earlier use the full fallback path: bottom-left More → Settings → Browser setup → Set up Chrome.** Version 0.1.7 added plugin-detail and sidebar entries; 0.1.8 fixes their cold-boot registration; older hosts can continue using Settings.
 3. **Load the extension once**: in `chrome://extensions`, enable **Developer mode** and click **Load unpacked**. Copy the extension path from setup; in the folder picker press **Command + Shift + G**, paste it, press Return and select the entire `chrome` folder. If already loaded, click **Reload** on its extension card instead.
 4. **Check and chat**: return to setup and click **Check connection**. Once Chrome is connected, open an ordinary webpage in Chrome and paste this into DSH:
 
@@ -72,11 +74,11 @@ Results depend on the page, model and permission configuration. Start with the p
 
 ## Try it
 
-Version **0.1.7 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
+Version **0.1.8 supports macOS + Google Chrome**. You need a working DSH installation. CLI/Web setups require Node.js ≥ 22.19 and pnpm 11; Desktop setup uses its verified built-in runtime. The declared DSH range is `>=0.1.5-rc.1 <0.3.0`; recorded host-component checks cover `0.1.5-rc.1` and `0.2.1-rc.3`. Chrome's manifest minimum is 125; see the [release acceptance record](docs/releases/0.1.0-acceptance.zh-CN.md) for tested versions. Edge and complete Linux/Windows installation remain experimental.
 
-### Recommended: setup inside DSH (0.1.7)
+### Recommended: setup inside DSH (0.1.8)
 
-Version `0.1.7` adds a **Browser** sidebar entry and setup directly in **Plugins → top-level Installed → dsh-native-browser** details. Install or update in the DSH app you use, reload as instructed, then click **Set up Chrome**. Older hosts retain **More → Settings → Browser setup**. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
+Version `0.1.8` keeps the **Browser** sidebar entry available after reload and provides setup directly in **Plugins → top-level Installed → dsh-native-browser** details. Install or update in the DSH app you use, reload as instructed, then click **Set up Chrome**. Older hosts retain **More → Settings → Browser setup**. No Profile name is needed. It provides connection checks, path copying and a button to reopen Chrome. Desktop reuses its verified built-in runtime without a separate Node installation.
 
 The extension is not on the Chrome Web Store yet, so initial unpacked loading remains. A future store release can replace directory selection with the user's **Add to Chrome** confirmation and automatic extension updates; that distribution path has not shipped. See the [setup design and validation](docs/setup-ui.zh-CN.md).
 
@@ -85,7 +87,7 @@ The extension is not on the Chrome Web Store yet, so initial unpacked loading re
 Paste this entire line into a terminal:
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.7 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.1.8 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 Use this only for a known CLI/Web profile such as `web` or `browser-lab`, with the same name in both places. `web` is not a universal default. **Desktop users should manage plugins through the Desktop plugin market, not substitute `desktop` into the public CLI**, which restricts management of Desktop-owned profiles. Installing into a different profile does not register tools in the current chat.
@@ -106,13 +108,13 @@ Reload the DSH environment where you installed the plugin. Check the connection 
 Use the native_browser tools to read the title and main content of the Chrome page I have open, then hand browser control back to me.
 ```
 
-DSH should return the page contents and leave the tab open. Version `0.1.7` defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
+DSH should return the page contents and leave the tab open. Version `0.1.8` defaults to personal mode. Installation does not change host-wide DSH permissions. Screenshot understanding depends on your selected model; Vision Router is optional.
 
 ### Approval modes
 
 **Since 0.1.2:** the adapter now defaults to `personal`, matching the standard installer. Ordinary pages need no per-tab popup consent and the plugin adds no per-action approval prompts. Explicit `per-action`, `per-lease` and `trusted` configurations remain effective. Stop, handoff, conversation switching, lease checks and DSH's own permissions still apply.
 
-Upgrade existing installations to `0.1.7`, rerun setup to update the staged extension and Broker, reload the extension in Chrome, and reload DSH. Existing explicit approval settings take precedence. A personal Broker is required for personal mode.
+Upgrade existing installations to `0.1.8`, rerun setup to update the staged extension and Broker, reload the extension in Chrome, and reload DSH. Existing explicit approval settings take precedence. A personal Broker is required for personal mode.
 
 For one confirmation per tab claim, add this to the **existing** plugin entry in your actual profile and restart it:
 

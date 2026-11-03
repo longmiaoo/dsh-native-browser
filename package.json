@@ -1,6 +1,6 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Control your signed-in Chrome from DSH with smooth cursor feedback. After install: Browser in the DSH sidebar → Set up Chrome.",
   "type": "module",
   "main": "index.js",
@@ -99,12 +99,16 @@
   },
   "packageManager": "pnpm@11.1.1",
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.3",
     "@types/chrome": "^0.2.9",
     "@types/node": "^22.20.2",
     "ajv": "8.20.0",
     "esbuild": "^0.28.2",
     "playwright-core": "^1.63.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "typescript": "5.9.3"
   },
   "dsh": {

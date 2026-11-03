@@ -7,7 +7,7 @@
 - **插件详情内直接配置**：注册 `plugins.bundle.config`，以包名 `dsh-native-browser` 为 key，在“插件 → 顶部已安装 → dsh-native-browser”详情的组件列表前显示完整向导。宿主的“已安装”与插件市场内部的同名列表是不同入口；第三方市场卡片不一定承载这些原生插槽。
 - **组件的配置按钮**：注册 `plugins.row.config`，key 为 `dsh-native-browser#native-browser`，与随包 `cordis.patch.yml` 的 row id 一致。
 - **安装后启用引导**：接入宿主的 `plugins.bundle.activation`，显式启用后显示“现在连接 Chrome”，点击进入详情。由宿主控制触发；不会每次打开 DSH 都弹出，也不会自动开始安装。
-- **侧栏“浏览器”**：在 `main` 注册 `dsh-native-browser.setup`，并使用相同 id 注册 `sidebar.panellist`。只有 Layout 服务和对应主面板存在时才提供导航。切换面板不更换当前对话，提供“返回对话”。
+- **侧栏“浏览器”**：在 `main` 注册 `dsh-native-browser.setup`，并使用相同 id 注册 `sidebar.panellist`。在主面板插槽声明后立即注册面板和导航，导航动作在点击时读取 Layout 服务。不能在声明回调里用 `ctx.get("layout")` 决定是否注册：冷启动时提供方尚在 loading，该可选查询会暂时返回 undefined。切换面板不更换当前对话，提供“返回对话”。
 - **插件详情页头的直达按钮**：`plugins.detail.actions` 只对本插件的 bundle/row 显示“配置浏览器”，不会出现在其他插件上。
 - **保留原入口**：所有入口共用同一个 Setup 组件与已认证 Host RPC。缺少新插槽的旧宿主仍可使用设置入口，不增加必需的 Layout/Plugin Manager 服务依赖。
 
@@ -138,3 +138,10 @@ DSH_CHROME_TEST_EXECUTABLE=/path/to/test-chrome node scripts/smoke-setup-host.mj
 使用 DSH `0.2.1-rc.3` 分发包中的真实 SlotCore 与共享 React、隔离 Chrome 渲染实际 client.js。验证启用卡片到插件详情、详情配置按钮到主面板、返回对话、组件配置页、旧宿主设置回退、试用指令复制与返回窗口自动检查；访问页面不安装、不打开 Chrome，其他插件不显示本插件的配置按钮。
 
 `output/playwright/plugin-detail-setup.png` 与 `browser-panel-setup.png` 展示新入口组件。测试复用隔离安装器，不修改用户的 LaunchAgent、日常 Chrome 或 DSH Profile。这是插槽与组件集成验收，不是完整 Desktop 外壳和插件市场安装过程的端到端声明。
+
+
+## 冷启动回归修复（0.1.8）
+
+0.1.7 的 `main` 声明回调立即查询 Layout 并在不可用时返回。真实 Cordis 的 `get(name)` 只暴露 active 提供方；Layout 在自己的加载过程中声明 `main`，因此 cold boot 会先触发回调，再激活服务。该回调不会因为服务稍后变得 active 就重跑，导致面板和侧栏条目缺失；安装后热加载可能出现，重载后又消失。
+
+修复改为基于插槽声明注册，点击导航时才读取服务。`test/client-lifecycle.test.mjs` 在 CI 运行固定版本的真实 Cordis 和 SlotRegistry，覆盖冷启动、热启动、Layout 销毁及重建、插件卸载。原来手工提供始终可用 Layout 的纯 SlotCore 渲染测试无法覆盖此问题。

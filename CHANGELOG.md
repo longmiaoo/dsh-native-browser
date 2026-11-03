@@ -4,6 +4,7 @@ All notable changes will be documented here. The project follows semantic versio
 
 ## Unreleased
 
+- Fix rich-text (`contenteditable`) fill and append being denied with `POLICY_DENIED` by the extension: the page function embedded `editableText.toString()`, which differs between the Broker's tsc output and the extension's esbuild bundle, so the extension's exact-match allowlist rejected it. The reader is now one fixed source string shared by both builds.
 - **Internal:** shorten the public tool schemas without dropping any validation rule: `act` and `batch` now share one action/expectation schema via `$defs`, and several tool descriptions are condensed (total schema text about 39k → 24k characters). Accepted and rejected inputs are unchanged.
 - **Internal:** split large modules without behavior change: the extension's CDP command guard (`cdp-guard.ts`) and pointer/activity feedback (`presenter.ts`) leave `background.ts`; upload, file chooser, download, dialog and visual-click actions move to `interactive-actions.ts`; Broker/extension inbound request tracking is shared in `request-tracker.ts`; adapter approval rules are centralized in `approval-policy.ts`.
 - **Docs:** `architecture.md` now states that the MV3 service worker keeps no state in `chrome.storage`; a worker restart drops leases and fails closed.

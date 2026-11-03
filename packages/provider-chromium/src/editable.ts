@@ -1,19 +1,22 @@
 /** Logical editing text for the bounded inline/DIV/P/BR structures Chromium emits.
  * A terminal BR is a caret placeholder; block boundaries delimit editing lines.
- * This is not arbitrary HTML-to-text or CSS rendered-text extraction. */
-export function editableText(root: Node): string | null {
+ * This is not arbitrary HTML-to-text or CSS rendered-text extraction.
+ *
+ * Kept as one fixed source string, never `Function.prototype.toString()`: the Broker (tsc) and the
+ * extension bundle (esbuild) must embed byte-identical page functions for the extension's exact-match allowlist. */
+export const editableTextSource: string = String.raw`function(root) {
   let visited = 0;
-  const read = (parent: Node, depth: number): string | null => {
+  const read = (parent, depth) => {
     if (depth > 64) return null;
     let value = '', previousBlock = false, seen = false;
     for (let index = 0; index < parent.childNodes.length; index++) {
-      const node = parent.childNodes[index]!;
+      const node = parent.childNodes[index];
       if (++visited > 4096) return null;
       if (node.nodeType === 8) continue;
-      let part: string | null, block = false;
+      let part, block = false;
       if (node.nodeType === 3) part = node.nodeValue ?? '';
       else if (node.nodeType === 1) {
-        const tag = (node as Element).tagName;
+        const tag = node.tagName;
         if (tag === 'BR') part = node === parent.lastChild ? '' : '\n';
         else {
           block = tag === 'DIV' || tag === 'P';
@@ -30,7 +33,10 @@ export function editableText(root: Node): string | null {
     return value;
   };
   return read(root, 0);
-}
+}`;
+
+/** Same reader for Node-side tests; built lazily so the extension service worker never evaluates code. */
+export const editableText = (root: Node): string | null => (new Function(`return (${editableTextSource})`)() as (root: Node) => string | null)(root);
 
 /** Fixed renderer program, never model-supplied JavaScript. Text is inserted by CDP,
  * not by assigning innerHTML/textContent or dispatching synthetic input events. */
@@ -87,13 +93,13 @@ export const editableFunction = `function(mode) {
       }
       return false;
     };
-    if(append) return {...state,value:(${editableText.toString()})(element),
+    if(append) return {...state,value:(${editableTextSource})(element),
       atEnd:!!state.focused&&!!range&&range.collapsed&&edge(range.endContainer,range.endOffset,true)};
     return {...state,selected:!!state.focused&&!!range&&edge(range.startContainer,range.startOffset,false)
       &&edge(range.endContainer,range.endOffset,true)};
   }
   if(mode==='value') {
-    const value=(${editableText.toString()})(element);
+    const value=(${editableTextSource})(element);
     return {...state,value};
   }
   return state;

@@ -54,8 +54,10 @@ try{
   passed.push('Unchanged frame and document identities survive repeat discovery without touching AX delta baselines');
   assert.ok(!(await h.observe()).text.some(text=>/private content/.test(text)));
   const refused=await h.act({kind:'click',ref:remote.id});assert.notEqual(refused.outcome,'succeeded');assert.equal(refused.dispatch,'notDispatched');
-  await assert.rejects(h.capture());
-  passed.push('Discovery does not expose child AX text, turn frame IDs into input refs, or authorize cross-origin screenshots');
+  // Since 0.1.0-alpha.3 a viewport with foreign frames is captured with those branches redacted, not rejected.
+  const shot=await h.capture();
+  assert.equal(shot.redaction.policy,'cross-origin-frames');assert.ok(shot.redaction.frames>=1&&shot.redaction.regions>=1,JSON.stringify(shot.redaction));
+  passed.push('Discovery does not expose child AX text or turn frame IDs into input refs, and screenshots redact cross-origin frames');
   const same=first.frames.find(f=>f.parentId===main.id&&f.originRelation==='same-origin');assert.ok(same);
   const sameFrame=h.page.frames().find(f=>new URL(f.url()).pathname==='/same');assert.ok(sameFrame);
   const observeFrame=(frame,cursor)=>h.observe({frame:{frameId:frame.id,documentEpoch:frame.documentEpoch},...(cursor?{cursor}:{})});

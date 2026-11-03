@@ -75,6 +75,14 @@ test('LaunchAgent plist pins a personal Broker and escapes paths', () => {
     directory: '/tmp/runtime', accessMode: 'restricted', allowedOrigins: [], stdoutLog: '/tmp/out', stderrLog: '/tmp/err' }));
 });
 
+test('LaunchAgent plist carries extra upload folders only when configured', () => {
+  const base = { label: SERVICE_LABEL, nodePath: '/tmp/node', cliPath: '/tmp/cli.mjs', directory: '/tmp/runtime',
+    accessMode: 'personal', allowedOrigins: [], stdoutLog: '/tmp/out', stderrLog: '/tmp/err' };
+  assert.doesNotMatch(brokerServicePlist(base), /--upload-root/);
+  assert.match(brokerServicePlist({ ...base, uploadRoots: ['/Users/me/Work Files'] }), /<string>--upload-root=\/Users\/me\/Work Files<\/string>/);
+  assert.throws(() => brokerServicePlist({ ...base, uploadRoots: ['/tmp/a\nb'] }));
+});
+
 test('quick install stages the extension, registers the host, starts the service and opens setup', async t => {
   // Exercise macOS orchestration on every CI platform. Both OS command runners
   // are mocked below; never invoke the host machine's desktop or launchctl.

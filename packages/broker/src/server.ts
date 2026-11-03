@@ -10,6 +10,7 @@ import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { localState } from './local-state.js';
 import { FileActionJournal } from './action-journal.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
+import { authorizeUploadFiles, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
 import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
@@ -24,7 +25,9 @@ function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
       keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, tabScopedNavigation: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
-type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number };
+type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number;
+  /** Complete upload allowlist; defaults to Downloads, Desktop and Documents. An empty list disables file upload. */
+  uploadRoots?: string[] };
 export async function startBroker(options: BrokerOptions) {
   options = { ...options, directory: path.resolve(options.directory) };
   if (options.accessMode !== undefined && options.accessMode !== 'restricted' && options.accessMode !== 'personal') {
@@ -46,6 +49,12 @@ export async function startBroker(options: BrokerOptions) {
 async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ownership: BrokerOwnership) {
   const personal = options.accessMode === 'personal';
   const state = await localState(options.directory, true);
+  const uploadRoots = await resolveUploadRoots(options.uploadRoots ?? defaultUploadRoots());
+  // The Broker's own token, journal and socket are never uploadable, even under an allowed root.
+  const forbiddenUploads = await resolveUploadRoots([options.directory]);
+  const fileAction = async (action: ReturnType<typeof actionRequest>['action']) =>
+    action.kind === 'upload' || action.kind === 'choose'
+      ? { ...action, files: await authorizeUploadFiles(action.files, uploadRoots, forbiddenUploads) } : action;
   const recoveredSocket = await ownership.prepareSocket(state.socket);
   let runtime: BrowserRuntime;
   let journal: FileActionJournal;
@@ -132,7 +141,10 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
         if (!personal) throw new BrowserError('POLICY_DENIED', 'Automatic renewal requires explicit personal access mode');
         return runtime.renew(owner, string(p.leaseId), signal);
       }
-      if (method === 'browser.act') return runtime.act(owner, actionRequest(p.request), signal, JSON.stringify([journalKey, string(p.sessionId)]));
+      if (method === 'browser.act') {
+        const request = actionRequest(p.request);
+        return runtime.act(owner, { ...request, action: await fileAction(request.action) }, signal, JSON.stringify([journalKey, string(p.sessionId)]));
+      }
       if (method === 'browser.batch') {
         const request = batchRequest(p.request), approvalId = string(p.approvalId, 128);
         return runtime.batch(owner, request, signal, async (index, stepSignal) => {

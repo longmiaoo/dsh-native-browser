@@ -16,6 +16,7 @@ export interface BrokerServiceOptions {
   electronRunAsNode?: boolean;
   accessMode: 'restricted' | 'personal';
   allowedOrigins?: string[];
+  uploadRoots?: string[];
   plistDirectory?: string;
   launchctl?: (args: string[]) => Promise<void>;
 }
@@ -39,14 +40,16 @@ const xml = (value: string): string => value.replaceAll('&', '&amp;').replaceAll
 const validText = (value: string): boolean => value.length > 0 && value.length <= 8192 && !/[\0\r\n]/.test(value);
 
 export function brokerServicePlist(options: { label: string; nodePath: string; cliPath: string; directory: string; electronRunAsNode?: boolean;
-  accessMode: 'restricted' | 'personal'; allowedOrigins: string[]; stdoutLog: string; stderrLog: string }): string {
-  const values = [options.label, options.nodePath, options.cliPath, options.directory, options.stdoutLog, options.stderrLog];
+  accessMode: 'restricted' | 'personal'; allowedOrigins: string[]; uploadRoots?: string[]; stdoutLog: string; stderrLog: string }): string {
+  const uploadRoots = options.uploadRoots ?? [];
+  const values = [options.label, options.nodePath, options.cliPath, options.directory, options.stdoutLog, options.stderrLog, ...uploadRoots];
   if (values.some(value => !validText(value))) throw new BrowserError('INVALID_REQUEST', 'Service paths must be non-empty single-line strings');
   if (options.accessMode === 'restricted' && options.allowedOrigins.length === 0) {
     throw new BrowserError('INVALID_REQUEST', 'Restricted Broker service requires at least one --allow-origin');
   }
   const args = [options.nodePath, options.cliPath, 'broker', `--runtime-dir=${options.directory}`,
-    `--access-mode=${options.accessMode}`, ...options.allowedOrigins.map(origin => `--allow-origin=${origin}`)];
+    `--access-mode=${options.accessMode}`, ...options.allowedOrigins.map(origin => `--allow-origin=${origin}`),
+    ...uploadRoots.map(root => `--upload-root=${root}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>Label</key><string>${xml(options.label)}</string>\n  <key>ProgramArguments</key>\n  <array>\n${args.map(value => `    <string>${xml(value)}</string>`).join('\n')}\n  </array>\n${options.electronRunAsNode ? '  <key>EnvironmentVariables</key><dict><key>ELECTRON_RUN_AS_NODE</key><string>1</string></dict>\n' : ''}  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n  <key>ThrottleInterval</key><integer>5</integer>\n  <key>Umask</key><integer>63</integer>\n  <key>StandardOutPath</key><string>${xml(options.stdoutLog)}</string>\n  <key>StandardErrorPath</key><string>${xml(options.stderrLog)}</string>\n</dict>\n</plist>\n`;
 }
 
@@ -88,7 +91,8 @@ export async function installBrokerService(options: BrokerServiceOptions): Promi
   const stderrLog = path.join(directory, 'broker.stderr.log');
   const plist = path.join(plistDirectory, `${SERVICE_LABEL}.plist`);
   const content = Buffer.from(brokerServicePlist({ label: SERVICE_LABEL, nodePath, cliPath, directory,
-    electronRunAsNode: options.electronRunAsNode ?? false, accessMode: options.accessMode, allowedOrigins: options.allowedOrigins ?? [], stdoutLog, stderrLog }));
+    electronRunAsNode: options.electronRunAsNode ?? false, accessMode: options.accessMode, allowedOrigins: options.allowedOrigins ?? [],
+    ...(options.uploadRoots?.length ? { uploadRoots: options.uploadRoots.map(root => path.resolve(root)) } : {}), stdoutLog, stderrLog }));
   const before = await snapshot(plist, 32768);
   await commitFiles([{ file: plist, before, bytes: content, mode: 0o600 }]);
   const scope = `gui/${userInfo().uid}`;

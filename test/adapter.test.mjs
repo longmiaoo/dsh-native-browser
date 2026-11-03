@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { apply } from '../index.js';
@@ -646,3 +646,47 @@ test('native_browser_act advertises a bounded JavaScript dialog action and postc
     { kind: 'dialog', accept: true, extra: true },
   ]) assert.equal(validate({ ...base, action }), false);
 });
+
+for (const mode of ['personal', 'per-lease', 'per-action']) {
+  test(`${mode}: file actions need their own approval and the Broker confines uploads to allowed folders`, async t => {
+    const folder = await realpath(await mkdtemp(path.join(tmpdir(), 'dsh-upload-root-')));
+    t.after(() => rm(folder, { recursive: true, force: true }));
+    const allowed = path.join(folder, 'resume.pdf'); await writeFile(allowed, 'ok');
+    const f = await fixture(t, { approvalMode: mode }, { ...(mode === 'personal' ? { accessMode: 'personal' } : {}), uploadRoots: [folder] });
+    const reasons = []; let answer = 'denied';
+    f.services.set('approval', { request: async request => { reasons.push(request.reason); return answer; } });
+    const lease = await f.prepare('native_browser_claim', claimArgs).run();
+    const act = (requestId, action) => f.prepare('native_browser_act', { requestId, leaseId: lease.id, documentEpoch: 'doc-1', action });
+    const uploads = () => f.provider.calls.filter(call => call.kind === 'upload');
+    answer = 'allowed-once';
+    if (mode === 'per-action') {
+      // Already asked by the Host for this exact call; no second, duplicate prompt.
+      const call = act('u-ok', { kind: 'upload', ref: 'node-1', files: [allowed] });
+      assert.equal(call.decision.kind, 'ask'); assert.equal((await call.run()).outcome, 'succeeded');
+      assert.equal(reasons.length, 0); assert.deepEqual(uploads().at(-1).files, [allowed]);
+      await assert.rejects(act('u-out', { kind: 'upload', ref: 'node-1', files: ['/etc/hosts'] }).run(), { code: 'POLICY_DENIED' });
+      assert.equal(uploads().length, 1);
+      return;
+    }
+    assert.equal((await act('click', { kind: 'click', ref: 'node-1' }).run()).outcome, 'succeeded');
+    assert.equal(reasons.length, 0, 'ordinary actions keep the configured low-friction policy');
+    answer = 'denied';
+    await assert.rejects(act('u-denied', { kind: 'upload', ref: 'node-1', files: [allowed] }).run(), { code: 'POLICY_DENIED' });
+    assert.ok(reasons.at(-1).includes(allowed), 'the prompt shows the exact local path');
+    answer = 'cancelled';
+    await assert.rejects(act('u-cancel', { kind: 'choose', ref: 'node-1', files: [allowed] }).run(), { code: 'CANCELLED' });
+    assert.equal(uploads().length, 0);
+    answer = 'allowed-once';
+    assert.equal((await act('u-ok', { kind: 'upload', ref: 'node-1', files: [allowed] }).run()).outcome, 'succeeded');
+    assert.deepEqual(uploads().at(-1).files, [allowed]);
+    // Approval cannot widen the Broker's folder allowlist.
+    await assert.rejects(act('u-out', { kind: 'upload', ref: 'node-1', files: ['/etc/hosts'] }).run(), { code: 'POLICY_DENIED' });
+    assert.equal(uploads().length, 1);
+    answer = 'denied';
+    await assert.rejects(act('d-denied', { kind: 'download', ref: 'node-1' }).run(), { code: 'POLICY_DENIED' });
+    assert.match(reasons.at(-1), /download/);
+    f.services.delete('approval');
+    await assert.rejects(act('u-noservice', { kind: 'upload', ref: 'node-1', files: [allowed] }).run(), { code: 'POLICY_DENIED' });
+    assert.equal(uploads().length, 1);
+  });
+}

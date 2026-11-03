@@ -2,6 +2,12 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.7 - 2026-11-03
+
+- Put browser setup directly in the plugin bundle and component details, add native post-enable guidance and a sidebar Browser panel, and retain Settings as the fallback on older clients. Opening guidance only reads status; installation and browser opening still require the user's setup click.
+- Bring beginner installation steps, the exact More → Settings fallback, Chrome's folder-picker shortcut and a first-task prompt to the top of both READMEs. Add setup instructions to package metadata and copyable first-task guidance in the setup page.
+- Refresh connection diagnostics when returning to the setup window after loading the Chrome extension. Share the same authenticated setup component across every entry.
+
 ## 0.1.6 - 2026-11-02
 
 - Animate the virtual cursor between actual dispatched targets with distance-based 160–420 ms transitions, continuous retargeting and arrival feedback for clicks, wheel and typing. Rendering never dispatches extra input or delays browser commands; reduced-motion users receive immediate placement.

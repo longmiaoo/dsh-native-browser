@@ -32,11 +32,27 @@ import { SlotCore } from ${JSON.stringify(hostRequire.resolve('@deepseek-ai/dsh-
 const core = new SlotCore(), effects=[], selectionListeners=new Set();
 let current;
 window.selectTestChat=value=>{current=value;for(const listener of selectionListeners)listener()};
-core.register({name:'root',children:{'settings.section':{kind:'list',scope:'root'},'tool.call.toolview':{kind:'keyed',scope:'session'}}},()=>null);
+const legacy=new URLSearchParams(location.search).has('legacy');
+const children={'settings.section':{kind:'list',scope:'root'},'tool.call.toolview':{kind:'keyed',scope:'session'}};
+if(!legacy) Object.assign(children,{'main':{kind:'keyed',scope:'root'},'sidebar.panellist':{kind:'list',scope:'root'},
+  'plugins.bundle.config':{kind:'keyed',scope:'root'},'plugins.row.config':{kind:'keyed',scope:'root'},
+  'plugins.bundle.activation':{kind:'keyed',scope:'root'},'plugins.detail.actions':{kind:'list',scope:'root'}});
+core.register({name:'root',children},()=>null);
+const root=createRoot(document.getElementById('app'));
+const layout={selectPanel(id){
+  window.selectedPanel=id;
+  if(id===null){root.render(React.createElement('p',null,'Conversation preserved'));return;}
+  const entry=core.entriesOfSlot('main').find(e=>e.options.key===id);
+  if(!entry)throw Error('Unknown main panel '+id);
+  root.render(React.createElement(entry.component,{key:'main'}));
+}};
+const entryFor=(slot,key)=>core.entriesOfSlot(slot).find(e=>e.options.key===key);
+const render=(slot,key,props={})=>root.render(React.createElement(entryFor(slot,key).component,{...props,key:slot}));
 window.__ModuleLoader__ = { load(definition) {
   const plugin=definition.factory(name=>{if(name==='react') return React; throw Error(name)});
   plugin.apply({
-    slots:{inject:(name,callback)=>effects.push(callback()),register:(options,component)=>core.register(options,component)},
+    slots:{inject:(name,callback)=>{if(legacy&&!['settings.section','tool.call.toolview'].includes(name))return ()=>{};const dispose=callback();effects.push(dispose);return dispose;},register:(options,component)=>core.register(options,component)},
+    get:name=>name==='layout'&&!legacy?layout:undefined,
     sessions:{list:{getSnapshot:()=>({phase:current===undefined?'pending':'ready',ids:current?[current]:[],byId:current?{[current]:{id:current,retainedBy:{mainView:1}}}: {}}),subscribe:listener=>{selectionListeners.add(listener);return ()=>selectionListeners.delete(listener)}}},
     connection:{rpc:{call:async(channel,endpoint,payload,signal)=>{
       const response=await fetch('/rpc',{method:'POST',body:JSON.stringify({endpoint:endpoint.split('/').at(-1),payload}),signal});
@@ -47,8 +63,19 @@ window.__ModuleLoader__ = { load(definition) {
   window.taskToolView=core.entriesOfSlot('tool.call.toolview').find(e=>e.options.key==='native_browser_task')?.component;
   if(entries.length!==1||entries[0].options.id!=='dsh-native-browser') throw Error('Missing settings slot');
   window.slotLabel=entries[0].options.label;
-  const root=createRoot(document.getElementById('app'));
-  root.render(React.createElement(entries[0].component));
+  window.openBundle=()=>{
+    const subject={kind:'bundle',pkg:{name:'dsh-native-browser'}};
+    root.render(React.createElement(React.Fragment,null,
+      ...core.entriesOfSlot('plugins.detail.actions').map((entry,i)=>React.createElement(entry.component,{subject,key:'action-'+i})),
+      React.createElement(entryFor('plugins.bundle.config','dsh-native-browser').component,{view:'page',key:'bundle'})));
+  };
+  window.openSettings=()=>root.render(React.createElement(entries[0].component,{key:'settings'}));
+  window.openRow=()=>render('plugins.row.config','dsh-native-browser#native-browser',{view:'page'});
+  window.openWelcome=()=>render('plugins.bundle.activation','dsh-native-browser',{packageName:'dsh-native-browser',onOpenDetails:window.openBundle,onDismiss:()=>root.render(null)});
+  window.openOtherDetail=()=>root.render(React.createElement(core.entriesOfSlot('plugins.detail.actions')[0].component,{subject:{kind:'bundle',pkg:{name:'other-plugin'}}}));
+  window.panelEntries=core.entriesOfSlot('sidebar.panellist').map(e=>({id:e.options.id,label:e.options.label}));
+  window.openSidebar=id=>layout.selectPanel(id);
+  if(legacy) window.openSettings(); else window.openWelcome();
   window.previewTaskCard=()=>root.render(React.createElement(window.taskToolView,{toolName:'native_browser_task',callId:'ui-test',phase:'result',block:{content:[{type:'text',text:JSON.stringify({closed:2,retained:1,skipped:0})}]}}));
   window.disposeSetup=()=>{root.unmount();for(const dispose of effects)dispose?.()};
 }};
@@ -82,7 +109,24 @@ try {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1050, height: 1100 } });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor({timeout:5000});
+  await page.getByRole('heading',{name:'已启用：下一步连接 Chrome',exact:true}).waitFor({timeout:5000});
+  assert.equal(installs,0); assert.equal(opened,0); assert.deepEqual(await readdir(root),[]);
+  assert.equal(calls.includes('setup.install'),false,'Showing activation guidance must not install anything');
+  await page.getByRole('button',{name:'现在连接 Chrome',exact:true}).click();
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('button',{name:'配置浏览器',exact:true}).waitFor();
+  const panels=await page.evaluate(()=>window.panelEntries);
+  assert.deepEqual(panels,[{id:'dsh-native-browser.setup',label:'浏览器'}]);
+  await page.getByRole('button',{name:'配置浏览器',exact:true}).click();
+  await page.getByRole('button',{name:'返回对话',exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>window.selectedPanel),'dsh-native-browser.setup');
+  await page.getByRole('button',{name:'返回对话',exact:true}).click();
+  await page.getByText('Conversation preserved',{exact:true}).waitFor();
+  await page.evaluate(()=>window.openRow());
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.evaluate(()=>window.openSettings());
+  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  assert.equal(installs,0); assert.equal(opened,0);
   // Settings can open before Desktop has selected or hydrated a conversation.
   await page.evaluate(() => window.selectTestChat(null));
   await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
@@ -97,12 +141,22 @@ try {
     assert.deepEqual((await (await response).json()).value, invalidStatus);
     await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
   }
+  taskStatusPreview = {phase:'attention', action:'act', pages:[], pending:0, attention:'verify-result',
+    lastResult:{outcome:'unknown',dispatch:'dispatched',postcondition:'unverified'}};
+  await page.evaluate(() => window.selectTestChat('unverified-result-chat'));
+  await page.getByRole('alert').filter({hasText:'操作结果尚需核实'}).waitFor();
+  assert.ok(await page.getByText('需要检查', {exact:false}).count());
+  taskStatusPreview = {phase:'attention', action:'act', pages:[], pending:0, attention:'refresh-target', error:'STALE_TARGET'};
+  await page.evaluate(() => window.selectTestChat('stale-target-chat'));
+  await page.getByRole('alert').filter({hasText:'页面或目标可能已变化'}).waitFor();
   taskStatusPreview = undefined;
   await page.evaluate(() => window.selectTestChat('test-chat'));
   const install = page.getByRole('button', { name: '完成浏览器配置', exact: true });
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '完成浏览器配置')?.disabled);
   assert.equal(await page.evaluate(() => window.slotLabel), '浏览器配置');
   assert.equal(installs, 0); assert.deepEqual(await readdir(root), []);
+  await mkdir('output/playwright',{recursive:true});
+  await page.screenshot({path:'output/playwright/setup-first-run.png',fullPage:true});
   await install.click();
   await page.getByText('本机组件已配置。请完成下方 Chrome 扩展加载步骤，再检查连接。', { exact: true }).waitFor();
   assert.equal(installs, 1);
@@ -126,6 +180,14 @@ try {
     await page.getByText(message, { exact: true }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'Chrome 最后一步' }).count(), 0);
   };
+  // Loading Chrome and returning to this window performs only a status check.
+  statusPreview = { ...actualStatus, policy: { browserAccessMode: 'personal', approvalMode: 'personal' },
+    report: { ...actualStatus.report, status: 'ready' } };
+  const statusReadsBefore=calls.filter(endpoint=>endpoint==='setup.status').length;
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await page.getByText('Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。',{exact:true}).waitFor();
+  assert.ok(calls.filter(endpoint=>endpoint==='setup.status').length>statusReadsBefore);
+  assert.equal(installs,2);assert.equal(opened,1);
   await preview('personal', 'personal', 'Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。');
   await page.getByText('插件审批：个人模式，不额外逐次询问；仍遵循 DSH 的权限设置。', { exact: true }).waitFor();
   await preview('personal', 'per-action', '插件审批：逐次审批。当前显式配置会在操作时请求确认。');
@@ -134,8 +196,19 @@ try {
   await preview('unknown', 'personal', 'Chrome 已连接。尚未确认页面访问模式，请重新检查连接。');
   await preview('personal', 'personal', 'Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。');
   assert.equal(installs, 2);
+  assert.equal(await page.getByRole('textbox',{name:'扩展目录'}).isVisible(),false,'Connected users see the first-task prompt before advanced extension details');
   await mkdir('output/playwright', { recursive: true });
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await page.getByRole('button',{name:'复制试用指令',exact:true}).click();
+  assert.ok((await page.evaluate(()=>navigator.clipboard.readText())).includes('native_browser'));
   await page.screenshot({ path: 'output/playwright/setup-ui.png', fullPage: true });
+  await page.evaluate(()=>window.openBundle());
+  await page.getByRole('button',{name:'配置浏览器',exact:true}).waitFor();
+  await page.getByText('Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。',{exact:true}).waitFor();
+  await page.screenshot({path:'output/playwright/plugin-detail-setup.png',fullPage:true});
+  await page.getByRole('button',{name:'配置浏览器',exact:true}).click();
+  await page.getByRole('button',{name:'返回对话',exact:true}).waitFor();
+  await page.screenshot({path:'output/playwright/browser-panel-setup.png',fullPage:true});
   await page.getByRole('heading',{name:'当前对话的浏览器任务'}).waitFor();
   await page.getByRole('button',{name:'完成并清理临时页'}).click();
   await page.getByText('收尾返回：关闭 2 页；失效或失败的页面不会强行关闭。',{exact:true}).waitFor();
@@ -145,9 +218,17 @@ try {
   await page.evaluate(() => window.previewTaskCard());
   await page.getByText('关闭 2 页，保留 1 页，待处理 0 页',{exact:true}).waitFor();
   await page.screenshot({path:'output/playwright/task-card.png'});
+  await page.evaluate(()=>window.openOtherDetail());
+  assert.equal(await page.getByRole('button',{name:'配置浏览器',exact:true}).count(),0,'Other plugins must not get our configuration button');
   await page.evaluate(() => window.disposeSetup());
+  const legacyPage=await context.newPage();legacyPage.on('pageerror',e=>errors.push(e.message));
+  await legacyPage.goto('http://127.0.0.1:'+server.address().port+'/?legacy=1');
+  await legacyPage.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  assert.equal(await legacyPage.getByRole('button',{name:'返回对话',exact:true}).count(),0);
+  assert.equal(installs,2);assert.equal(opened,1);
+  await legacyPage.evaluate(()=>window.disposeSetup());await legacyPage.close();
   assert.deepEqual(errors, []);
   const report = { passed: true, scope: 'Real DSH SlotCore and React component; isolated installer without LaunchAgent; not full Desktop shell',
-    installs, opened, rpcCalls: calls, browser: browser.version(), noConversation: true, malformedTaskStatuses: invalidIndex };
+    installs, opened, rpcCalls: calls, browser: browser.version(), noConversation: true, malformedTaskStatuses: invalidIndex, pluginDetails: true, rowConfiguration: true, sidebarPanel: true, activationGuidance: true, legacyFallback: true };
   await writeFile('output/playwright/setup-ui.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); }

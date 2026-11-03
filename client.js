@@ -49,6 +49,10 @@ window.__ModuleLoader__.load({
       const h = React.createElement;
       const zh = typeof navigator === 'undefined' || navigator.language?.startsWith('zh');
       const t = (cn, en) => zh ? cn : en;
+      const panelId = 'dsh-native-browser.setup';
+      const getLayout = () => typeof ctx.get === 'function' ? ctx.get('layout') : ctx.layout;
+      const testPrompt = t('使用 native_browser 工具，读取当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。',
+        'Use native_browser tools to read the title and main content of my current Chrome page, then hand control back to me.');
       const labels = { list: '查找浏览器', claim: '接管页面', open: '打开页面', activate: '显示页面',
         observe: '读取页面', read_page: '继续读取', frames: '检查框架', act: '操作页面', batch: '执行步骤',
         close: '关闭任务页', handoff: '交还控制', release_all: '释放控制', task: '任务收尾' };
@@ -121,6 +125,13 @@ window.__ModuleLoader__.load({
         return h('section', { 'aria-label': 'Browser task status' }, h('h3', null, t('当前对话的浏览器任务', 'Current conversation browser task')),
           h('p', { role: 'status' }, `${zh ? phases[value.phase] || value.phase : value.phase} · ${value.action || ''} · ${value.pages.length} ${t('个任务页', 'task pages')}`),
           value.error && h('p', null, `${t('诊断代码：', 'Diagnostic code: ')}${value.error}`),
+          value.attention && h('p', { role: 'alert' }, ({
+            'verify-result': t('操作结果尚需核实。请先检查页面或业务记录，勿重复提交；普通页面读取不代表此前操作已成功。', 'Verify the page or application records before resubmitting. A successful page read does not verify an earlier action.'),
+            'check-connection': t('请在浏览器配置中检查连接与版本。重连不会恢复原控制权；继续前先核对页面结果。', 'Check the connection and versions in Browser setup. Reconnecting does not restore control; verify the page before continuing.'),
+            'wait-control': t('控制已中断或页面正被占用。请先确认当前对话和用户是否已接手，勿自动抢回或重放操作。', 'Control was interrupted or is busy. Check the selected conversation and human handoff; do not automatically reclaim or replay input.'),
+            'refresh-target': t('页面或目标可能已变化。重新观察并明确目标，勿沿用旧引用或重复旧点击。', 'Observe again and identify the target; do not reuse stale references or repeat old clicks.'),
+            'respect-policy': t('请核对显式权限与已支持能力。被拒绝的操作不能通过其他工具绕过。', 'Check explicit permissions and supported capabilities. Do not bypass a denied operation through another tool.'),
+          }[value.attention] || t('请检查当前页面与工具结果后再继续。', 'Check the page and tool result before continuing.'))),
           h('button', { type: 'button', onClick: () => void control('task.stop') }, t('停止并交还控制', 'Stop and hand off')),
           h('button', { type: 'button', disabled: value.pending > 0 || value.phase === 'finishing', onClick: () => void control('task.finish') }, t('完成并清理临时页', 'Finish and clean temporary tabs')),
           notice && h('p', { role: 'status' }, notice));
@@ -159,8 +170,10 @@ window.__ModuleLoader__.load({
           }
         };
         React.useEffect(() => {
+          const refresh = () => { if (document.visibilityState === 'visible' && !active.current) void perform('setup.status'); };
           void perform('setup.status');
-          return () => { const running = active.current; active.current = null; running?.abort(); };
+          window.addEventListener('focus', refresh);
+          return () => { window.removeEventListener('focus', refresh); const running = active.current; active.current = null; running?.abort(); };
         }, []);
         const waiting = busy || status?.installing;
         const accessMode = status?.policy?.browserAccessMode;
@@ -175,16 +188,20 @@ window.__ModuleLoader__.load({
         const button = (label, endpoint, disabled = false) => h('button', {
           type: 'button', disabled: Boolean(waiting || disabled), onClick: () => void perform(endpoint),
           style: { font: 'inherit', padding: '9px 14px', borderRadius: 8, cursor: 'pointer',
-            color: 'inherit', background: 'var(--dsw-alias-interactive-bg-hover, transparent)', border: '1px solid #8886' },
+            color: endpoint === 'setup.install' ? '#fff' : 'inherit', background: endpoint === 'setup.install' ? '#126fe8' : 'var(--dsw-alias-interactive-bg-hover, transparent)', border: '1px solid #8886' },
         }, label);
         return h('section', { 'aria-label': 'DSH Native Browser', style: { maxWidth: 720, lineHeight: 1.7, padding: '8px 0' } },
           h('h2', null, 'DSH Native Browser'),
-          h(TaskPanel),
-          h('p', null, t('在这里完成 Chrome 配置，无需查找 Profile 或复制安装命令。', 'Set up Chrome here without finding a Profile or editing commands.')),
-          h('p', null, t('配置将在运行 DSH 的这台 Mac 上注册浏览器组件、启动登录后自动运行的本地服务，并打开 Chrome。不会更改 DSH 的操作审批设置。远程连接的 DSH 不会配置你面前的电脑。',
-            'Setup registers browser components and a login service on the Mac running DSH, then opens Chrome. DSH approval settings stay unchanged. A remote DSH host cannot configure the computer in front of you.')),
-          h('p', null, t('标准安装使用个人浏览器模式：助手可接管此 Chrome 中的普通网页，无需逐页授权。Stop、交还控制和切换对话仍会释放控制。',
-            'Standard setup uses personal browser mode: the assistant can claim ordinary tabs in this Chrome without per-tab consent. Stop, handoff and conversation switching still release control.')),
+          h('p', { style: { fontSize: 17, fontWeight: 600 } }, t('插件已安装。再连接一次 Chrome，就可以直接在聊天中使用。', 'Plugin installed. Connect Chrome once, then use it from chat.')),
+          h('ol', { 'aria-label': t('Chrome 配置进度', 'Chrome setup progress'), style: { paddingLeft: 24, borderLeft: '3px solid #1687ff', lineHeight: 2 } },
+            h('li', null, t('安装 DSH 插件 ✓', 'Install the DSH plugin ✓')),
+            h('li', null, status?.extensionStaged ? t('配置本机 Chrome ✓', 'Set up local Chrome ✓') : t('点击下方“完成浏览器配置”', 'Click Set up Chrome below')),
+            h('li', null, connected ? t('Chrome 已连接 ✓ 可以开始对话', 'Chrome connected ✓ Start chatting') : t('在 Chrome 加载扩展，回来点“检查连接”', 'Load the extension in Chrome, then Check connection'))),
+          h('p', null, t('点击配置后会自动打开 Chrome 扩展管理页和扩展文件夹，无需终端命令或 Profile 名称。', 'Setup opens Chrome extensions and its folder automatically. No terminal commands or Profile name needed.')),
+          h('details', null, h('summary', null, t('配置会做什么？', 'What does setup do?')),
+            h('p', null, t('在运行 DSH 的 Mac 上配置 Chrome 连接，并启动登录后自动运行的本地服务。个人模式允许助手接管此 Chrome 的普通网页，无需逐页授权；DSH 自身权限、Stop 和交还控制仍生效。',
+              'Connects Chrome on the Mac running DSH and starts a login service. Personal mode allows ordinary tabs without per-tab consent; DSH permissions, Stop and handoff still apply.')),
+            h('p', null, t('如果远程连接了另一台机器上的 DSH，这里配置的是那台主机，不能配置你面前的电脑。', 'If DSH runs on a remote machine, setup affects that host, not the computer in front of you.'))),
           status && h('p', { role: 'status' }, status.report?.status === 'ready'
             ? connectedText
             : t('尚未就绪：请完成配置、加载扩展，再检查连接。', 'Not ready: complete setup, load the extension, then check the connection.')),
@@ -205,8 +222,9 @@ window.__ModuleLoader__.load({
           waiting && h('p', { role: 'status' }, t('正在处理，请稍候。关闭此页面不会撤销已经开始的配置。', 'Working. Closing this page does not undo setup already started.')),
           notice && h('p', { role: 'status' }, notice),
           error && h('p', { role: 'alert' }, error),
-          status?.extensionStaged && h('div', null,
-            h('h3', null, connected ? t('扩展已连接', 'Extension connected') : t('Chrome 最后一步', 'Final Chrome step')),
+          status?.extensionStaged && h(connected ? 'details' : 'div', null,
+            connected ? h('summary', null, t('升级或重新加载 Chrome 扩展', 'Update or reload the Chrome extension'))
+              : h('h3', null, t('Chrome 最后一步', 'Final Chrome step')),
             !connected && h('ol', null,
               h('li', null, t('打开 Chrome 扩展管理页，开启右上角“开发者模式”。', 'Open Chrome extensions and enable Developer mode.')),
               h('li', null, t('点击“加载已解压的扩展程序”。在选择目录窗口按 ⌘⇧G，粘贴下方目录并选择。', 'Click Load unpacked. Press ⌘⇧G in the folder picker, paste the path below and select it.')),
@@ -224,12 +242,62 @@ window.__ModuleLoader__.load({
             h('p', null, t('已从此目录加载过？升级后点扩展卡片的“重新加载”即可。', 'Already loaded this directory? After an upgrade, click Reload on the extension card.'))),
           status?.report?.checks && h('details', null, h('summary', null, t('连接诊断', 'Connection diagnostics')),
             h('ul', null, status.report.checks.map(check => h('li', { key: check.id }, `${check.status === 'ok' ? '✓' : '○'} ${check.message}`, check.hint && h('p', null, check.hint))))),
-          h('p', null, t('连接成功后可以说：列出 Chrome 标签页，打开一个普通网页，读取标题并截图。', 'Once connected, ask: List Chrome tabs, open a public webpage, read its title and take a screenshot.')));
+          h('section', { 'aria-label': t('第一次使用', 'First browser task') },
+            h('h3', null, t('连接后，复制这句话到 DSH 聊天', 'Once connected, paste this into DSH chat')),
+            h('p', null, t('先在 Chrome 打开一个普通网页，然后回到 DSH 对话。', 'Open an ordinary webpage in Chrome, then return to DSH chat.')),
+            h('blockquote', { style: { margin: '12px 0', padding: 12, borderLeft: '3px solid #1687ff', background: '#1687ff15' } }, testPrompt),
+            h('button', { type: 'button', onClick: async () => {
+              try { await navigator.clipboard.writeText(testPrompt); setNotice(t('试用指令已复制，回到 DSH 聊天粘贴即可。', 'Copied. Paste the prompt into DSH chat.')); }
+              catch { setError(t('请选中上方试用指令并复制。', 'Select and copy the prompt above.')); }
+            } }, t('复制试用指令', 'Copy first-task prompt'))),
+          h(TaskPanel));
       }
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section', id: 'dsh-native-browser', order: 45,
         label: t('浏览器配置', 'Browser setup'),
       }, Setup));
+      // Current DSH declares these slots on the Plugins page. Older clients
+      // simply omit them and retain the settings entry above.
+      function PluginSetup(props) {
+        return props.view === 'summary'
+          ? h('p', null, t('安装后在这里连接 Chrome，再回到聊天开始使用。', 'Connect Chrome here after installation, then start from chat.'))
+          : h(Setup);
+      }
+      for (const [slot, key] of [['plugins.bundle.config', 'dsh-native-browser'], ['plugins.row.config', 'dsh-native-browser#native-browser']]) {
+        ctx.slots.inject(slot, () => ctx.slots.register({ name: slot, key }, PluginSetup));
+      }
+      function Welcome(props) {
+        if (props.packageName !== 'dsh-native-browser') return null;
+        return h('section', { 'aria-label': 'DSH Native Browser welcome', style: { border: '1px solid #1687ff80', borderRadius: 12, padding: 18, margin: '12px 0', lineHeight: 1.7 } },
+          h('h3', null, t('已启用：下一步连接 Chrome', 'Enabled: connect Chrome next')),
+          h('p', null, t('打开插件详情中的配置向导，一次完成 Chrome 连接。连接成功后直接在聊天中提问。', 'Open the setup guide in plugin details to connect Chrome, then ask for browser tasks in chat.')),
+          h('button', { type: 'button', onClick: () => props.onOpenDetails?.() }, t('现在连接 Chrome', 'Connect Chrome now')),
+          props.onDismiss && h('button', { type: 'button', onClick: () => props.onDismiss() }, t('稍后设置', 'Set up later')));
+      }
+      ctx.slots.inject('plugins.bundle.activation', () => ctx.slots.register({ name: 'plugins.bundle.activation', key: 'dsh-native-browser' }, Welcome));
+      function BrowserIcon() {
+        return h('svg', { viewBox: '0 0 24 24', width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
+          h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 3 }), h('path', { d: 'M3 9h18M7 6.5h.01M10 6.5h.01M11 12l5 3-3 1-1 3z' }));
+      }
+      // main is declared by Layout; its lifetime also owns ctx.layout. Register
+      // sidebar navigation only after the matching panel exists.
+      ctx.slots.inject('main', () => {
+        const layout = getLayout();
+        if (typeof layout?.selectPanel !== 'function') return;
+        const disposeMain = ctx.slots.register({ name: 'main', key: panelId }, () => h('main', {
+          style: { height: '100%', overflow: 'auto', boxSizing: 'border-box', padding: 'max(24px, var(--dsh-frame-top-clearance, 24px)) 24px 32px' },
+        }, h('div', { style: { maxWidth: 760, margin: '0 auto' } },
+          h('button', { type: 'button', onClick: () => layout.selectPanel(null) }, t('返回对话', 'Back to chat')), h(Setup))));
+        const disposeSidebar = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: panelId,
+          order: 20, label: t('浏览器', 'Browser') }, BrowserIcon));
+        return () => { if (typeof disposeSidebar === 'function') disposeSidebar(); disposeMain?.(); };
+      });
+      function DetailAction({ subject }) {
+        if (!['bundle', 'row'].includes(subject?.kind) || subject.pkg?.name !== 'dsh-native-browser'
+          || typeof getLayout()?.selectPanel !== 'function') return null;
+        return h('button', { type: 'button', onClick: () => getLayout()?.selectPanel(panelId) }, t('配置浏览器', 'Set up browser'));
+      }
+      ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({ name: 'plugins.detail.actions', id: 'dsh-native-browser.setup' }, DetailAction));
     }
 
     function pageState() {

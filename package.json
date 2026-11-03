@@ -1,7 +1,7 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.6",
-  "description": "Fluid, native Chrome automation for DeepSeek Harness, inspired by Codex browser workflows",
+  "version": "0.1.7",
+  "description": "Control your signed-in Chrome from DSH with smooth cursor feedback. After install: Browser in the DSH sidebar → Set up Chrome.",
   "type": "module",
   "main": "index.js",
   "types": "./dist/packages/dsh-adapter/src/index.d.ts",

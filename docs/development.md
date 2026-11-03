@@ -4,6 +4,8 @@ For the supported macOS + Chrome installation route, start with the [README](../
 
 ## Build and validate
 
+For the 0.1.9 personal-mode lease maintenance and outcome-guidance work, see [continuity implementation and validation](browser-continuity.zh-CN.md). Updating the plugin alone does not update an already-running Broker or loaded MV3 bundle.
+
 ```bash
 pnpm install
 pnpm typecheck

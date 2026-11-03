@@ -104,6 +104,12 @@ export class ChromiumProvider implements BrowserProvider {
   async grant(lease: Lease, signal: AbortSignal): Promise<void> {
     await this.channel.call('lease.grant', { lease }, signal);
   }
+  async renew(previous: Lease, next: Lease, signal: AbortSignal): Promise<void> {
+    if (!this.instance.capabilities.leaseRenewal) throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Reload the extension to enable lease renewal');
+    const result = await this.channel.call('lease.renew', { lease: next, previousExpiresAt: previous.expiresAt }, signal) as Dict;
+    if (!result || result.renewed !== true || result.expiresAt !== next.expiresAt)
+      throw new BrowserError('PROTOCOL_MISMATCH', 'Provider did not confirm the renewed deadline');
+  }
   async revoke(lease: Lease): Promise<void> {
     this.pages.delete(lease.tab);
     await this.channel.call('lease.revoke', { lease }, AbortSignal.timeout(3000));

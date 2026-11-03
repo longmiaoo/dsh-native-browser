@@ -96,7 +96,7 @@ try {
   const diagnosticOptions = { directory, brand: 'chrome', extensionId, manifestDir: path.join(profile, 'NativeMessagingHosts') };
   const diagnostic = await diagnose(diagnosticOptions);
   assert.equal(diagnostic.status, 'ready', JSON.stringify(diagnostic));
-  assert.deepEqual(diagnostic.connection, { connected: true, instanceCount: 1, matchingBrowserCount: 1 });
+  assert.deepEqual(diagnostic.connection, { connected: true, accessMode: 'restricted', instanceCount: 1, matchingBrowserCount: 1 });
   passed.push('Read-only doctor validates real isolated installation and Chrome connection');
 
   ctx = new Context();

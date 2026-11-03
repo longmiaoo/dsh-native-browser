@@ -12,6 +12,7 @@ import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
 import { extensionIdFromManifestKey } from '../dist/packages/installer/src/extension.js';
 import { verifyFrameGeometryExtension } from './verify-frame-geometry-extension.mjs';
+import { verifyLeaseRenewalExtension } from './verify-lease-renewal-extension.mjs';
 
 // Only native transport is substituted. The production bundle, popup permission flow,
 // tabs API, debugger attachment, CDP dispatch, and Stop gate run in real MV3 Chrome.
@@ -124,8 +125,9 @@ try {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
   })();
-  const instance = { ...hello.params.instance, capabilities: { ax: true, screenshot: true } };
+  const instance = { ...hello.params.instance, capabilities: { ax: true, screenshot: true, leaseRenewal: true } };
   const provider = new ChromiumProvider(instance, channel, { downloadRoot: path.join(profile, 'downloads') });
+  const renewalChecks = await verifyLeaseRenewalExtension({ provider, channel, page, popup });
   runtime = new BrowserRuntime(async request => new URL(request.tab.url).origin === origin);
   runtime.register(provider);
   const signal = AbortSignal.timeout(60000), owner = 'mv3-smoke';
@@ -276,7 +278,7 @@ try {
   await assert.rejects(runtime.observe(owner, multiA.id, signal), error => error.code === 'LEASE_REVOKED');
   await assert.rejects(runtime.observe(owner, multiB.id, signal), error => error.code === 'LEASE_REVOKED');
   const report = { checkedAt: new Date().toISOString(), browserVersion: context.browser().version(),
-    passed: [...feedbackChecks, 'Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
+    passed: [...feedbackChecks, ...renewalChecks, 'Production MV3 bundle loaded', 'Toolbar action grants activeTab', 'Production popup tab approval',
       'Real chrome.debugger attachment', 'AX discovery and verified Chinese input', 'Delayed text result without replay',
       'Real visual-click from a screenshot box after hit-test and viewport checks',
       'Real multi-tab open, activate and release-all across two tabs',

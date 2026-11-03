@@ -13,7 +13,7 @@ import { installHost, manifestDirectory } from '../dist/packages/installer/src/i
 import { RpcPeer } from '../dist/packages/transport-native/src/rpc.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
 import { randomBytes } from 'node:crypto';
-import { providerCapabilities } from '../dist/packages/contracts/src/wire.js';
+import { providerCapabilities, leaseRenewalCapability, runtimeRenewalCapability } from '../dist/packages/contracts/src/wire.js';
 
 async function until(predicate) {
   const end = Date.now() + 2000;
@@ -29,6 +29,46 @@ async function environment(t, origins = ['https://example.test'], options = {}) 
   t.after(() => client.close());
   return { directory, broker, client };
 }
+
+for (const renewable of [false, true]) {
+  test(`optional renewal capability is negotiated with ${renewable ? 'new' : 'old'} extensions over real sockets`, async t => {
+    const { directory, broker, client } = await environment(t, [], { accessMode: 'personal' });
+    assert.ok(client.brokerCapabilities.includes(runtimeRenewalCapability)); assert.ok(Object.isFrozen(client.brokerCapabilities));
+    const state = await localState(directory), socket = net.createConnection(broker.socket); await once(socket, 'connect');
+    const extension = new RpcPeer(socket, socket); t.after(() => extension.close());
+    let renewed = 0;
+    extension.handle(async (method, params) => {
+      if (method === 'tabs.list') return [{ id: 'chrome:7', instanceId: 'chrome', url: 'https://example.test/', title: 'test' }];
+      if (method === 'lease.grant' || method === 'lease.revoke') return {};
+      if (method === 'lease.renew') { renewed++; assert.ok(params.lease.expiresAt > params.previousExpiresAt); return { renewed: true, expiresAt: params.lease.expiresAt }; }
+      throw new Error('Unexpected provider command');
+    });
+    await extension.call('hello', { bootstrap: 1, versions: [1], role: 'provider', token: state.token,
+      capabilities: [...providerCapabilities, ...(renewable ? [leaseRenewalCapability] : [])],
+      instance: { id: 'chrome', family: 'chromium', brand: 'chrome', version: 'test', profileLabel: 'test' } });
+    assert.equal((await client.call('browser.instances', {}))[0].capabilities.leaseRenewal, renewable);
+    const lease = await client.call('browser.claim', { sessionId: 's', instanceId: 'chrome', tab: 'chrome:7' });
+    if (renewable) {
+      const next = await client.call('browser.renew', { sessionId: 's', leaseId: lease.id });
+      assert.equal(next.token, lease.token); assert.ok(next.expiresAt > lease.expiresAt); assert.equal(renewed, 1);
+    } else {
+      await assert.rejects(client.call('browser.renew', { sessionId: 's', leaseId: lease.id }), { code: 'UNSUPPORTED_CAPABILITY' });
+      assert.equal(renewed, 0); assert.deepEqual(await client.call('browser.validateLease', { sessionId: 's', leaseId: lease.id }), { valid: true });
+    }
+    await assert.rejects(client.call('browser.renew', { sessionId: 'other', leaseId: lease.id }), { code: 'LEASE_REVOKED' });
+    const other = await connectBroker(directory); t.after(() => other.close());
+    await assert.rejects(other.call('browser.renew', { sessionId: 's', leaseId: lease.id }), { code: 'LEASE_REVOKED' });
+    await client.call('browser.releaseSession', { sessionId: 's' });
+    await assert.rejects(client.call('browser.renew', { sessionId: 's', leaseId: lease.id }), { code: 'LEASE_REVOKED' });
+  });
+}
+
+test('restricted Broker rejects renewal rather than extending per-lease approval', async t => {
+  const { client, broker } = await environment(t), provider = new FakeProvider(); broker.runtime.register(provider);
+  const lease = await client.call('browser.claim', { sessionId: 's', instanceId: 'fake-1', tab: 'tab-1' });
+  await assert.rejects(client.call('browser.renew', { sessionId: 's', leaseId: lease.id }), { code: 'POLICY_DENIED' });
+  assert.equal(provider.grants.size, 1);
+});
 
 test('connection cap includes unauthenticated sockets, preserves active client and frees closed slots', async t => {
   const { directory, broker, client } = await environment(t, ['https://example.test'], { maxConnections: 2 });

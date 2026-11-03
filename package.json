@@ -1,7 +1,7 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.8",
-  "description": "Control your signed-in Chrome from DSH with smooth cursor feedback. After install: Browser in the DSH sidebar → Set up Chrome.",
+  "version": "0.1.9",
+  "description": "DSH 原生浏览器操作：以 Codex 工作流为体验参考，平滑虚拟鼠标、复用 Chrome 登录状态、页面读取、填表与截图。安装后点侧栏「浏览器」连接 Chrome。欢迎 Star 与参与共创。",
   "type": "module",
   "main": "index.js",
   "types": "./dist/packages/dsh-adapter/src/index.d.ts",
@@ -23,6 +23,7 @@
     "bin",
     "dist",
     "assets",
+    "screenshots.json",
     "cordis.patch.yml",
     "docs/**/*.md",
     "docs/benchmark-results/*.json",
@@ -77,7 +78,10 @@
     "chrome-extension",
     "cdp",
     "accessibility-tree",
-    "human-in-the-loop"
+    "human-in-the-loop",
+    "native-browser",
+    "virtual-cursor",
+    "codex-inspired"
   ],
   "author": "longmiaoo",
   "license": "MIT",

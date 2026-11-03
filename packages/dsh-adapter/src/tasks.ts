@@ -1,9 +1,19 @@
-import { BrowserError, errorCode, checkAbort } from '../../contracts/src/index.js';
+import { BrowserError, errorCode, checkAbort, type ActionResult } from '../../contracts/src/index.js';
 
 export type PagePurpose = 'temporary' | 'deliverable' | 'handoff';
 type Page = { tab: string; instanceId: string; leaseId: string; scope: string; purpose: PagePurpose; live: boolean };
 type Task = { pages: Map<string, Page>; phase: string; action: string; startedAt: number; updatedAt: number;
-  error?: string; pending: number; finishing?: Promise<unknown> };
+  error?: string; attention?: string; lastResult?: Pick<ActionResult, 'outcome' | 'dispatch' | 'postcondition'>;
+  pending: number; finishing?: Promise<unknown> };
+
+function recovery(error: unknown): string {
+  const code = errorCode(error);
+  if (['CONNECTION_LOST', 'PROTOCOL_MISMATCH'].includes(code)) return 'check-connection';
+  if (['LEASE_REVOKED', 'USER_STOPPED', 'CANCELLED', 'LEASE_BUSY'].includes(code)) return 'wait-control';
+  if (['STALE_TARGET', 'AMBIGUOUS_TARGET', 'NOT_ACTIONABLE'].includes(code)) return 'refresh-target';
+  if (['POLICY_DENIED', 'UNSUPPORTED_CAPABILITY'].includes(code)) return 'respect-policy';
+  return 'verify-result';
+}
 
 /** Host-owned metadata only: no page text, credentials, URLs or tool arguments. */
 export class BrowserTasks {
@@ -22,10 +32,29 @@ export class BrowserTasks {
     if (task.finishing) throw new BrowserError('LEASE_BUSY', 'Browser task is finishing; wait for cleanup');
     if (action === 'open' && task.pages.size >= 64) throw new BrowserError('QUEUE_FULL', 'Browser task page capacity reached');
     task.pending++; task.phase = 'running'; task.action = action; task.updatedAt = Date.now(); delete task.error;
-    return (error?: unknown) => {
+    return (error?: unknown, value?: unknown) => {
       task.pending--; task.updatedAt = Date.now();
-      if (error) { task.error = errorCode(error); task.phase = 'attention'; }
-      else if (task.phase === 'running' && task.pending === 0) task.phase = 'ready';
+      if (error) { task.error = errorCode(error); task.attention = recovery(error); }
+      else if ((action === 'act' || action === 'batch') && value && typeof value === 'object') {
+        const result = value as ActionResult;
+        if (['succeeded', 'failed', 'cancelled', 'unknown'].includes(result.outcome)
+          && ['notDispatched', 'dispatched', 'observed'].includes(result.dispatch)
+          && ['passed', 'failed', 'unverified'].includes(result.postcondition)) {
+          // Keep only the bounded receipt, never page data, input or raw errors.
+          task.lastResult = { outcome: result.outcome, dispatch: result.dispatch, postcondition: result.postcondition };
+          if (result.outcome !== 'succeeded' || result.postcondition !== 'passed') {
+            // Once input may have reached the page, its business result still
+            // needs verification. A fenced, undispatched action can instead
+            // explain the connection/control/target boundary that rejected it.
+            task.attention = result.dispatch === 'notDispatched' && result.code
+              ? recovery(new BrowserError(result.code, 'Browser action was not dispatched')) : 'verify-result';
+          }
+          else delete task.attention;
+        }
+      }
+      // A read returning successfully is not proof that an earlier input worked.
+      // Late settlement must not revive a handed-off/completed task either.
+      if (task.phase === 'running' && task.pending === 0) task.phase = task.attention ? 'attention' : 'ready';
     };
   }
   opened(id: string, scope: string, lease: { tab: string; instanceId: string; leaseId: string }) {
@@ -63,6 +92,8 @@ export class BrowserTasks {
     if (!task) return { phase: 'idle', action: '', pages: [], pending: 0 };
     return { phase: task.phase, action: task.action, startedAt: task.startedAt, updatedAt: task.updatedAt,
       pending: task.pending, ...(task.error ? { error: task.error } : {}),
+      ...(task.attention ? { attention: task.attention } : {}),
+      ...(task.lastResult ? { lastResult: { ...task.lastResult } } : {}),
       pages: [...task.pages.values()].map(p => ({ leaseId: p.leaseId, purpose: p.purpose, controlled: p.live })) };
   }
   async finish(id: string, scope: string, close: (leaseId: string, signal: AbortSignal) => Promise<void>, signal: AbortSignal,

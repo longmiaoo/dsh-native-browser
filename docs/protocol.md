@@ -17,6 +17,8 @@ Tests compare the shared validator with [Ajv's draft-2020-12 validator](https://
 
 ## Envelopes
 
+Version 0.1.9 adds optional `runtime.lease-renew.v1` (Broker welcome) and `lease.renew.v1` (provider hello). Neither becomes a new client/provider requirement. In personal mode, the authenticated client may send `browser.renew({sessionId,leaseId})`; the Runtime serializes renewal with tab work and sends `lease.renew({lease,previousExpiresAt})` to a capable provider. The extension requires an exact live gate, identity/scope and previous deadline, then acknowledges `{renewed:true,expiresAt}`. A renewal never grants control, reconnects, changes the token or replays input. Unsupported peers retain the old deadline, and restricted Brokers reject the method. See [lifecycle and validation](browser-continuity.zh-CN.md).
+
 These are the only five shapes. All displayed fields are required; extra envelope fields are rejected.
 
 ```json

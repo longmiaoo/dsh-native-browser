@@ -15,6 +15,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const hostRoot = process.argv[2], executablePath = process.env.DSH_CHROME_TEST_EXECUTABLE;
 // Allows acceptance while the user has a live Broker, without unloading it.
 const noService = process.argv.includes('--no-service');
+const verifyRenewal = process.argv.includes('--lease-renewal');
 if (process.platform !== 'darwin' || !hostRoot || !executablePath) throw Error('Requires macOS, an installed DSH directory and DSH_CHROME_TEST_EXECUTABLE');
 const exec = promisify(execFile), temporary = await mkdtemp('/tmp/dsh-install-');
 const profile = path.join(temporary, 'profile'), directory = path.join(temporary, 'runtime');
@@ -150,6 +151,20 @@ try {
   await page.screenshot({ path: path.join(root, 'output/playwright/installation-smooth-click.png') });
   passed.push('Actual packed DSH fill-to-click path produces multiple rendered movement frames without delaying input');
   const shot = await call('screenshot', { leaseId: lease.id }); assert.ok(shot.attachment);
+  if (verifyRenewal) {
+    assert.equal(instance.capabilities.leaseRenewal, true);
+    const until = lease.expiresAt + 2000;
+    console.error('Renewal acceptance: waiting beyond the original two-minute deadline with no browser-tool activity.');
+    while (Date.now() < until) await new Promise(resolve => setTimeout(resolve, Math.min(5000, until - Date.now())));
+    assert.equal(await page.locator('[data-dsh-activity="v1"]').count(), 1);
+    assert.equal(await page.locator('[data-dsh-pointer="v1"]').count(), 1);
+    const result = await call('act', { leaseId: lease.id, requestId: 'after-default-lease-deadline', documentEpoch: observation.documentEpoch,
+      action: { kind: 'fill', ref: ref('搜索词'), text: '真实两分钟续期验收' } });
+    assert.equal(result.outcome, 'succeeded'); assert.equal(await page.locator('#query').inputValue(), '真实两分钟续期验收');
+    report.renewal = { originalExpiresAt: lease.expiresAt, actedAt: Date.now(), exceededOriginalDeadline: true,
+      lifetimeMs: 120000, mode: 'personal', foregroundIndicator: true, pointer: true };
+    passed.push('Packed default personal mode survives the real two-minute deadline without tool polling, preserves pointer/activity and performs a verified input with the original lease/ref');
+  }
   await call('handoff', { leaseId: lease.id });
   await eventual(async () => (await page.locator('[data-dsh-pointer="v1"]').count()) === 0, 'pointer removed on handoff');
   assert.equal(await page.locator('[data-dsh-activity="v1"]').count(),0,'Handoff removes the control indicator');

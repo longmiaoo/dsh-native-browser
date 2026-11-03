@@ -106,7 +106,7 @@ const server = http.createServer(async (req, res) => {
 try {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   browser = await chromium.launch({ executablePath, headless: true });
-  const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1050, height: 1100 } });
+  const context = await browser.newContext({ locale: 'zh-CN', colorScheme: 'dark', viewport: { width: 1050, height: 1100 } });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.getByRole('heading',{name:'已启用：下一步连接 Chrome',exact:true}).waitFor({timeout:5000});
@@ -215,6 +215,18 @@ try {
   await page.evaluate(() => window.selectTestChat(undefined));
   await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
   await page.screenshot({path:'output/playwright/setup-without-conversation.png',fullPage:true});
+  assert.equal(await page.getByRole('button', {name:'回到聊天，开始使用',exact:true}).count(),1);
+  await page.getByRole('link',{name:'☆ Star',exact:true}).waitFor();
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Setup must fit a narrow window');
+  await page.screenshot({path:'output/playwright/setup-mobile.png',fullPage:true});
+  await page.setViewportSize({width:1050,height:1100});
+  await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+  await page.evaluate(()=>{document.body.style.background='#f3f5f8';document.body.style.color='#1e293b'});
+  await page.screenshot({path:'output/playwright/setup-light.png',fullPage:true});
+  await page.emulateMedia({colorScheme:'dark'});
+  await page.evaluate(()=>{document.body.style.background='#191b20';document.body.style.color='#ebecf0'});
+
   await page.evaluate(() => window.previewTaskCard());
   await page.getByText('关闭 2 页，保留 1 页，待处理 0 页',{exact:true}).waitFor();
   await page.screenshot({path:'output/playwright/task-card.png'});
@@ -227,6 +239,17 @@ try {
   assert.equal(await legacyPage.getByRole('button',{name:'返回对话',exact:true}).count(),0);
   assert.equal(installs,2);assert.equal(opened,1);
   await legacyPage.evaluate(()=>window.disposeSetup());await legacyPage.close();
+  const english = await browser.newContext({locale:'en-US',colorScheme:'light',viewport:{width:1050,height:1100}});
+  const englishPage = await english.newPage();englishPage.on('pageerror',e=>errors.push(e.message));
+  await englishPage.goto(`http://127.0.0.1:${server.address().port}`);
+  await englishPage.getByRole('button',{name:'Connect Chrome now',exact:true}).click();
+  await englishPage.getByRole('heading',{name:'Chrome is ready',exact:true}).waitFor();
+  await englishPage.getByRole('link',{name:'Contribute ↗',exact:true}).waitFor();
+  // Host theme tokens must win even when the system color scheme is light.
+  await englishPage.evaluate(()=>{document.body.style.setProperty('--dsw-alias-label-primary','#eeeeee');document.body.style.setProperty('--dsw-specific-input-major','#1a1b20')});
+  assert.equal(await englishPage.locator('.nb-card').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(26, 27, 32)');
+  assert.equal(installs,2);assert.equal(opened,1,'Appearance and language changes only read status');
+  await english.close();
   assert.deepEqual(errors, []);
   const report = { passed: true, scope: 'Real DSH SlotCore and React component; isolated installer without LaunchAgent; not full Desktop shell',
     installs, opened, rpcCalls: calls, browser: browser.version(), noConversation: true, malformedTaskStatuses: invalidIndex, pluginDetails: true, rowConfiguration: true, sidebarPanel: true, activationGuidance: true, legacyFallback: true };

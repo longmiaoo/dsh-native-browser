@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { BrowserError, browserKeys, elementStates, checkAbort, originOf, type BatchRequest, type Screenshot } from '../../contracts/src/index.js';
 import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string, visualBox } from '../../contracts/src/validation.js';
-import { connectBroker } from '../../broker/src/client.js';
+import { connectBroker, type BrokerConnection } from '../../broker/src/client.js';
+import { runtimeRenewalCapability } from '../../contracts/src/wire.js';
 import { defaultDirectory } from '../../broker/src/local-state.js';
 import type { RpcPeer } from '../../transport-native/src/rpc.js';
 import { ScreenshotRegistry } from '../../vision-adapter/src/screenshots.js';
@@ -10,6 +11,7 @@ import { createSetupController } from './setup.js';
 import { registerHostRoutes } from './host-routes.js';
 import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from './approval-policy.js';
 import { BrowserTasks, type PagePurpose } from './tasks.js';
+import { LeaseKeepAlive } from './lease-keepalive.js';
 
 export const name = 'dsh-native-browser';
 export const inject = ['tools', 'connection'];
@@ -24,7 +26,7 @@ interface Context {
   get?(service: string): any;
 }
 type Config = { runtimeDirectory?: string; approvalMode?: ApprovalMode; trustedOrigins?: string[]; legacyToolNames?: boolean };
-type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortController };
+type TurnScope = { sessionId: string; wireSessionId: string; controller: AbortController; keeper?: LeaseKeepAlive };
 type PendingCapture = { scope: TurnScope; leaseId: string; controller: AbortController; peer?: RpcPeer };
 type BatchApproval = { scope: TurnScope; request: BatchRequest; exec: Execution; peer: RpcPeer; signal: AbortSignal; next: number };
 const schemaString = { type: 'string' };
@@ -50,7 +52,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (typeof legacyToolNames !== 'boolean') throw new BrowserError('INVALID_REQUEST', 'legacyToolNames must be a boolean');
   // Private recovery capability survives a Broker reconnect, never grants a lease or reaches the model.
   const journalKey = randomBytes(32).toString('hex');
-  let connection: Promise<RpcPeer> | undefined;
+  let connection: Promise<BrokerConnection> | undefined;
   let disposed = false;
   const sessions = new Map<string, TurnScope>();
   const tasks = new BrowserTasks();
@@ -132,13 +134,17 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (Object.keys(data).length !== 2) throw new BrowserError('INVALID_REQUEST', 'Invalid lease revocation');
           revokeCaptureLease(string(data.sessionId), string(data.leaseId));
           tasks.revoked(string(data.leaseId));
+          for (const scope of sessions.values()) if (scope.wireSessionId === data.sessionId) scope.keeper?.forget(string(data.leaseId));
         });
         value.onCloseEvent(() => {
           for (const capture of captures) if (capture.peer === value) {
             capture.controller.abort(new BrowserError('CONNECTION_LOST', 'Screenshot Broker connection ended'));
           }
           // A successor connection cannot be cleared by an obsolete peer.
-          if (connection === attempt) { connection = undefined; screenshots.clear(); }
+          if (connection === attempt) {
+            connection = undefined; screenshots.clear();
+            for (const scope of sessions.values()) { scope.keeper?.stop(); delete scope.keeper; }
+          }
         });
         if (disposed) value.close();
       }, () => { if (connection === attempt) connection = undefined; });
@@ -150,6 +156,19 @@ export function apply(ctx: Context, config: Config = {}): void {
     const channel = await peer();
     checkAbort(signal);
     return channel.call(method, { ...params, sessionId: scope.wireSessionId }, signal);
+  };
+  const maintain = async (scope: TurnScope, lease: { leaseId: string; expiresAt: number }) => {
+    if (approvalMode !== 'personal') return;
+    const channel = await peer();
+    checkAbort(scope.controller.signal);
+    if (!channel.brokerCapabilities.includes(runtimeRenewalCapability)) return;
+    if (!scope.keeper) scope.keeper = new LeaseKeepAlive(async (leaseId, signal) => {
+      const denial = foregroundDenial(scope.sessionId);
+      if (disposed || denial || sessions.get(scope.sessionId) !== scope) throw new BrowserError('LEASE_REVOKED', denial ?? 'Browser task ended');
+      const value = record(await channel.call('browser.renew', { leaseId, sessionId: scope.wireSessionId }, signal));
+      return { expiresAt: Number(value.expiresAt) };
+    }, scope.controller.signal);
+    scope.keeper.track(lease.leaseId, lease.expiresAt);
   };
   const publicLease = (raw: unknown) => {
     const lease = record(raw), leaseId = string(lease.id);
@@ -190,6 +209,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       throw new BrowserError('POLICY_DENIED', 'Claimed tab left the configured trusted origin');
     }
     tasks.claimed(string(exec.agent?.session.id), executionScope(exec).scope.wireSessionId, lease);
+    await maintain(executionScope(exec).scope, lease);
     return lease;
   };
   const releaseScope = (sessionId: string, message: string) => {
@@ -216,8 +236,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     const execute = definition.execute as (args: unknown, exec: Execution) => Promise<unknown>;
     ctx.tools.register({ name, ...definition, execute: (args: unknown, exec: Execution) => {
       if (name.endsWith('_task') && record(args).action === 'status') return execute(args, exec);
+      // Includes direct-channel batch/capture paths; status polling is not work.
+      executions.get(exec)?.keeper?.touch();
       const settled = tasks.begin(string(exec.agent?.session.id), name.replace(/^(native_browser_|browser_)/, ''));
-      try { return Promise.resolve(execute(args, exec)).then(value => { settled(); return value; }, error => { settled(error); throw error; }); }
+      try { return Promise.resolve(execute(args, exec)).then(value => { settled(undefined, value); return value; }, error => { settled(error); throw error; }); }
       catch (error) { settled(error); throw error; }
     } });
     registeredTools.add(name);
@@ -262,6 +284,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         throw new BrowserError('POLICY_DENIED', 'Personal approval mode requires a Broker started with --access-mode=personal');
       }
       tasks.opened(string(exec.agent?.session.id), executionScope(exec).scope.wireSessionId, lease);
+      await maintain(executionScope(exec).scope, lease);
       return lease;
     });
   register('activate', 'Bring a controlled tab to the foreground. The lease and origin checks still apply; this only changes visible focus and does not grant new authority.',
@@ -272,6 +295,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       tasks.closed(string(exec.agent?.session.id), leaseId); return value;
     });
   const finishTask = async (sessionId: string, scope: TurnScope, signal: AbortSignal, pendingAllowance = 0) => {
+    if (tasks.status(sessionId).pending <= pendingAllowance) { scope.keeper?.stop(); delete scope.keeper; }
     // Reserve cleanup synchronously before connection setup yields. Otherwise a
     // fresh tool can enter between turn completion and the cleanup reservation.
     return tasks.finish(sessionId, scope.wireSessionId, async (leaseId, currentSignal) => {
@@ -281,6 +305,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }, signal, pendingAllowance, async () => {
       const channel = await peer(); checkAbort(signal);
       await channel.call('browser.releaseSession', { sessionId: scope.wireSessionId }, signal);
+      scope.keeper?.stop(); delete scope.keeper;
     });
   };
   register('task', 'Manage browser task lifecycle. action=status reports progress without page content. action=mark sets a currently controlled task-created page to temporary, deliverable (a live result the user needs) or handoff (waiting for login, input or unfinished work). Mark before ending the turn. Personal mode automatically cleans unmarked temporary pages on a confirmed completed turn; interruptions and conversation switches never trigger closing. action=finish explicitly completes browser work, closes only still-controlled temporary task pages and releases remaining control. User pages always remain open. Revoked/expired pages are skipped and reported; cleanup never reclaims control or blindly retries a failed close. Do not mark routine search/source/intermediate pages as deliverables. Use handoff for unfinished multi-turn work.',
@@ -301,6 +326,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     {}, [], async (_args, exec) => {
       const { scope } = executionScope(exec);
       screenshots.revokeOwner(scope.wireSessionId);
+      scope.keeper?.stop(); delete scope.keeper;
       for (const capture of [...captures]) if (capture.scope === scope) {
         capture.controller.abort(new BrowserError('LEASE_REVOKED', 'Browser control was released'));
       }
@@ -405,6 +431,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const leaseId = string(args.leaseId), { scope } = executionScope(exec);
       revokeCaptureLease(scope.wireSessionId, leaseId);
       tasks.handoff(string(exec.agent?.session.id), leaseId);
+      scope.keeper?.forget(leaseId);
       return run('browser.release', { leaseId }, exec);
     });
   const screenshotDefinition = {
@@ -519,6 +546,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   // Foreground switching, Session disposal, expiry and Stop remain hard boundaries.
   ctx.on('session/event', (session: { id: string }, event: { type: string; data?: { reason?: { kind?: string } } }) => {
     if (event.type !== 'turn/end') return;
+    const endedScope = sessions.get(session.id);
+    endedScope?.keeper?.stop(); if (endedScope) delete endedScope.keeper;
     if (approvalMode === 'personal') {
       // Only a completed Host turn has authority for normal cleanup. Unknown,
       // interrupted or errored endings keep pages available for recovery.

@@ -10,17 +10,17 @@ import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { localState } from './local-state.js';
 import { FileActionJournal } from './action-journal.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
-import { negotiateHello, brokerCapabilities, personalBrokerCapability, wireVersion } from '../../contracts/src/wire.js';
+import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
   if (typeof supplied !== 'string' || supplied.length !== actual.length ||
     !timingSafeEqual(Buffer.from(supplied), Buffer.from(actual))) throw new BrowserError('POLICY_DENIED', 'Authentication failed');
 }
-function instanceOf(raw: unknown): BrowserInstance {
+function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
   const v = record(raw);
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
   return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
-    profileLabel: string(v.profileLabel), capabilities: { ax: true, axSubtree: true, dom: true, screenshot: true,
+    profileLabel: string(v.profileLabel), capabilities: { leaseRenewal: renewal, ax: true, axSubtree: true, dom: true, screenshot: true,
       keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, tabScopedNavigation: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
@@ -80,9 +80,9 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
         negotiating = true;
         try {
           authenticate(p.token, state.token);
-          negotiateHello(p);
+          const hello = negotiateHello(p);
           if (p.role === 'provider') {
-            const instance = instanceOf(p.instance);
+            const instance = instanceOf(p.instance, hello.capabilities?.includes(leaseRenewalCapability) === true);
             runtime.register(new ChromiumProvider(instance, peer));
             instanceId = instance.id; role = 'provider';
           } else if (p.role === 'client') {
@@ -128,6 +128,10 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       if (method === 'browser.frames') return runtime.frames(owner, string(p.leaseId), signal);
       if (method === 'browser.capture') return runtime.capture(owner, string(p.leaseId), signal);
       if (method === 'browser.validateLease') return runtime.validateLease(owner, string(p.leaseId), signal);
+      if (method === 'browser.renew') {
+        if (!personal) throw new BrowserError('POLICY_DENIED', 'Automatic renewal requires explicit personal access mode');
+        return runtime.renew(owner, string(p.leaseId), signal);
+      }
       if (method === 'browser.act') return runtime.act(owner, actionRequest(p.request), signal, JSON.stringify([journalKey, string(p.sessionId)]));
       if (method === 'browser.batch') {
         const request = batchRequest(p.request), approvalId = string(p.approvalId, 128);

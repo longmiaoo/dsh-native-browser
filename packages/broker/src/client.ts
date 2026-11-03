@@ -6,7 +6,8 @@ import { localState } from './local-state.js';
 import { acceptWelcome, clientRequirements, personalBrokerCapability, wireVersion } from '../../contracts/src/wire.js';
 import { BrowserError } from '../../contracts/src/index.js';
 
-export async function connectBroker(directory: string, journalKey = randomBytes(32).toString('hex'), options: { requirePersonal?: boolean } = {}): Promise<RpcPeer> {
+export type BrokerConnection = RpcPeer & { readonly brokerCapabilities: readonly string[] };
+export async function connectBroker(directory: string, journalKey = randomBytes(32).toString('hex'), options: { requirePersonal?: boolean } = {}): Promise<BrokerConnection> {
   const state = await localState(directory);
   const socket = net.createConnection(state.socket);
   const timer = setTimeout(() => socket.destroy(new Error('Broker connection timed out')), 3000);
@@ -20,6 +21,7 @@ export async function connectBroker(directory: string, journalKey = randomBytes(
     if (options.requirePersonal && !welcome.capabilities.includes(personalBrokerCapability)) {
       throw new BrowserError('POLICY_DENIED', 'Personal approval mode requires a Broker started with --access-mode=personal. Complete browser setup, or explicitly select per-action/per-lease for a restricted Broker.');
     }
-    return peer;
+    Object.defineProperty(peer, 'brokerCapabilities', { value: Object.freeze([...welcome.capabilities]) });
+    return peer as BrokerConnection;
   } catch (error) { peer.close(); throw error; }
 }

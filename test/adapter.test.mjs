@@ -11,6 +11,13 @@ import Ajv from 'ajv';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
+import { BrowserError } from '../dist/packages/contracts/src/index.js';
+import { setImmediate as ioTurn } from 'node:timers/promises';
+
+async function untilIo(check) {
+  for (let n = 0; n < 1000; n++) { if (check()) return; await ioTurn(); }
+  assert.fail('Socket work did not settle');
+}
 
 async function fixture(t, config = {}, brokerOptions = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-adapter-'));
@@ -43,6 +50,95 @@ async function fixture(t, config = {}, brokerOptions = {}) {
     dispose: () => { for (const dispose of effects) dispose(); } };
 }
 const claimArgs = { instanceId: 'fake-1', tab: 'tab-1' };
+test('personal mode maintains a live lease past its original deadline and foreground switching stops maintenance', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  let count = 0;
+  f.provider.renew = async (_previous, _next, signal) => { assert.equal(signal.aborted, false); count++; };
+  const lease = await f.prepare('native_browser_claim', claimArgs, 'chat-a').run();
+  t.mock.timers.tick(60_000); await untilIo(() => count === 1);
+  // Waiting for an ordinary read also fences the completed renewal ACK.
+  await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run();
+  t.mock.timers.tick(60_001);
+  await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run();
+  assert.ok(Date.now() > lease.expiresAt); assert.ok(count >= 2);
+  await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 1, issuedAt: Date.now(), sessionId: 'chat-b' });
+  await untilIo(() => f.provider.grants.size === 0);
+  const stopped = count; t.mock.timers.tick(60_000);
+  await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run(), { code: 'LEASE_REVOKED' });
+  assert.equal(count, stopped); assert.equal(f.provider.calls.length, 0);
+});
+
+for (const boundary of ['handoff', 'release_all', 'completed', 'unknown-end', 'stop', 'dispose']) {
+  test(`personal keepalive stops at ${boundary} without another claim`, async t => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+    const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+    let count = 0; f.provider.renew = async () => { count++; };
+    const lease = await f.prepare('native_browser_claim', claimArgs).run();
+    if (boundary === 'handoff') await f.prepare('native_browser_handoff', { leaseId: lease.id }).run();
+    else if (boundary === 'release_all') await f.prepare('native_browser_release_all', {}).run();
+    else if (boundary === 'completed') await f.end('session', 'completed');
+    else if (boundary === 'unknown-end') f.end();
+    else if (boundary === 'stop') await f.broker.runtime.providerRevoked('fake-1', lease.id);
+    else f.disposeSession('session');
+    if (!['unknown-end', 'dispose'].includes(boundary)) await f.prepare('native_browser_list', {}).run();
+    t.mock.timers.tick(60_000);
+    await f.prepare('native_browser_list', {}).run();
+    assert.equal(count, 0);
+  });
+}
+test('restricted approval modes keep their original fixed lease expiry', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const f = await fixture(t); let count = 0; f.provider.renew = async () => { count++; };
+  const lease = await f.prepare('native_browser_claim', claimArgs).run();
+  t.mock.timers.tick(120_001);
+  await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }).run(), { code: 'LEASE_REVOKED' });
+  assert.equal(count, 0);
+});
+test('task status preserves an unverified action receipt across reads without replaying input', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const lease = await f.prepare('native_browser_claim', claimArgs).run();
+  f.provider.failAfterDispatch = true;
+  const result = await f.prepare('native_browser_act', { leaseId: lease.id, requestId: 'uncertain-status',
+    documentEpoch: 'doc-1', action: { kind: 'fill', ref: 'node-1', text: 'private-input-must-not-enter-status' } }).run();
+  assert.equal(result.outcome, 'unknown'); assert.equal(f.provider.calls.length, 1);
+  const status = () => f.prepare('native_browser_task', { action: 'status' }).run();
+  let task = await status();
+  assert.equal(task.phase, 'attention'); assert.equal(task.attention, 'verify-result');
+  assert.deepEqual(task.lastResult, { outcome: result.outcome, dispatch: result.dispatch, postcondition: result.postcondition });
+  assert.doesNotMatch(JSON.stringify(task), /private-input|example.test|Fixture/);
+  await f.prepare('native_browser_observe', { leaseId: lease.id }).run();
+  task = await status(); assert.equal(task.phase, 'attention'); assert.equal(task.attention, 'verify-result');
+  assert.equal(f.provider.calls.length, 1);
+  f.provider.failAfterDispatch = false;
+  const verified = await f.prepare('native_browser_act', { leaseId: lease.id, requestId: 'verified-status',
+    documentEpoch: 'doc-1', action: { kind: 'fill', ref: 'node-1', text: 'verified' } }).run();
+  assert.equal(verified.outcome, 'succeeded');
+  task = await status(); assert.equal(task.phase, 'ready'); assert.equal(task.attention, undefined);
+});
+test('task status distinguishes failed postconditions from stale-target recovery', async t => {
+  const f = await fixture(t, { approvalMode: 'personal' }, { accessMode: 'personal' });
+  const lease = await f.prepare('native_browser_claim', claimArgs).run();
+  f.provider.postcondition = 'failed';
+  const result = await f.prepare('native_browser_act', { leaseId: lease.id, requestId: 'failed-condition',
+    documentEpoch: 'doc-1', action: { kind: 'fill', ref: 'node-1', text: 'bounded' } }).run();
+  assert.equal(result.postcondition, 'failed');
+  let task = await f.prepare('native_browser_task', { action: 'status' }).run();
+  assert.equal(task.attention, 'verify-result'); assert.equal(task.lastResult.postcondition, 'failed');
+  f.provider.observe = async () => { throw new BrowserError('STALE_TARGET', 'private-stale-details'); };
+  await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }).run(), { code: 'STALE_TARGET' });
+  task = await f.prepare('native_browser_task', { action: 'status' }).run();
+  assert.equal(task.attention, 'refresh-target'); assert.equal(task.error, 'STALE_TARGET');
+  assert.equal(f.provider.calls.length, 1);
+});
+test('an undispatched stale action requests fresh targets rather than business-result verification', async t => {
+  const f = await fixture(t), lease = await f.prepare('native_browser_claim', claimArgs).run();
+  const result = await f.prepare('native_browser_act', { leaseId: lease.id, requestId: 'stale-no-input',
+    documentEpoch: 'old-document', action: { kind: 'fill', ref: 'node-1', text: 'must-not-type' } }).run();
+  assert.equal(result.dispatch, 'notDispatched'); assert.equal(result.code, 'STALE_TARGET');
+  const task = await f.prepare('native_browser_task', { action: 'status' }).run();
+  assert.equal(task.attention, 'refresh-target'); assert.equal(f.provider.calls.length, 0);
+});
 test('actual client foreground projection unlocks the same visible conversation through authenticated host bridge', async t => {
   const f = await fixture(t); let definition;
   await f.foreground({clientId:'11111111-1111-4111-8111-111111111111',revision:1,issuedAt:Date.now(),sessionId:null});

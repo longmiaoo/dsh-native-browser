@@ -628,6 +628,33 @@ test('new origin, unsupported CDP and expired lease all fail closed', async () =
   assert.equal(f.commands.some(c => c.method === 'Input.insertText'), false);
 });
 
+test('renewal extends only an exact live gate and refreshes feedback without new input', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  const next = { ...f.lease, expiresAt: f.lease.expiresAt + 1000 };
+  const renew = lease => f.call('lease.renew', { lease, previousExpiresAt: f.lease.expiresAt });
+  assert.equal((await f.call('cdp', { lease: next, method: 'Page.getFrameTree', params: {} })).code, 'LEASE_REVOKED');
+  for (const lease of [{ ...next, owner: 'intruder' }, { ...next, id: 'other' }, { ...next, token: 'other' }, { ...next, scope: 'tab' }])
+    assert.equal((await renew(lease)).code, 'LEASE_REVOKED');
+  const renewed = await renew(next);
+  assert.equal(renewed.ok, true); assert.equal(renewed.value.renewed, true); assert.equal(renewed.value.expiresAt, next.expiresAt);
+  assert.ok(f.tabMessages.some(m => m.action === 'activity' && m.expiresAt === next.expiresAt));
+  assert.equal((await renew(next)).code, 'LEASE_REVOKED', 'Duplicate old deadline cannot renew twice');
+  assert.equal((await f.call('cdp', { lease: next, method: 'Page.getFrameTree', params: {} })).ok, true);
+  assert.equal(f.commands.some(c => c.method.startsWith('Input.')), false);
+  await f.ui('stop');
+  assert.equal((await f.call('lease.renew', { lease: { ...next, expiresAt: next.expiresAt + 1000 }, previousExpiresAt: next.expiresAt })).code, 'LEASE_REVOKED');
+});
+
+test('Stop during asynchronous renewal validation cannot reopen the gate', async () => {
+  const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
+  let finish, entered; const started = new Promise(resolve => { entered = resolve; });
+  f.chrome.tabs.get = async () => { entered(); return new Promise(resolve => { finish = () => resolve(f.tab); }); };
+  const pending = f.call('lease.renew', { lease: { ...f.lease, expiresAt: f.lease.expiresAt + 1000 }, previousExpiresAt: f.lease.expiresAt });
+  await started; const stopped = f.ui('stop'); finish();
+  assert.equal((await pending).code, 'LEASE_REVOKED'); await stopped;
+  assert.equal((await f.ui('status')).controlled, false);
+});
+
 test('explicit tab-scoped consent survives HTTP(S) origin changes while exact-origin leases still close', async () => {
   const f = await fixture();
   const personal = { ...f.lease, scope: 'tab' };

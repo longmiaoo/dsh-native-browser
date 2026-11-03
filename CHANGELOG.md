@@ -2,6 +2,14 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.1.9 - 2026-11-03
+
+- Refresh the setup page with clearer connection progress, a return-to-chat action, light/dark themes and narrow-window support. Keep setup and permissions accessible from the same authenticated component.
+- Keep personal-mode control alive during active browser work instead of unconditionally expiring after two minutes. Renew the existing owner/token through the authenticated Broker and live extension gate; recheck current origin, policy, expiry and cancellation. Stop maintenance at turn end, handoff, conversation change, disconnect or disposal, and after ten minutes without browser-tool activity. Never resurrect expired control or retry a failed renewal.
+- Negotiate renewal as an optional capability. Old Brokers/extensions keep the previous fixed deadline; restricted approval modes do not receive automatic renewal. Renewal refreshes the page activity/pointer deadline without extra input or debugger reattachment.
+- Preserve bounded action outcome metadata in task status. Unknown outcomes and failed postconditions request verification; stale targets, control loss and connection problems receive distinct recovery guidance. A successful read alone does not clear an uncertain action receipt, and no input is automatically replayed.
+- Add lifecycle, policy, socket-negotiation and Stop-race regressions, plus real isolated Chrome MV3 renewal/feedback checks. See [continuity implementation notes](docs/browser-continuity.zh-CN.md) for scope and upgrade requirements.
+
 ## 0.1.8 - 2026-11-03
 
 - Fix the Browser sidebar entry disappearing after reload: register its main panel from the slot declaration, without requiring optional Layout lookup while the provider fiber is still loading. Resolve navigation at click time instead.

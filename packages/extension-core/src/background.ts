@@ -15,7 +15,7 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
-import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, wireVersion } from '../../contracts/src/wire.js';
+import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
 type TabConsent = Readonly<{ origin: string; scope: 'tab' }>;
@@ -70,8 +70,9 @@ function checkGate(lease: Lease, signal: AbortSignal): number {
   const id = tabIdOf(lease);
   const gate = gates.get(id), consent = allowed.get(id), scope = lease.scope ?? 'origin';
   const personalGrant = brokerPersonal && scope === 'tab';
-  if (gate?.token !== lease.token || (gate.scope ?? 'origin') !== scope || !personalGrant && !consent
-    || !personalGrant && scope === 'origin' && consent!.origin !== lease.origin || lease.expiresAt <= Date.now()) {
+  if (gate?.token !== lease.token || gate.id !== lease.id || gate.owner !== lease.owner || (gate.scope ?? 'origin') !== scope || !personalGrant && !consent
+    || !personalGrant && scope === 'origin' && consent!.origin !== lease.origin
+    || lease.expiresAt <= Date.now() || gate.expiresAt <= Date.now() || lease.expiresAt > gate.expiresAt) {
     throw new BrowserError('LEASE_REVOKED', 'Local control gate is closed');
   }
   return id;
@@ -277,6 +278,21 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
   if (method === 'lease.revoke') {
     if (gates.get(id)?.token === lease.token) await stop(id, false);
     return { released: true };
+  }
+  if (method === 'lease.renew') {
+    if (Object.keys(p).length !== 2 || !Number.isSafeInteger(p.previousExpiresAt))
+      throw new BrowserError('INVALID_REQUEST', 'Renewal requires the exact previous deadline');
+    const previous = { ...lease, expiresAt: Number(p.previousExpiresAt) };
+    return enqueue(id, async () => {
+      await ensure(previous, signal);
+      const gate = gates.get(id);
+      if (!gate || gate.expiresAt !== previous.expiresAt || lease.expiresAt <= gate.expiresAt)
+        throw new BrowserError('LEASE_REVOKED', 'Renewal is stale or does not extend live control');
+      checkAbort(signal);
+      gates.set(id, lease);
+      sendPointerFeedback(id, { action: 'activity', phase: presentations.get(id)?.phase ?? 'controlled' });
+      return { renewed: true, expiresAt: lease.expiresAt };
+    });
   }
   if (method === 'tabs.activate') {
     if (Object.keys(p).length !== 1) throw new BrowserError('INVALID_REQUEST', 'Tab activation only accepts its lease');
@@ -567,7 +583,7 @@ function connect(): void {
   });
   try {
     current.postMessage(wireMessage({ type: 'request', id: helloId, method: 'hello', params: {
-      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities],
+      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities, leaseRenewalCapability],
       requiredCapabilities: [...providerRequirements],
       instance: { id: instanceId, family: 'chromium', brand: __BROWSER_BRAND__,
         version: navigator.userAgent, profileLabel: 'User-authorized profile' },

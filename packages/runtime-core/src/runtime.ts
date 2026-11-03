@@ -17,7 +17,7 @@ type Entry = {
   controller: AbortController; timer: ReturnType<typeof setTimeout>;
   tail: Promise<void>; queued: number;
 };
-type JournalEntry = { hash: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
+type JournalEntry = { hash: string; leaseId: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
 type Claim = { owner: string; scope: string; instanceId: string; controller: AbortController };
 type LeaseRevocation = Readonly<{ owner: string; scope: string; leaseId: string }>;
 const defaultLimits = { leaseMs: 120_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
@@ -431,7 +431,7 @@ export class BrowserRuntime {
     const entry = this.entry(owner, request.leaseId);
     // Never evict and silently permit a duplicate side effect within this runtime epoch.
     if (this.journal.size >= this.limits.journalSize) throw new BrowserError('JOURNAL_FULL', 'Action journal is full');
-    const record: JournalEntry = { hash };
+    const record: JournalEntry = { hash, leaseId: request.leaseId };
     this.journal.set(key, record);
     const result = execute(entry, frozen, durableKey, hash);
     record.pending = result;
@@ -442,10 +442,20 @@ export class BrowserRuntime {
       // Never retain full page data after authority ended, including during durable settlement.
       try { this.entry(owner, frozen.leaseId); if (!this.closed) this.results.put(key, frozen.leaseId, value); }
       catch { /* Metadata fence remains even if payload caching is unavailable. */ }
+      this.retireIfReleased(key, record);
     }, error => {
       record.failure = errorCode(error); delete record.pending; this.inFlight.delete(result);
+      this.retireIfReleased(key, record);
     });
     return result.then(value => this.deliverAction(owner, frozen.leaseId, value, record.recovery));
+  }
+
+  /** A released lease ID can never be live again, so its settled identities cannot
+   * authorize anything: every later lookup ends in LEASE_REVOKED or durable recovery,
+   * exactly as if the entry were present. Retiring them keeps a long-lived Broker from
+   * reaching JOURNAL_FULL; the durable journal remains the cross-lease replay fence. */
+  private retireIfReleased(key: string, record: JournalEntry): void {
+    if (!record.pending && !this.leases.has(record.leaseId) && this.journal.get(key) === record) this.journal.delete(key);
   }
 
   private actionMetadata(value: ActionResult): RecoveryRecord {
@@ -626,6 +636,7 @@ export class BrowserRuntime {
     if (!entry) return;
     if (entry.lease.owner !== owner) throw new BrowserError('LEASE_REVOKED', 'Lease belongs to another session');
     this.leases.delete(leaseId);
+    for (const [key, record] of this.journal) if (record.leaseId === leaseId) this.retireIfReleased(key, record);
     this.observations.revokeLease(leaseId);
     this.results.revokeLease(leaseId);
     this.tabs.delete(JSON.stringify([entry.lease.instanceId, entry.lease.tab]));

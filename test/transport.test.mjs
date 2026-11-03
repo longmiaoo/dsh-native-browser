@@ -6,6 +6,7 @@ import test from 'node:test';
 import { encodeFrame, FrameDecoder } from '../dist/packages/transport-native/src/framing.js';
 import { RpcPeer } from '../dist/packages/transport-native/src/rpc.js';
 import { BrowserError } from '../dist/packages/contracts/src/index.js';
+import { rememberRequestId, RECENT_REQUEST_IDS } from '../dist/packages/contracts/src/request-ids.js';
 
 test('native framing handles Chinese UTF-8, fragmented headers and coalesced frames', () => {
   const results = [];
@@ -111,4 +112,19 @@ test('RPC malformed partial EOF closes cleanly without uncaught exceptions', asy
   const pending = peer.call('wait', {});
   input.end(Buffer.from([1, 2]));
   await assert.rejects(pending, e => e.code === 'CONNECTION_LOST');
+});
+
+test('a long-lived RPC peer survives more requests than its replay window', async t => {
+  const { client, server } = pair(t); let handled = 0;
+  server.handle(async () => { handled++; return null; });
+  for (let i = 0; i < 10_050; i++) await client.call('work', {});
+  assert.equal(handled, 10_050);
+});
+
+test('recent request IDs stay bounded and never forget an ID that is still executing', () => {
+  const seen = new Set(), live = new Set(['keep']);
+  rememberRequestId(seen, 'keep', live);
+  for (let i = 0; i < RECENT_REQUEST_IDS + 5; i++) rememberRequestId(seen, `id-${i}`, live);
+  assert.equal(seen.size, RECENT_REQUEST_IDS);
+  assert.ok(seen.has('keep')); assert.ok(!seen.has('id-0')); assert.ok(seen.has(`id-${RECENT_REQUEST_IDS + 4}`));
 });

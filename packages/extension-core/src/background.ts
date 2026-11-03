@@ -15,6 +15,7 @@ import { framePageRequest, readFramePage } from '../../provider-chromium/src/fra
 import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium/src/frame-geometry-read.js';
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
+import { rememberRequestId } from '../../contracts/src/request-ids.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
@@ -561,8 +562,8 @@ function connect(): void {
       if (!accepted || m.type === 'event' || m.type === 'response') throw new BrowserError('PROTOCOL_MISMATCH', 'Unexpected message before or after handshake');
       const id = m.id;
       if (m.type === 'cancel') { pending.get(id)?.abort(); return; }
-      if (seen.has(id) || seen.size >= 10000 || pending.size >= 32) throw new Error('Duplicate request or capacity');
-      seen.add(id);
+      if (seen.has(id) || pending.has(id) || pending.size >= 32) throw new Error('Duplicate request or capacity');
+      rememberRequestId(seen, id, pending);
       const controller = new AbortController(); pending.set(id, controller);
       void execute(string(m.method), m.params, controller.signal).then(value => {
         checkAbort(controller.signal);

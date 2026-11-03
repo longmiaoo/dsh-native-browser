@@ -923,3 +923,17 @@ test('an old mouse dispatch settling after Stop and regrant cannot paint into th
   assert.equal(f.tabMessages.filter(m=>m.action==='show').length,0,'Only the matching lease may paint its action');
   await f.ui('stop');
 });
+
+test('extension bridge keeps serving past its request-ID replay window and still rejects live duplicates', async () => {
+  const f = await fixture();
+  await f.call('lease.grant', { lease: f.lease });
+  for (let i = 0; i < 10_050; i++) {
+    const reply = await f.call('dialog.pending', { lease: f.lease });
+    if (!reply.ok) assert.fail(`request ${i + 1} failed: ${reply.code}`);
+  }
+  assert.equal(f.ports.at(-1).disconnected, false);
+  const before = f.sent.length;
+  f.ports.at(-1).onMessage.emit({ type: 'request', id: 'r-10050', method: 'dialog.pending', params: { lease: f.lease } });
+  assert.equal(f.ports.at(-1).disconnected, true, 'a recent duplicate ID is still a protocol violation');
+  assert.equal(f.sent.slice(before).some(m => m.type === 'response' && m.id === 'r-10050'), false);
+});

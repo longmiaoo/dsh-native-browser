@@ -64,7 +64,7 @@ test('payload eviction keeps identity/hash fences and requires fresh observation
   assert.equal(runtime.journalUsage().identities, 2); assert.equal(runtime.journalUsage().results.entries, 1);
   // Structural retention check: settled identity entries hold no fulfilled Promise/page object.
   for (const entry of runtime.journal.values()) {
-    assert.deepEqual(Object.keys(entry).sort(), ['hash', 'recovery']);
+    assert.deepEqual(Object.keys(entry).sort(), ['hash', 'leaseId', 'recovery']);
     assert.equal(JSON.stringify(entry).includes('private-page-text'), false);
   }
 });
@@ -122,5 +122,35 @@ test('rejected execution retains only its stable failure code, not a rejected Pr
   await assert.rejects(runtime.act('owner', invalid, signal()), { code: 'INVALID_REQUEST' });
   assert.throws(() => runtime.act('owner', invalid, signal()), { code: 'INVALID_REQUEST' });
   assert.equal(provider.calls.length, 0); assert.equal(runtime.journalUsage().pending, 0);
-  const entry = [...runtime.journal.values()][0]; assert.deepEqual(Object.keys(entry).sort(), ['failure', 'hash']);
+  const entry = [...runtime.journal.values()][0]; assert.deepEqual(Object.keys(entry).sort(), ['failure', 'hash', 'leaseId']);
+});
+
+test('released leases retire their identity fences so a long-lived runtime never reaches JOURNAL_FULL', async t => {
+  const { runtime, provider, request, lease } = await fixture(t, { journalSize: 2 });
+  await runtime.act('owner', request, signal()); await runtime.act('owner', { ...request, requestId: 'second' }, signal());
+  assert.throws(() => runtime.act('owner', { ...request, requestId: 'third' }, signal()), { code: 'JOURNAL_FULL' });
+  await runtime.release('owner', lease.id);
+  assert.equal(runtime.journalUsage().identities, 0);
+  // The released lease still cannot be used, with or without its retired identity.
+  assert.throws(() => runtime.act('owner', request, signal()), { code: 'LEASE_REVOKED' });
+  for (let round = 0; round < 5; round++) {
+    const next = await runtime.claim('owner', provider.instance.id, provider.tab.id, signal());
+    for (const id of ['a', 'b']) {
+      const result = await runtime.act('owner', { ...request, leaseId: next.id, requestId: `${round}-${id}` }, signal());
+      assert.equal(result.outcome, 'succeeded');
+    }
+    await runtime.release('owner', next.id);
+  }
+  assert.equal(runtime.journalUsage().identities, 0); assert.equal(provider.calls.length, 12);
+});
+
+test('an action still pending at release keeps its fence until it settles, then retires it', async t => {
+  const { runtime, provider, request, lease } = await fixture(t); provider.delay = 20;
+  const first = runtime.act('owner', request, signal()), duplicate = runtime.act('owner', request, signal());
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await runtime.release('owner', lease.id);
+  assert.equal(runtime.journalUsage().identities, 1, 'pending identity survives release');
+  await Promise.allSettled([first, duplicate]);
+  assert.ok(provider.calls.length <= 1, 'the duplicate never executes a second time');
+  assert.equal(runtime.journalUsage().identities, 0);
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import { BrowserError, checkAbort, errorCode } from '../../contracts/src/index.js';
 import { wireMessage } from '../../contracts/src/wire.js';
-import { rememberRequestId } from '../../contracts/src/request-ids.js';
+import { InboundRequests } from '../../contracts/src/request-tracker.js';
 import { encodeFrame, FrameDecoder } from './framing.js';
 
 type Pending = { resolve(value: unknown): void; reject(error: unknown): void; cleanup(): void };
@@ -10,8 +10,7 @@ export type Handler = (method: string, params: unknown, signal: AbortSignal) => 
 
 export class RpcPeer {
   private readonly pending = new Map<string, Pending>();
-  private readonly executing = new Map<string, AbortController>();
-  private readonly seen = new Set<string>();
+  private readonly inbound: InboundRequests;
   private readonly listeners = new Set<(event: string, value: unknown) => void>();
   private readonly closeListeners = new Set<() => void>();
   private closed = false;
@@ -20,6 +19,7 @@ export class RpcPeer {
 
   constructor(private readonly input: Readable, private readonly output: Writable,
     private readonly maxPending = 32) {
+    this.inbound = new InboundRequests(maxPending);
     this.decoder = new FrameDecoder(value => this.receive(value));
     input.on('data', this.onData);
     input.once('end', this.onEnd);
@@ -82,16 +82,14 @@ export class RpcPeer {
       if (m.ok === true) pending.resolve(m.value);
       else pending.reject(new BrowserError(m.code, `Remote browser operation failed (${m.code})`));
     } else if (m.type === 'cancel') {
-      this.executing.get(m.id)?.abort(new BrowserError('CANCELLED', 'Peer cancelled operation'));
+      this.inbound.cancel(m.id, new BrowserError('CANCELLED', 'Peer cancelled operation'));
     } else if (m.type === 'request') {
-      if (this.seen.has(m.id) || this.executing.has(m.id)) throw new Error('Duplicate transport request ID');
-      rememberRequestId(this.seen, m.id, this.executing);
-      if (this.executing.size >= this.maxPending) {
+      const admitted = this.inbound.begin(m.id);
+      if (admitted === 'duplicate') throw new Error('Duplicate transport request ID');
+      if (admitted === 'full') {
         this.send({ type: 'response', id: m.id, ok: false, code: 'QUEUE_FULL' }); return;
       }
-      const controller = new AbortController();
-      this.executing.set(m.id, controller);
-      void this.run(m.id, m.method, m.params, controller);
+      void this.run(m.id, m.method, m.params, admitted);
     } else throw new Error('Invalid RPC message type');
   }
 
@@ -105,7 +103,7 @@ export class RpcPeer {
       if (!this.closed) {
         try { this.send({ type: 'response', id, ok: false, code: errorCode(error) }); } catch { this.close(); }
       }
-    } finally { this.executing.delete(id); }
+    } finally { this.inbound.end(id); }
   }
 
   close(): void {
@@ -113,7 +111,7 @@ export class RpcPeer {
     this.closed = true;
     for (const p of this.pending.values()) { p.cleanup(); p.reject(new BrowserError('CONNECTION_LOST', 'Peer disconnected')); }
     this.pending.clear();
-    for (const controller of this.executing.values()) controller.abort(new BrowserError('CONNECTION_LOST', 'Peer disconnected'));
+    this.inbound.abortAll(new BrowserError('CONNECTION_LOST', 'Peer disconnected'));
     for (const listener of this.closeListeners) { try { listener(); } catch { /* teardown must continue */ } }
     this.closeListeners.clear(); this.listeners.clear();
     this.input.removeListener('data', this.onData);

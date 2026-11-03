@@ -128,3 +128,19 @@ test('recent request IDs stay bounded and never forget an ID that is still execu
   assert.equal(seen.size, RECENT_REQUEST_IDS);
   assert.ok(seen.has('keep')); assert.ok(!seen.has('id-0')); assert.ok(seen.has(`id-${RECENT_REQUEST_IDS + 4}`));
 });
+
+test('InboundRequests rejects replays and overflow, cancels per request and forgets on teardown', async () => {
+  const { InboundRequests } = await import('../dist/packages/contracts/src/request-tracker.js');
+  const tracker = new InboundRequests(2);
+  const a = tracker.begin('a'), b = tracker.begin('b');
+  assert.ok(a instanceof AbortController && b instanceof AbortController);
+  assert.equal(tracker.begin('a'), 'duplicate');
+  assert.equal(tracker.begin('c'), 'full');
+  assert.equal(tracker.begin('c'), 'duplicate'); // A refused ID is still remembered.
+  tracker.cancel('a'); assert.equal(a.signal.aborted, true); assert.equal(b.signal.aborted, false);
+  tracker.end('a'); assert.equal(tracker.size, 1);
+  assert.equal(tracker.begin('a'), 'duplicate'); // Completed IDs stay fenced.
+  tracker.abortAll(undefined, true);
+  assert.equal(b.signal.aborted, true); assert.equal(tracker.size, 0);
+  assert.ok(tracker.begin('a') instanceof AbortController);
+});

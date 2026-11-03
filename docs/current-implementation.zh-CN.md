@@ -73,13 +73,13 @@ flowchart LR
 | 层 | 当前职责 | 主要代码 |
 |---|---|---|
 | DSH Web Client | 监听 Session Controller 的标准当前会话状态；仅在页面可见时通过受信 Connection RPC 上报 opaque session ID；不接触 lease、截图或页面数据 | <code>client.js</code> |
-| DSH Adapter | 注册 13 个独占命名的 <code>native_browser_*</code> 工具；把 DSH session 映射成隔离 owner；在变更动作前接入 ApprovalService；把截图发布为 DSH 可用附件 | <code>packages/dsh-adapter/src/index.ts</code> |
+| DSH Adapter | 注册 13 个独占命名的 <code>native_browser_*</code> 工具；把 DSH session 映射成隔离 owner；在变更动作前接入 ApprovalService；把截图发布为 DSH 可用附件 | <code>packages/dsh-adapter/src/index.ts</code>、<code>approval-policy.ts</code>（审批规则集中处） |
 | Local Broker | Unix socket 本地 RPC、token 握手、连接角色隔离、owner/lease 生命周期、持久化 action journal、Provider 注册 | <code>packages/broker/src/server.ts</code>、<code>ownership.ts</code>、<code>action-journal.ts</code> |
 | Runtime Core | 每标签页串行执行；二次校验 lease/策略；管理批处理、观察、动作、帧与结果状态；统一 fail-closed 语义 | <code>packages/runtime-core/src/runtime.ts</code> |
 | Portable Contracts | 浏览器无关的请求、结果、错误码、能力协商、帧模型、wire 版本和输入校验 | <code>packages/contracts/src/</code> |
-| Chromium Provider | AX 投影、节点 ref 缓存、文档 epoch、精确语义查询、几何和稳定命中、CDP 输入、结果确认、截图 | <code>packages/provider-chromium/src/</code> |
+| Chromium Provider | AX 投影、节点 ref 缓存、文档 epoch、精确语义查询、几何和稳定命中、CDP 输入、结果确认、截图 | <code>packages/provider-chromium/src/</code>（<code>provider.ts</code> 为入口；上传/选择文件/下载/对话框/视觉点击在 <code>interactive-actions.ts</code>；页内函数固定白名单在 <code>page-functions.ts</code>） |
 | Native Host | Chrome Native Messaging 的 framing 和 RPC 桥接 | <code>packages/transport-native/src/host.ts</code>、<code>framing.ts</code>、<code>rpc.ts</code> |
-| MV3 Extension | 启动时握手；受限模式保留 Allow/Stop，显式个人模式可发现普通 HTTP(S) 标签页；<code>chrome.debugger</code> attach；CDP 方法/参数白名单；最后一道 lease 与 tab 检查 | <code>packages/extension-core/src/background.ts</code>、<code>popup.ts</code> |
+| MV3 Extension | 启动时握手；受限模式保留 Allow/Stop，显式个人模式可发现普通 HTTP(S) 标签页；<code>chrome.debugger</code> attach；CDP 方法/参数白名单；最后一道 lease 与 tab 检查 | <code>packages/extension-core/src/background.ts</code>、<code>cdp-guard.ts</code>（CDP 方法/参数白名单）、<code>presenter.ts</code>（指针与活动反馈）、<code>popup.ts</code> |
 | Installer | 安装/诊断/卸载 Native Host manifest 和扩展产物；检查目录所有权与权限 | <code>packages/installer/src/</code> |
 | Vision Adapter | 截图几何、候选 grounding、截图附件生命周期；为 <code>dsh-vision-router</code> 等视觉能力提供输入 | <code>packages/vision-adapter/src/</code> |
 
@@ -487,14 +487,14 @@ flowchart TD
 2. <code>packages/dsh-adapter/src/index.ts</code>：DSH 工具入口与审批边界；
 3. <code>packages/broker/src/server.ts</code>：RPC、角色、owner、Provider 注册；
 4. <code>packages/runtime-core/src/runtime.ts</code>：lease、串行化、observe/act/batch 状态机；
-5. <code>packages/provider-chromium/src/provider.ts</code>：AX refs、动作执行与结果验证；
+5. <code>packages/provider-chromium/src/provider.ts</code>：AX refs、动作执行与结果验证；<code>interactive-actions.ts</code>：上传、文件选择、下载、对话框与视觉点击；
 6. <code>packages/provider-chromium/src/actionability.ts</code>：几何与命中检查；
 7. <code>packages/provider-chromium/src/ax-pager.ts</code>：single-use continuation；
 8. <code>packages/provider-chromium/src/frame-sessions.ts</code>：frame/session/context 图；
 9. <code>packages/provider-chromium/src/frame-node-scope.ts</code>：child document/root identity fence；
 10. <code>packages/provider-chromium/src/frame-page.ts</code>：child page-window 读取；
 11. <code>packages/provider-chromium/src/frame-text.ts</code>：大型 child document 的定向文本 postcondition；
-12. <code>packages/extension-core/src/background.ts</code>：最后一公里 CDP 网关；
+12. <code>packages/extension-core/src/background.ts</code>：最后一公里 CDP 网关，其中 <code>cdp-guard.ts</code> 负责命令白名单，<code>presenter.ts</code> 负责页面反馈；
 13. <code>packages/broker/src/action-journal.ts</code>：防重复副作用；
 14. <code>scripts/smoke-native.mjs</code> 与 <code>scripts/smoke-frame-page-native.mjs</code>：完整链路证据与尾页回归。
 

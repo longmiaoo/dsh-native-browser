@@ -334,3 +334,12 @@ test('concurrent Broker shutdown callers share the same drain and close', async 
   const first = broker.close(), second = broker.close();
   assert.equal(first, second); await first; await broker.close();
 });
+
+test('tab inventory hides query strings and fragments that may carry tokens', async t => {
+  const { broker, client } = await environment(t, [], { accessMode: 'personal' });
+  const provider = new FakeProvider(); broker.runtime.register(provider);
+  provider.tab.url = 'https://example.test/oauth/callback?code=secret-code&state=x#access_token=secret-token';
+  const [tab] = await client.call('browser.tabs', { sessionId: 's', instanceId: 'fake-1' });
+  assert.equal(tab.url, 'https://example.test/oauth/callback');
+  assert.equal(JSON.stringify(tab).includes('secret'), false);
+});

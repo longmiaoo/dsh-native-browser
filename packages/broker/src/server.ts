@@ -17,6 +17,13 @@ function authenticate(supplied: unknown, actual: string): void {
   if (typeof supplied !== 'string' || supplied.length !== actual.length ||
     !timingSafeEqual(Buffer.from(supplied), Buffer.from(actual))) throw new BrowserError('POLICY_DENIED', 'Authentication failed');
 }
+/** The tab inventory lists pages the user opened, including ones never claimed.
+ * Query strings and fragments routinely carry OAuth codes, reset links and session
+ * tokens, so the model sees only origin + path until it claims a tab. */
+function inventoryUrl(url: string): string {
+  try { const parsed = new URL(url); return parsed.search || parsed.hash ? parsed.origin + parsed.pathname : url; }
+  catch { return url; }
+}
 function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
   const v = record(raw);
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
@@ -119,7 +126,8 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
       if (method === 'browser.instances') return runtime.instances();
       const owner = JSON.stringify([connection, string(p.sessionId)]);
       if (method === 'browser.tabs') return (await runtime.listTabs(string(p.instanceId), signal))
-        .filter(tab => { try { return personal || allowed.has(originOf(tab.url)); } catch { return false; } });
+        .filter(tab => { try { return personal || allowed.has(originOf(tab.url)); } catch { return false; } })
+        .map(tab => ({ ...tab, url: inventoryUrl(tab.url) }));
       if (method === 'browser.claim') {
         return runtime.claim(owner, string(p.instanceId), string(p.tab), signal, connection);
       }

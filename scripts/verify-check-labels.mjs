@@ -47,15 +47,20 @@ export async function verifyCheckLabels({ page, observe, act }) {
     assert.equal((await act('label-hidden-fallback',{kind:'check',ref:ref('滚动原始输入'),checked:true})).outcome,'succeeded');
     assert.equal(await page.locator('#label-input-fallback').isChecked(),true);
     assert.ok((await page.evaluate(()=>window.checkLabelEvents)).every(e=>e.trusted));
-    // Trigger a reassociation during label geometry, while the input's explicit
-    // aria-label preserves its AX name. A matching AX name alone is insufficient.
-    await page.locator('#label-surface').evaluate(label=>{
-      const rects=label.getClientRects.bind(label);
-      label.getClientRects=()=>{label.htmlFor='label-wrapped';return rects();};
+    // Trigger a reassociation while the provider waits on label geometry. Checks run in an isolated world, so the page
+    // cannot patch the provider's calls; the label sits below the fold and the provider's scroll to reach it fires a
+    // page handler that points the label at another input. The input's explicit aria-label keeps its AX name.
+    await page.evaluate(()=>{
+      const box=document.createElement('div');box.id='label-race-scroll';box.style.cssText='height:70px;overflow:auto';
+      box.innerHTML='<div style="height:260px"></div><input id="label-race" aria-label="竞态复选框" type="checkbox" style="opacity:0;width:24px;height:24px"><input id="label-race-other" aria-label="竞态其他" type="checkbox" style="opacity:0;width:24px;height:24px"><label id="label-race-surface" for="label-race" style="display:block;padding:12px">竞态标签</label><div style="height:160px"></div>';
+      document.getElementById('check-label-fixture').append(box);
+      box.addEventListener('scroll',()=>{document.getElementById('label-race-surface').htmlFor='label-race-other';},{once:true});
     });
+    const raced=(await observe()).nodes.find(n=>n.role==='checkbox'&&n.name==='竞态复选框');assert.ok(raced);
     const before=await page.evaluate(()=>window.checkLabelEvents);
-    const stale=await act('label-reassociated',action);
-    assert.equal(stale.code,'STALE_TARGET'); assert.equal(stale.dispatch,'notDispatched');
+    const stale=await act('label-reassociated',{kind:'check',ref:raced.id,checked:true});
+    assert.equal(stale.code,'STALE_TARGET');
+    assert.equal(await page.locator('#label-race').isChecked(),false);
     assert.deepEqual(await page.evaluate(()=>window.checkLabelEvents),before);
     return ['Transparent native input uses its explicit label with trusted activation, no-op and deduplication',
       'Wrapped checkbox label toggles the input without clicking nested independent controls',

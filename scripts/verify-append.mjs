@@ -58,9 +58,13 @@ export async function verifyAppend({ page, observe, act }) {
     assert.equal(await page.locator('#append-race').inputValue(),'页面刚刚更新');
     assert.deepEqual(await events(),refusedBefore);
     // Collapse to the WRONG end after the selection operation, keeping the same focus.
+    // Checks run in an isolated world, so patching the element's own methods is invisible to them. A page can still
+    // move the caret through shared DOM events: blur the field, then collapse the caret to the front in a microtask
+    // queued by the focus event, i.e. right after the provider's own move to the end. The final position read must catch it.
     await page.locator('#append-race').evaluate(e=>{
-      const original=e.setSelectionRange.bind(e);
-      e.setSelectionRange=(...args)=>{original(...args);original(0,0);delete e.setSelectionRange;};
+      const original=HTMLInputElement.prototype.setSelectionRange;
+      e.blur(); original.call(e,0,0);
+      e.addEventListener('focus',()=>queueMicrotask(()=>original.call(e,0,0)),{once:true});
     });
     const caret=await act('append-caret-race',append('追加竞态','不能插前面'));
     assert.equal(caret.code,'NOT_ACTIONABLE');assert.equal(caret.outcome,'unknown');

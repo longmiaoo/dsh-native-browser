@@ -107,7 +107,7 @@ The host must write protocol frames only to stdout; logs go to stderr. Install/u
 
 ### Chrome extension
 
-The extension is Manifest V3 and uses a service worker. Its global memory is disposable by design. Durable connection and lease metadata lives in `chrome.storage.session` or the native runtime; every event handler must be able to reconstruct state after service-worker restart.
+The extension is Manifest V3 and uses a service worker. Its global memory is disposable by design. The current implementation keeps no state in `chrome.storage`: lease and gate metadata lives only in the worker's memory and the Broker. If Chrome restarts the service worker, the extension reconnects to the native host and starts with no leases, so every in-flight tab operation fails closed (the Broker must grant a new lease) rather than resuming with reconstructed state.
 
 The extension uses:
 

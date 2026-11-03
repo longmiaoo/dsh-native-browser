@@ -16,7 +16,7 @@ import { frameGeometryRequest, readFrameGeometry } from '../../provider-chromium
 import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame-click.js';
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
 import { pageFunctions } from '../../provider-chromium/src/page-functions.js';
-import { rememberRequestId } from '../../contracts/src/request-ids.js';
+import { InboundRequests } from '../../contracts/src/request-tracker.js';
 import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
@@ -561,14 +561,13 @@ function connect(): void {
   const current = chrome.runtime.connectNative(HOST);
   port = current; status = 'Connecting';
   const helloId = crypto.randomUUID();
-  const pending = new Map<string, AbortController>(), seen = new Set<string>();
+  const inbound = new InboundRequests();
   let accepted = false, closed = false;
   const teardown = (message: string) => {
     if (closed) return;
     closed = true;
     clearTimeout(helloTimer);
-    for (const controller of pending.values()) controller.abort();
-    pending.clear(); seen.clear();
+    inbound.abortAll(undefined, true);
     if (port === current) {
       pager.clear(); brokerPersonal = false;
       port = undefined; status = message;
@@ -595,10 +594,9 @@ function connect(): void {
       }
       if (!accepted || m.type === 'event' || m.type === 'response') throw new BrowserError('PROTOCOL_MISMATCH', 'Unexpected message before or after handshake');
       const id = m.id;
-      if (m.type === 'cancel') { pending.get(id)?.abort(); return; }
-      if (seen.has(id) || pending.has(id) || pending.size >= 32) throw new Error('Duplicate request or capacity');
-      rememberRequestId(seen, id, pending);
-      const controller = new AbortController(); pending.set(id, controller);
+      if (m.type === 'cancel') { inbound.cancel(id); return; }
+      const controller = inbound.begin(id);
+      if (typeof controller === 'string') throw new Error('Duplicate request or capacity');
       void execute(string(m.method), m.params, controller.signal).then(value => {
         checkAbort(controller.signal);
         if (port !== current) throw new BrowserError('CONNECTION_LOST', 'Connection changed');
@@ -609,7 +607,7 @@ function connect(): void {
         current.postMessage(response);
       }).catch(error => {
         try { current.postMessage({ type: 'response', id, ok: false, code: errorCode(error) }); } catch {}
-      }).finally(() => pending.delete(id));
+      }).finally(() => inbound.end(id));
     } catch { disconnect('Handshake or message rejected: PROTOCOL_MISMATCH'); }
   });
   current.onDisconnect.addListener(() => {

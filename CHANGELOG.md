@@ -2,6 +2,10 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.2.2 - 2026-11-04
+
+- Fix: `native_browser_screenshot` was denied on pages that carry a hidden (`display:none`, detached or otherwise unrendered) cross-origin iframe, such as xiaohongshu.com. A frame is now skipped only when `DOM.getContentQuads` positively reports no rendered area; any other geometry failure still denies the capture. Thanks to @wiaoo (#1).
+
 ## 0.2.1 - 2026-11-04
 
 - **Smoother by default:** the model can now open and navigate to any HTTP(S) address, including localhost and private-network addresses; the previous private-address blocking is removed. Page-driven access to local or intranet services is therefore no longer mitigated by the plugin.

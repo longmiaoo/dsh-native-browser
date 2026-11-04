@@ -2,7 +2,7 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.2.1 - 2026-11-04
 
 - **Smoother by default:** the model can now open and navigate to any HTTP(S) address, including localhost and private-network addresses; the previous private-address blocking is removed. Page-driven access to local or intranet services is therefore no longer mitigated by the plugin.
 - The default lease is now five minutes (personal mode still renews it automatically). **Upgrade note:** reload the extension and restart the Broker together; an old extension rejects deadlines more than five minutes ahead.

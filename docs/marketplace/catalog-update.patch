@@ -6,5 +6,5 @@
  description:
 -  en: Controls user-authorized Chrome tabs from DeepSeek Harness through a local native-messaging broker, with semantic page reads, actions, screenshots, and explicit handoff.
 -  zh: 通过本地原生消息 Broker，让 DeepSeek Harness 操作用户明确授权的 Chrome 标签页，支持语义化页面读取、交互、截图与显式交接。
-+  en: "Native Chrome control for DSH, inspired by Codex browser workflows, with smooth virtual-cursor feedback, existing sign-in sessions, semantic page reads, form filling, screenshots and handoff; setup from the Browser sidebar."
-+  zh: "DSH 原生浏览器操作，以 Codex 浏览器工作流为体验参考：平滑虚拟鼠标让操作更丝滑，复用 Chrome 登录状态，支持页面读取、填表、截图与控制交还；安装后从侧栏「浏览器」完成配置。"
++  en: "Browser plugin for DSH (浏览器): Codex-style native browser control in your signed-in Chrome, with smooth virtual-cursor feedback, semantic page reads, form filling, screenshots and handoff; setup from the Browser sidebar."
++  zh: "DSH 浏览器插件（Browser）：以 Codex 浏览器操作为体验参考，直接使用已登录的 Chrome 浏览器，平滑虚拟鼠标，支持页面读取、填表、截图与控制交还；安装后从侧栏「浏览器」完成配置。"

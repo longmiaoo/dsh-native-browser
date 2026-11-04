@@ -2,6 +2,10 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- Rewrite the package and marketplace descriptions to include 浏览器 / Browser / Codex so the plugin ranks higher for those searches; add `codex`, `browser` and `浏览器` keywords.
+
 ## 0.2.0 - 2026-11-04
 
 - The Browser setup page now shows the plugin version next to the title.

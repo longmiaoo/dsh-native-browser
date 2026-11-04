@@ -1,7 +1,7 @@
 {
   "name": "dsh-native-browser",
   "version": "0.2.0",
-  "description": "DSH 原生浏览器操作：以 Codex 工作流为体验参考，平滑虚拟鼠标、复用 Chrome 登录状态、页面读取、填表与截图。安装后点侧栏「浏览器」连接 Chrome。欢迎 Star 与参与共创。",
+  "description": "DSH 浏览器插件（Browser）：以 Codex 浏览器操作为体验参考，直接使用你已登录的 Chrome 浏览器，平滑虚拟鼠标、页面读取、填表与截图。安装后点侧栏「浏览器」连接 Chrome。欢迎 Star 与参与共创。",
   "type": "module",
   "main": "index.js",
   "types": "./dist/packages/dsh-adapter/src/index.d.ts",
@@ -81,7 +81,10 @@
     "human-in-the-loop",
     "native-browser",
     "virtual-cursor",
-    "codex-inspired"
+    "codex-inspired",
+    "codex",
+    "browser",
+    "浏览器"
   ],
   "author": "longmiaoo",
   "license": "MIT",

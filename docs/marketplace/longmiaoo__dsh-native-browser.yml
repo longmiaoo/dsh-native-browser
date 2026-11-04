@@ -3,5 +3,5 @@ name: longmiaoo/dsh-native-browser
 category: browser
 icon: https://raw.githubusercontent.com/longmiaoo/dsh-native-browser/main/assets/icon-180.png
 description:
-  en: "Native Chrome control for DSH, inspired by Codex browser workflows, with smooth virtual-cursor feedback, existing sign-in sessions, semantic page reads, form filling, screenshots and handoff; setup from the Browser sidebar."
-  zh: "DSH 原生浏览器操作，以 Codex 浏览器工作流为体验参考：平滑虚拟鼠标让操作更丝滑，复用 Chrome 登录状态，支持页面读取、填表、截图与控制交还；安装后从侧栏「浏览器」完成配置。"
+  en: "Browser plugin for DSH (浏览器): Codex-style native browser control in your signed-in Chrome, with smooth virtual-cursor feedback, semantic page reads, form filling, screenshots and handoff; setup from the Browser sidebar."
+  zh: "DSH 浏览器插件（Browser）：以 Codex 浏览器操作为体验参考，直接使用已登录的 Chrome 浏览器，平滑虚拟鼠标，支持页面读取、填表、截图与控制交还；安装后从侧栏「浏览器」完成配置。"

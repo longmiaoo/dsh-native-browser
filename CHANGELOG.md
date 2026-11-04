@@ -2,12 +2,9 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
-
-- Rewrite the package and marketplace descriptions to include 浏览器 / Browser / Codex so the plugin ranks higher for those searches; add `codex`, `browser` and `浏览器` keywords.
-
 ## 0.2.0 - 2026-11-04
 
+- Rewrite the package and marketplace descriptions to include 浏览器 / Browser / Codex so the plugin ranks higher for those searches; add `codex`, `browser` and `浏览器` keywords.
 - The Browser setup page now shows the plugin version next to the title.
 - Fix rich-text (`contenteditable`) fill and append being denied with `POLICY_DENIED` by the extension: the page function embedded `editableText.toString()`, which differs between the Broker's tsc output and the extension's esbuild bundle, so the extension's exact-match allowlist rejected it. The reader is now one fixed source string shared by both builds.
 - **Internal:** shorten the public tool schemas without dropping any validation rule: `act` and `batch` now share one action/expectation schema via `$defs`, and several tool descriptions are condensed (total schema text about 39k → 24k characters). Accepted and rejected inputs are unchanged.

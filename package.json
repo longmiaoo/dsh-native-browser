@@ -1,6 +1,6 @@
 {
   "name": "dsh-native-browser",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "DSH 原生浏览器操作：以 Codex 工作流为体验参考，平滑虚拟鼠标、复用 Chrome 登录状态、页面读取、填表与截图。安装后点侧栏「浏览器」连接 Chrome。欢迎 Star 与参与共创。",
   "type": "module",
   "main": "index.js",

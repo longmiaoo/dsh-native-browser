@@ -2,13 +2,17 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
-## Unreleased
+## 0.2.0 - 2026-11-04
 
 - The Browser setup page now shows the plugin version next to the title.
 - Fix rich-text (`contenteditable`) fill and append being denied with `POLICY_DENIED` by the extension: the page function embedded `editableText.toString()`, which differs between the Broker's tsc output and the extension's esbuild bundle, so the extension's exact-match allowlist rejected it. The reader is now one fixed source string shared by both builds.
 - **Internal:** shorten the public tool schemas without dropping any validation rule: `act` and `batch` now share one action/expectation schema via `$defs`, and several tool descriptions are condensed (total schema text about 39k → 24k characters). Accepted and rejected inputs are unchanged.
 - **Internal:** split large modules without behavior change: the extension's CDP command guard (`cdp-guard.ts`) and pointer/activity feedback (`presenter.ts`) leave `background.ts`; upload, file chooser, download, dialog and visual-click actions move to `interactive-actions.ts`; Broker/extension inbound request tracking is shared in `request-tracker.ts`; adapter approval rules are centralized in `approval-policy.ts`.
 - **Docs:** `architecture.md` now states that the MV3 service worker keeps no state in `chrome.storage`; a worker restart drops leases and fails closed.
+- **Security:** the tab inventory hides query strings and fragments, and the model can no longer open or navigate a public page to local or private-network addresses.
+- **Security:** page-state checks run in an isolated world so a page cannot forge their results, and the extension runs only a fixed, reviewed set of page functions in the root session.
+- **Security:** only downloads attributed to an armed lease are reported.
+- Fix: a Broker whose startup fails now refuses peers that connect in the meantime.
 - **Security:** file upload, file chooser and download now ask the user for each call in every approval mode, including the default personal mode; the prompt lists the exact local paths. Without a DSH approval service they are refused. Batches no longer accept these actions.
 - **Security:** the Broker only uploads existing, non-hidden regular files inside allowed folders (default `~/Downloads`, `~/Desktop`, `~/Documents`). Symlinks are resolved first, and the Broker's runtime directory is always excluded. Add folders with `--upload-root=/absolute/path` on `broker` or `install`.
 - **Security:** the action journal is now authenticated with a key derived (HKDF-SHA256) from the local token rather than the token itself, so the credential that peers present no longer doubles as the journal's integrity key. **Upgrade note:** the existing `action-journal.jsonl` cannot be verified under the new key and is deleted on first start; its up-to-24-hour replay protection is lost once, and the new journal is `action-journal.v2.jsonl`.

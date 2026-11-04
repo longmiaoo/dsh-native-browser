@@ -7,6 +7,7 @@ import { radioBindingFunction, radioBindingCheckFunction } from '../dist/package
 import { editableFunction } from '../dist/packages/provider-chromium/src/editable.js';
 import { nativeTextFunction } from '../dist/packages/provider-chromium/src/text-input.js';
 import { elementStateFunction } from '../dist/packages/provider-chromium/src/element-state.js';
+import { settleFrameFunction } from '../dist/packages/provider-chromium/src/actionability.js';
 const instance = { id: 'chromium-test', family: 'chromium', brand: 'chrome', version: 'test', profileLabel: 'test', capabilities: { ax: true } };
 const lease = { id: 'lease', owner: 'owner', tab: 'tab', instanceId: instance.id, token: 'token', origin: 'https://example.test', expiresAt: Date.now() + 100000 };
 function fixture() {
@@ -717,6 +718,23 @@ test('temporary cover waits; an event during a predicate is not lost; input is s
   assert.equal(result.postcondition, 'passed');
   assert.equal(f.state.commands.filter(m => m === 'Input.insertText').length, 1);
   assert.equal(f.listeners.size, 0);
+});
+
+test('a scroll-triggered identity change settles before any click input', async () => {
+  const f = fixture(), o = await f.provider.observe(lease, f.execution.signal);
+  f.state.inViewport = false;
+  let scrolled = false;
+  f.state.onCommand = async (method, p) => {
+    if (method === 'DOM.scrollIntoViewIfNeeded') {
+      scrolled = true; f.state.inViewport = true; return {};
+    }
+    if (method === 'Runtime.callFunctionOn' && p.functionDeclaration === settleFrameFunction && scrolled) {
+      f.state.name = 'Changed by scroll';
+      return { result: { value: true } };
+    }
+  };
+  await assert.rejects(f.provider.act(lease, request(o, { kind: 'click', ref: o.nodes[0].id }), f.execution), e => e.code === 'STALE_TARGET');
+  assert.equal(f.state.commands.filter(m => m === 'Input.dispatchMouseEvent').length, 0);
 });
 
 test('offscreen input is scrolled once and empty fill uses real Backspace', async () => {

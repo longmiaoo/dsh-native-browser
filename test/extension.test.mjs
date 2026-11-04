@@ -1010,8 +1010,9 @@ test('isolated worlds are created only in the leased root document with a fixed 
 });
 
 test('root-session callFunctionOn only runs the fixed page functions with plain arguments', async () => {
-  const [{ checkedFunction }, { scrollByFunction }] = await Promise.all([
-    import('../dist/packages/provider-chromium/src/checked.js'), import('../dist/packages/provider-chromium/src/scroll.js')]);
+  const [{ checkedFunction }, { scrollByFunction }, { settleFrameFunction }] = await Promise.all([
+    import('../dist/packages/provider-chromium/src/checked.js'), import('../dist/packages/provider-chromium/src/scroll.js'),
+    import('../dist/packages/provider-chromium/src/actionability.js')]);
   const f = await fixture(); await f.call('lease.grant', { lease: f.lease });
   const call = params => f.call('cdp', { lease: f.lease, method: 'Runtime.callFunctionOn', params });
   const ok = { objectId: 'o1', returnByValue: true };
@@ -1020,6 +1021,8 @@ test('root-session callFunctionOn only runs the fixed page functions with plain 
   assert.equal((await call({ ...ok, functionDeclaration: 'function(){return fetch("https://evil.test")}' })).code, 'POLICY_DENIED');
   assert.equal((await call({ ...ok, functionDeclaration: checkedFunction + ' ' })).code, 'POLICY_DENIED');
   assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, awaitPromise: true })).code, 'POLICY_DENIED');
+  assert.equal((await call({ ...ok, functionDeclaration: settleFrameFunction, awaitPromise: true })).ok, true);
+  assert.equal((await call({ ...ok, functionDeclaration: settleFrameFunction, awaitPromise: 'yes' })).code, 'POLICY_DENIED');
   assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, executionContextId: 1 })).code, 'POLICY_DENIED');
   assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ value: { a: 1 } }] })).code, 'POLICY_DENIED');
   assert.equal((await call({ ...ok, functionDeclaration: checkedFunction, arguments: [{ unserializableValue: 'NaN' }] })).code, 'POLICY_DENIED');

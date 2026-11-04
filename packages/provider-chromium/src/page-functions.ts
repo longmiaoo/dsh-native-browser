@@ -1,4 +1,4 @@
-import { geometryFunction } from './actionability.js';
+import { geometryFunction, settleFrameFunction } from './actionability.js';
 import { checkedFunction, checkedLabelFunction, checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction } from './checked.js';
 import { editableFunction } from './editable.js';
 import { elementStateFunction } from './element-state.js';
@@ -41,6 +41,6 @@ export const uploadInputFunction = 'function(){return this instanceof HTMLInputE
 export const nodeAttachedFunction = 'function(){return this.isConnected===true&&this.ownerDocument===document;}';
 
 export const pageFunctions: ReadonlySet<string> = new Set([geometryFunction, checkedFunction, checkedLabelFunction,
-  checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction, editableFunction, elementStateFunction,
+  checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction, editableFunction, elementStateFunction, settleFrameFunction,
   scrollByFunction, scrollStateFunction, nativeTextFunction, valueFunction, selectFunction, focusFunction, focusStateFunction,
   visualHitFunction, uploadInputFunction, nodeAttachedFunction]);

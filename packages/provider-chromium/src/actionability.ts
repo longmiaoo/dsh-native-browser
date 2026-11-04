@@ -58,6 +58,11 @@ export const geometryFunction = `function(preferred) {
   return base;
 }`;
 
+// One renderer frame after scrolling lets queued scroll handlers settle before the final checks.
+export const settleFrameFunction = `function() {
+  return new Promise(resolve => requestAnimationFrame(() => resolve(this.isConnected === true)));
+}`;
+
 export function sameGeometry(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
   return ['x', 'y', 'left', 'top', 'width', 'height'].every(key =>
     typeof a[key] === 'number' && Number.isFinite(a[key]) && typeof b[key] === 'number' && Number.isFinite(b[key])

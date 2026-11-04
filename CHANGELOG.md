@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.2.3 - 2026-11-04
+
+- Fix a scroll-triggered race in `check`: when an offscreen radio's scroll handler changed its form/name/value on the next frame, the provider could dispatch the click before observing that change. It now waits one rendered frame after scrolling before the final identity and binding checks. This was exposed by the 0.2.2 CI run before publishing; the same commit still includes the hidden cross-origin screenshot fix below.
+- **Release note:** tag `v0.2.2` was created but the publish was blocked because that commit's CI failed in this race test. No `0.2.2` package was published; use `0.2.3`.
+
 ## 0.2.2 - 2026-11-04
 
 - Fix: `native_browser_screenshot` was denied on pages that carry a hidden (`display:none`, detached or otherwise unrendered) cross-origin iframe, such as xiaohongshu.com. A frame is now skipped only when `DOM.getContentQuads` positively reports no rendered area; any other geometry failure still denies the capture. Thanks to @wiaoo (#1).

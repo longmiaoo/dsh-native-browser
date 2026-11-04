@@ -12,7 +12,7 @@ import { wheelEvent } from './mouse.js';
 import { scrollMoved, scrollMovedAsRequested } from '../../contracts/src/scrolling.js';
 import { checkedScrollPosition, sameScrollPosition, scrollByFunction, scrollStateFunction } from './scroll.js';
 import { checkedFunction, checkedValue, checkedLabelFunction, checkedLabelBindingFunction, radioBindingFunction, radioBindingCheckFunction } from './checked.js';
-import { geometryFunction, sameGeometry } from './actionability.js';
+import { geometryFunction, sameGeometry, settleFrameFunction } from './actionability.js';
 import { valueFunction, selectFunction, focusFunction, focusStateFunction, visualHitFunction, uploadInputFunction, nodeAttachedFunction } from './page-functions.js';
 import { editableFunction } from './editable.js';
 import { nativeTextFunction } from './text-input.js';
@@ -742,6 +742,10 @@ export class ChromiumProvider implements BrowserProvider {
         if (next.inViewport === false && !scrolled) {
           scrolled = true; execution.onDispatch();
           await this.cdp(lease, 'DOM.scrollIntoViewIfNeeded', delegatedLabel ? { objectId: delegatedLabel } : { backendNodeId: current.backendId }, signal);
+          // The scroll event is queued by the renderer and may only run on the next frame. Give pages that
+          // react to it one frame before any final identity/binding check or input dispatch.
+          await this.cdp(lease, 'Runtime.callFunctionOn', { objectId: pointerObject,
+            functionDeclaration: settleFrameFunction, awaitPromise: true, returnByValue: true }, signal);
           previous = undefined; return undefined;
         }
         if (!next.ok) { previous = undefined; return undefined; }

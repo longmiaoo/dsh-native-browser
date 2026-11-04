@@ -3,6 +3,7 @@ import { record, string, uploadFile } from '../../contracts/src/validation.js';
 import { allowedKeyEvent } from '../../provider-chromium/src/keyboard.js';
 import { allowedMouseEvent } from '../../provider-chromium/src/mouse.js';
 import { pageFunctions } from '../../provider-chromium/src/page-functions.js';
+import { settleFrameFunction } from '../../provider-chromium/src/actionability.js';
 
 /** The only CDP methods the extension will forward for a leased root session. */
 export const cdpMethods = new Set(['Page.getFrameTree', 'DOM.resolveNode', 'DOM.getDocument',
@@ -45,10 +46,11 @@ export function checkCdpCommand(command: string, params: Record<string, unknown>
   if (command === 'Runtime.callFunctionOn') {
     // Root-session calls run only the fixed, reviewed functions; arguments are plain values or object handles.
     const args = params.arguments;
-    if (Object.keys(params).some(key => !['objectId', 'functionDeclaration', 'arguments', 'returnByValue'].includes(key))
+    if (Object.keys(params).some(key => !['objectId', 'functionDeclaration', 'arguments', 'returnByValue', 'awaitPromise'].includes(key))
       || typeof params.objectId !== 'string' || !params.objectId || params.objectId.length > 4096
       || typeof params.functionDeclaration !== 'string' || !pageFunctions.has(params.functionDeclaration)
       || params.returnByValue !== undefined && typeof params.returnByValue !== 'boolean'
+      || params.awaitPromise !== undefined && (typeof params.awaitPromise !== 'boolean' || params.awaitPromise === true && params.functionDeclaration !== settleFrameFunction)
       || args !== undefined && (!Array.isArray(args) || args.length > 4 || args.some(arg => {
         const a = record(arg), keys = Object.keys(a);
         return keys.length !== 1 || (keys[0] === 'objectId' ? typeof a.objectId !== 'string' || !a.objectId || a.objectId.length > 4096

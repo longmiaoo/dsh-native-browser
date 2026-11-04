@@ -4,8 +4,8 @@ import { toolNeedsPrompt, batchStepNeedsPrompt, fileActionNeedsExtraPrompt, file
 
 const modes = ['per-action', 'per-lease', 'trusted', 'personal'];
 
-test('invariant: a local-file action is prompted in every approval mode', () => {
-  assert.deepEqual([...fileActionKinds].sort(), ['choose', 'download', 'upload']);
+test('invariant: an upload or file-chooser action is prompted in every approval mode (download is not)', () => {
+  assert.deepEqual([...fileActionKinds].sort(), ['choose', 'upload']);
   for (const mode of modes) {
     // Either the enclosing act call is prompted up front, or the adapter prompts for the file action itself.
     assert.equal(toolNeedsPrompt(mode, 'act') || fileActionNeedsExtraPrompt(mode), true, mode);

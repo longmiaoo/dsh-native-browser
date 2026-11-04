@@ -137,7 +137,7 @@ function receive(raw: unknown): void {
     if (m.revision >= Math.max(state.pointerRevision, state.activityRevision)) remove();
     return;
   }
-  if (!Number.isSafeInteger(m.expiresAt) || m.expiresAt <= Date.now() || m.expiresAt > Date.now() + 5 * 60_000) return;
+  if (!Number.isSafeInteger(m.expiresAt) || m.expiresAt <= Date.now() || m.expiresAt > Date.now() + 10 * 60_000) return;
   if (m.action === 'activity') {
     if (m.revision < state.activityRevision || !Object.hasOwn(activityLabels, m.phase)) return;
     state.activityRevision = m.revision; clearTimeout(state.idle);

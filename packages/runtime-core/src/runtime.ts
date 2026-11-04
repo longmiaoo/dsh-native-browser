@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  BrowserError, checkAbort, errorCode, isPrivateHost, originOf,
+  BrowserError, checkAbort, errorCode, originOf,
   type ActionRequest, type ActionResult, type BatchRequest, type BatchResult, type BatchStepResult, type ApproveBatchStep, type Authorize, type BrowserProvider,
   type Lease, type FullObservation, type ObserveOptions, type ObservationUpdate, type TabSummary, type ErrorCode,
 } from '../../contracts/src/index.js';
@@ -20,7 +20,9 @@ type Entry = {
 type JournalEntry = { hash: string; leaseId: string; pending?: Promise<ActionResult>; recovery?: RecoveryRecord; failure?: ErrorCode };
 type Claim = { owner: string; scope: string; instanceId: string; controller: AbortController };
 type LeaseRevocation = Readonly<{ owner: string; scope: string; leaseId: string }>;
-const defaultLimits = { leaseMs: 120_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
+/** Actions that send real page input and are silently dropped in a background tab. */
+const foregroundKinds: ReadonlySet<string> = new Set(['click', 'fill', 'append', 'press', 'check', 'wheel', 'visual-click']);
+const defaultLimits = { leaseMs: 300_000, queueSize: 16, journalSize: 10_000, actionMs: 10_000,
   providers: 16, leases: 64, claims: 32, resultEntries: 128, resultBytes: 8 * 1024 * 1024, resultMs: 120_000 };
 type RuntimeLimits = typeof defaultLimits;
 type RuntimePolicy = Readonly<{ leaseScope?: 'origin' | 'tab' }>;
@@ -114,15 +116,6 @@ export class BrowserRuntime {
     const target = new URL(url);
     if (target.protocol !== 'http:' && target.protocol !== 'https:') {
       throw new BrowserError('INVALID_REQUEST', 'Only HTTP(S) tabs can be opened');
-    }
-    // A model-supplied URL must not reach this machine or a private network unless the user
-    // already has a tab on that exact origin (claim it instead); that tab is the user's own intent.
-    if (isPrivateHost(target.href)) {
-      const existing = await provider.listTabs(signal);
-      checkAbort(signal);
-      if (!existing.some(tab => { try { return originOf(tab.url) === target.origin; } catch { return false; } })) {
-        throw new BrowserError('POLICY_DENIED', 'Opening local or private-network addresses is not allowed; open the page yourself, then claim its tab');
-      }
     }
     // Authorize the exact origin before creating anything.
     if (!await this.authorize({ owner, tab: { id: 'pending', instanceId, url: target.href, title: '' }, operation: 'claim' }, signal)) {
@@ -255,6 +248,10 @@ export class BrowserRuntime {
     const currentOrigin = originOf(tab.url);
     if ((entry.lease.scope ?? 'origin') === 'origin' && currentOrigin !== entry.lease.origin) {
       throw new BrowserError('POLICY_DENIED', 'Tab moved outside its authorized origin');
+    }
+    // Page input is dropped by Chrome in a background tab; fail clearly instead of timing out.
+    if (operation === 'act' && tab.active === false && action && foregroundKinds.has(action.kind)) {
+      throw new BrowserError('NOT_ACTIONABLE', 'The tab is in the background: call native_browser_activate first, then retry');
     }
     const request = { owner: entry.lease.owner, tab, operation, ...(action ? { action: structuredClone(action) } : {}),
       ...(frame ? {frame:structuredClone(frame)} : {}) };
@@ -576,11 +573,6 @@ export class BrowserRuntime {
     try {
       const perform = async (): Promise<ActionResult> => {
         await this.authorized(entry, 'act', signal, request.action, request.frame);
-        // Never pivot from a public page to a local/private address; same-origin and private-to-private stay free.
-        if (request.action.kind === 'navigate' && isPrivateHost(request.action.url) && !isPrivateHost(entry.lease.origin)
-          && originOf(request.action.url) !== entry.lease.origin) {
-          throw new BrowserError('POLICY_DENIED', 'Navigating from a public page to a local or private-network address is not allowed');
-        }
         if(request.frame){
           if(!entry.provider.frames||!entry.provider.actFrame)throw new BrowserError('UNSUPPORTED_CAPABILITY','Provider cannot act in child frames');
           sameOriginFrame(frameInventory(await entry.provider.frames(entry.lease,signal),entry.lease),request.frame,entry.lease);

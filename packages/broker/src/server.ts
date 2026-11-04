@@ -11,7 +11,7 @@ import { localState } from './local-state.js';
 import { FileActionJournal, legacyJournalFile } from './action-journal.js';
 import { deriveSecret, journalFile } from './keys.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
-import { authorizeUploadFiles, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
+import { authorizeUploadFiles, defaultForbiddenUploadDirs, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
 import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
@@ -34,7 +34,7 @@ function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
 }
 
 type BrokerOptions = { directory: string; allowedOrigins: string[]; accessMode?: 'restricted' | 'personal'; maxConnections?: number;
-  /** Complete upload allowlist; defaults to Downloads, Desktop and Documents. An empty list disables file upload. */
+  /** Complete upload allowlist; defaults to the user's home folder (hidden files and ~/Library excluded). An empty list disables file upload. */
   uploadRoots?: string[] };
 export async function startBroker(options: BrokerOptions) {
   options = { ...options, directory: path.resolve(options.directory) };
@@ -59,7 +59,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
   const state = await localState(options.directory, true);
   const uploadRoots = await resolveUploadRoots(options.uploadRoots ?? defaultUploadRoots());
   // The Broker's own token, journal and socket are never uploadable, even under an allowed root.
-  const forbiddenUploads = await resolveUploadRoots([options.directory]);
+  const forbiddenUploads = await resolveUploadRoots([options.directory, ...defaultForbiddenUploadDirs()]);
   const fileAction = async (action: ReturnType<typeof actionRequest>['action']) =>
     action.kind === 'upload' || action.kind === 'choose'
       ? { ...action, files: await authorizeUploadFiles(action.files, uploadRoots, forbiddenUploads) } : action;

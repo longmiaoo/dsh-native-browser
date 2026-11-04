@@ -21,7 +21,8 @@ export interface BrowserInstance {
   profileLabel: string;
   capabilities: Record<string, boolean>;
 }
-export interface TabSummary { id: string; instanceId: string; url: string; title: string }
+/** `active` is the tab's foreground state in its window; omitted when a provider cannot tell. */
+export interface TabSummary { id: string; instanceId: string; url: string; title: string; active?: boolean }
 /** Structural metadata, not authorization to read or act in a child document. */
 export interface FrameSummary {
   id: string; parentId?: string; isMain: boolean; documentEpoch?: string; origin?: string;

@@ -3,14 +3,19 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { BrowserError } from '../../contracts/src/index.js';
 
-/** Folders a user ordinarily picks upload files from. Extend with --upload-root. */
+/** The user's home folder; hidden files/folders (~/.ssh, ~/.aws ...) are still refused below. Extend with --upload-root. */
 export function defaultUploadRoots(home = homedir()): string[] {
-  return ['Downloads', 'Desktop', 'Documents'].map(name => path.join(home, name));
+  return [home];
+}
+
+/** Never uploadable even inside an allowed root: macOS app data holds cookies, keychains and tokens. */
+export function defaultForbiddenUploadDirs(home = homedir()): string[] {
+  return [path.join(home, 'Library')];
 }
 
 const denied = () => new BrowserError('POLICY_DENIED',
   'Upload files must be existing, non-hidden regular files inside an allowed upload folder '
-  + '(default: Downloads, Desktop, Documents; the Broker accepts more with --upload-root). Ask the user to move the file there.');
+  + '(default: your home folder, excluding hidden files and ~/Library; the Broker accepts more with --upload-root). Ask the user to move the file there.');
 
 async function canonical(file: string): Promise<string | undefined> {
   try { return await realpath(file); }

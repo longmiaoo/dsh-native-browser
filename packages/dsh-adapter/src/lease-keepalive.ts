@@ -18,7 +18,7 @@ export class LeaseKeepAlive {
   track(id: string, expiresAt: number) {
     checkAbort(this.signal);
     if (this.stopped || expiresAt <= Date.now()) return;
-    if (!Number.isSafeInteger(expiresAt) || expiresAt > Date.now() + 5 * 60_000)
+    if (!Number.isSafeInteger(expiresAt) || expiresAt > Date.now() + 10 * 60_000)
       throw new BrowserError('PROTOCOL_MISMATCH', 'Invalid maintenance deadline');
     this.forget(id);
     const entry: Entry = { expiresAt, controller: new AbortController() };
@@ -49,7 +49,7 @@ export class LeaseKeepAlive {
     try {
       const next = await this.renew(id, AbortSignal.any([this.signal, entry.controller.signal, AbortSignal.timeout(10_000)]));
       if (this.entries.get(id) !== entry || this.stopped) return;
-      if (!Number.isSafeInteger(next.expiresAt) || next.expiresAt <= entry.expiresAt || next.expiresAt > Date.now() + 5 * 60_000)
+      if (!Number.isSafeInteger(next.expiresAt) || next.expiresAt <= entry.expiresAt || next.expiresAt > Date.now() + 10 * 60_000)
         throw new BrowserError('PROTOCOL_MISMATCH', 'Renewal did not extend the live deadline');
       entry.expiresAt = next.expiresAt; this.schedule(id, entry);
     } catch {

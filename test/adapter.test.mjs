@@ -56,15 +56,15 @@ test('personal mode maintains a live lease past its original deadline and foregr
   let count = 0;
   f.provider.renew = async (_previous, _next, signal) => { assert.equal(signal.aborted, false); count++; };
   const lease = await f.prepare('native_browser_claim', claimArgs, 'chat-a').run();
-  t.mock.timers.tick(60_000); await untilIo(() => count === 1);
+  t.mock.timers.tick(150_000); await untilIo(() => count === 1);
   // Waiting for an ordinary read also fences the completed renewal ACK.
   await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run();
-  t.mock.timers.tick(60_001);
+  t.mock.timers.tick(150_001);
   await f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run();
   assert.ok(Date.now() > lease.expiresAt); assert.ok(count >= 2);
   await f.foreground({ clientId: '11111111-1111-4111-8111-111111111111', revision: 1, issuedAt: Date.now(), sessionId: 'chat-b' });
   await untilIo(() => f.provider.grants.size === 0);
-  const stopped = count; t.mock.timers.tick(60_000);
+  const stopped = count; t.mock.timers.tick(150_000);
   await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }, 'chat-a').run(), { code: 'LEASE_REVOKED' });
   assert.equal(count, stopped); assert.equal(f.provider.calls.length, 0);
 });
@@ -82,7 +82,7 @@ for (const boundary of ['handoff', 'release_all', 'completed', 'unknown-end', 's
     else if (boundary === 'stop') await f.broker.runtime.providerRevoked('fake-1', lease.id);
     else f.disposeSession('session');
     if (!['unknown-end', 'dispose'].includes(boundary)) await f.prepare('native_browser_list', {}).run();
-    t.mock.timers.tick(60_000);
+    t.mock.timers.tick(150_000);
     await f.prepare('native_browser_list', {}).run();
     assert.equal(count, 0);
   });
@@ -91,7 +91,7 @@ test('restricted approval modes keep their original fixed lease expiry', async t
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
   const f = await fixture(t); let count = 0; f.provider.renew = async () => { count++; };
   const lease = await f.prepare('native_browser_claim', claimArgs).run();
-  t.mock.timers.tick(120_001);
+  t.mock.timers.tick(300_001);
   await assert.rejects(f.prepare('native_browser_observe', { leaseId: lease.id }).run(), { code: 'LEASE_REVOKED' });
   assert.equal(count, 0);
 });
@@ -682,9 +682,11 @@ for (const mode of ['personal', 'per-lease', 'per-action']) {
     // Approval cannot widen the Broker's folder allowlist.
     await assert.rejects(act('u-out', { kind: 'upload', ref: 'node-1', files: ['/etc/hosts'] }).run(), { code: 'POLICY_DENIED' });
     assert.equal(uploads().length, 1);
-    answer = 'denied';
-    await assert.rejects(act('d-denied', { kind: 'download', ref: 'node-1' }).run(), { code: 'POLICY_DENIED' });
-    assert.match(reasons.at(-1), /download/);
+    // Downloads are no longer gated; they never raise a prompt.
+    answer = 'denied'; const asked = reasons.length;
+    const download = await act('d-free', { kind: 'download', ref: 'node-1' }).run();
+    assert.ok(['succeeded', 'unknown'].includes(download.outcome));
+    assert.equal(reasons.length, asked);
     f.services.delete('approval');
     await assert.rejects(act('u-noservice', { kind: 'upload', ref: 'node-1', files: [allowed] }).run(), { code: 'POLICY_DENIED' });
     assert.equal(uploads().length, 1);

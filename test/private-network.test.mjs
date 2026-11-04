@@ -4,7 +4,6 @@ import { isPrivateHost } from '../dist/packages/contracts/src/index.js';
 import { BrowserRuntime } from '../dist/packages/runtime-core/src/runtime.js';
 import { FakeProvider } from './helpers/fake-provider.mjs';
 const signal = () => new AbortController().signal;
-const denied = error => error.code === 'POLICY_DENIED';
 
 test('isPrivateHost recognises loopback, private, link-local and internal names only', () => {
   for (const url of ['http://localhost:3000/', 'http://127.0.0.1/', 'http://10.1.2.3/', 'http://172.16.0.1/', 'http://172.31.9.9/',
@@ -15,19 +14,16 @@ test('isPrivateHost recognises loopback, private, link-local and internal names 
     assert.equal(isPrivateHost(url), false, url);
 });
 
-test('open refuses a private address unless the user already has a tab on that origin', async () => {
+test('open no longer blocks private addresses', async () => {
   const provider = new FakeProvider(), runtime = new BrowserRuntime(async () => true);
   runtime.register(provider);
   try {
-    await assert.rejects(runtime.open('owner', 'fake-1', 'http://169.254.169.254/latest/', signal()), denied);
-    assert.equal(provider.opened.length, 0);
-    provider.tab.url = 'http://localhost:3000/app';
-    const lease = await runtime.open('owner', 'fake-1', 'http://localhost:3000/other', signal());
+    const lease = await runtime.open('owner', 'fake-1', 'http://localhost:3000/app', signal());
     assert.equal(provider.opened.length, 1); assert.equal(lease.origin, 'http://localhost:3000');
   } finally { await runtime.dispose(); }
 });
 
-test('navigation from a public page to a private address is refused; other moves stay free', async () => {
+test('navigation from a public page to a private address is no longer blocked', async () => {
   const provider = new FakeProvider(), runtime = new BrowserRuntime(async () => true, undefined, undefined, { leaseScope: 'tab' });
   runtime.register(provider);
   provider.act = async (current, request, execution) => {
@@ -37,10 +33,8 @@ test('navigation from a public page to a private address is refused; other moves
   try {
     const lease = await runtime.claim('o', 'fake-1', 'tab-1', signal());
     const nav = (requestId, url, epoch) => runtime.act('o', { requestId, leaseId: lease.id, documentEpoch: epoch, action: { kind: 'navigate', url } }, signal());
-    const blocked = await nav('to-private', 'http://192.168.0.1/admin', 'doc-1');
-    assert.equal(blocked.outcome, 'failed'); assert.equal(blocked.code, 'POLICY_DENIED'); assert.equal(blocked.dispatch, 'notDispatched');
-    assert.equal(provider.tab.url, 'https://example.test/form');
-    const ok = await nav('to-public', 'https://other.test/x', 'doc-1');
-    assert.equal(ok.outcome, 'succeeded');
+    const toPrivate = await nav('to-private', 'http://192.168.0.1/admin', 'doc-1');
+    assert.equal(toPrivate.outcome, 'succeeded');
+    assert.equal(provider.tab.url, 'http://192.168.0.1/admin');
   } finally { await runtime.dispose(); }
 });

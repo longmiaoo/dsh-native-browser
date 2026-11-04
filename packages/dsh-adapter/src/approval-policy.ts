@@ -16,7 +16,7 @@ export const toolNeedsPrompt = (mode: ApprovalMode, shortName: string): boolean 
 /** Each batch step is prompted only in per-action mode; other modes rely on the lease grant. */
 export const batchStepNeedsPrompt = (mode: ApprovalMode): boolean => mode === 'per-action';
 
-/** Upload, choose and download are prompted in EVERY mode. per-action already asked for the
+/** Upload and choose (local data leaves the machine) are prompted in EVERY mode; download is not. per-action already asked for the
  * enclosing `act` call in tools/pre-execute, so only the other modes need the extra prompt. */
-export const fileActionKinds: ReadonlySet<string> = new Set(['upload', 'choose', 'download']);
+export const fileActionKinds: ReadonlySet<string> = new Set(['upload', 'choose']);
 export const fileActionNeedsExtraPrompt = (mode: ApprovalMode): boolean => mode !== 'per-action';

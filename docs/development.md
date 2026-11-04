@@ -328,7 +328,7 @@ This implementation is for cooperative Brokers on local Unix filesystems; it is 
 
 All canonical names use the `native_browser_*` namespace because DSH rejects duplicate tool names within one registration layer and the market has many `browser_*` plugins. `legacyToolNames: true` explicitly registers compatibility aliases; an alias that collides with another plugin is skipped while the canonical name remains available.
 
-The lease lasts up to two minutes in this preview. On expiry/release/disconnect, old commands cannot resume with the old token. The extension Stop button closes its local gate before contacting the Broker. Already-dispatched inputs cannot be undone.
+The lease lasts up to five minutes in this preview (personal mode renews it automatically). On expiry/release/disconnect, old commands cannot resume with the old token. The extension Stop button closes its local gate before contacting the Broker. Already-dispatched inputs cannot be undone.
 
 The DSH adapter binds each execution to its owning turn **before** waiting for approval. `turn/end`, session disposal, and an accepted foreground-conversation change synchronously cancel the affected session's pending approvals/connection work and in-flight operations, then release its Broker owner. Each new turn gets a new opaque wire owner, so delayed cleanup from an earlier turn cannot release its successor. A screenshot already being stored locally may finish storage, but is not returned to an ended execution. This is not a claim that the plugin can override a malicious same-process plugin or undo already-dispatched browser input.
 

@@ -47,7 +47,7 @@ function tabIdOf(lease: Lease): number {
 }
 function leaseOf(value: unknown): Lease {
   const v = record(value);
-  if (!Number.isSafeInteger(v.expiresAt) || Number(v.expiresAt) > Date.now() + 5 * 60_000) {
+  if (!Number.isSafeInteger(v.expiresAt) || Number(v.expiresAt) > Date.now() + 10 * 60_000) {
     throw new BrowserError('INVALID_REQUEST', 'Invalid lease deadline');
   }
   const scope = v.scope === undefined ? 'origin' : v.scope;
@@ -156,7 +156,7 @@ async function executeRaw(method: string, raw: unknown, signal: AbortSignal): Pr
       if (id === undefined) continue;
       const tab = known ?? await chrome.tabs.get(id).catch(() => undefined);
       try {
-        if (tab?.url) { originOf(tab.url); result.push({ id: `${instanceId}:${id}`, instanceId, url: tab.url, title: tab.title ?? '' }); }
+        if (tab?.url) { originOf(tab.url); result.push({ id: `${instanceId}:${id}`, instanceId, url: tab.url, title: tab.title ?? '', active: tab.active }); }
       } catch { /* Internal or unsupported pages never enter the control inventory. */ }
     }
     return result;

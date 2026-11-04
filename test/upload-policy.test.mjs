@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { authorizeUploadFiles, defaultUploadRoots, resolveUploadRoots } from '../dist/packages/broker/src/upload-policy.js';
+import { authorizeUploadFiles, defaultForbiddenUploadDirs, defaultUploadRoots, resolveUploadRoots } from '../dist/packages/broker/src/upload-policy.js';
 import { batchRequest } from '../dist/packages/contracts/src/validation.js';
 
 async function tree(t) {
@@ -18,13 +18,14 @@ async function tree(t) {
   await writeFile(path.join(runtime, 'auth-token'), 'secret');
   await symlink(path.join(secrets, 'id_rsa'), path.join(downloads, 'innocent.pdf'));
   await symlink(downloads, path.join(home, 'link-to-downloads'));
-  const roots = await resolveUploadRoots(defaultUploadRoots(home));
+  const roots = await resolveUploadRoots([path.join(home, 'Downloads')]);
   return { home, downloads, secrets, runtime, roots, forbidden: await resolveUploadRoots([runtime]) };
 }
 
-test('default upload roots are Downloads, Desktop and Documents; missing folders are skipped', async t => {
+test('default upload root is the home folder; Library is forbidden; missing folders are skipped', async t => {
   const f = await tree(t);
-  assert.deepEqual(defaultUploadRoots('/u'), ['/u/Downloads', '/u/Desktop', '/u/Documents']);
+  assert.deepEqual(defaultUploadRoots('/u'), ['/u']);
+  assert.deepEqual(defaultForbiddenUploadDirs('/u'), ['/u/Library']);
   assert.deepEqual(f.roots, [f.downloads]);
   await assert.rejects(resolveUploadRoots(['relative/folder']), { code: 'INVALID_REQUEST' });
 });

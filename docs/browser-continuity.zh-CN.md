@@ -6,7 +6,7 @@
 
 ## 本轮行为
 
-- personal 模式成功 claim/open 后，宿主维护现有控制权。每次约剩余期限的一半时续期；默认首次约一分钟后发生，成功后再延长两分钟。
+- personal 模式成功 claim/open 后，宿主维护现有控制权。每次约剩余期限的一半时续期；默认首次约 2.5 分钟后发生，成功后再延长五分钟。
 - 续期保持相同 owner、leaseId、标签页和 token，不重新 claim、不重新附加 debugger，也不重放输入。每次重新检查当前页面、访问策略和有效期限。
 - 扩展只有在本地 gate 仍有效、原期限精确匹配、身份和 scope 不变时才接受新期限。Stop 与异步续期发生竞争时，Stop 仍然生效。
 - 页面指针和活动条收到新期限，经过原期限后不会因旧的展示计时器而消失。续期消息不生成鼠标、键盘或其他页面输入。
@@ -39,13 +39,13 @@
 
 - `test/lease-keepalive.test.mjs`：跨期限维护、空闲预算、工具活动、失败不重试、取消和迟到 ACK。
 - `test/lease-renewal.test.mjs`：原身份和观察缓存保持、策略/站点变化、过期/撤销拒绝、Stop 竞争和 ACK 丢失。
-- `test/adapter.test.mjs`：真实本地 socket 路径跨过原两分钟期限；会话切换、handoff、release_all、turn/end、Stop、dispose，以及未知结果提示。
+- `test/adapter.test.mjs`：真实本地 socket 路径跨过原五分钟期限；会话切换、handoff、release_all、turn/end、Stop、dispose，以及未知结果提示。
 - `test/broker.test.mjs`：新旧扩展能力协商、跨连接/会话隔离、restricted 拒绝。
 - `test/extension.test.mjs`：精确 gate 与原期限验证、伪造期限拒绝、Stop 竞争、展示期限更新且不派发输入。
 - `scripts/verify-lease-renewal-extension.mjs`：真实隔离 Chrome MV3，使用两秒期限加速跨过原截止时间，重复续期后沿用旧 ref 完成一次输入，检查活动条/指针及 Stop。该脚本由 `smoke-extension.mjs` 调用，Native Messaging 由测试桥替代。
 - `scripts/smoke-native.mjs`：真实 DSH ToolRuntime → socket → Broker 子进程 → Native Messaging → Chrome MV3 的原有流程回归；该脚本使用 restricted 模式，不代表 personal 心跳全链路验收。
 - `scripts/smoke-setup-ui.mjs`：真实 React/SlotCore 验证未知结果和目标过期的提示；不是完整 Desktop 外壳验收。
-- `scripts/smoke-installation.mjs --no-service --lease-renewal`：打包后安装到全新目录，使用真实 DSH ToolRuntime、默认 personal 配置、Native Messaging 和 Chrome。等待超过原本两分钟的期限，期间不轮询浏览器工具，再用同一 lease/ref 成功输入，检查指针/活动条和交接清理。不更改用户的 LaunchAgent。
+- `scripts/smoke-installation.mjs --no-service --lease-renewal`：打包后安装到全新目录，使用真实 DSH ToolRuntime、默认 personal 配置、Native Messaging 和 Chrome。等待超过原本五分钟的期限，期间不轮询浏览器工具，再用同一 lease/ref 成功输入，检查指针/活动条和交接清理。不更改用户的 LaunchAgent。
 
 以上隔离 Chrome 测试在 Chrome for Testing `153.0.8010.12`、DSH 组件 `0.2.1-rc.3` 上通过。完整记录见[验收证据](compatibility/2026-11-03-browser-continuity.json)。这些验证没有调用大模型，也不证明真实网站上的任意任务成功率、数小时运行的稳定性或与 Codex 相比的性能。
 

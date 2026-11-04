@@ -2,6 +2,14 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## Unreleased
+
+- **Smoother by default:** the model can now open and navigate to any HTTP(S) address, including localhost and private-network addresses; the previous private-address blocking is removed. Page-driven access to local or intranet services is therefore no longer mitigated by the plugin.
+- The default lease is now five minutes (personal mode still renews it automatically). **Upgrade note:** reload the extension and restart the Broker together; an old extension rejects deadlines more than five minutes ahead.
+- Downloads no longer ask for approval. Uploads and file choosers still ask for every call.
+- The default upload folder is now the user's home folder. Hidden files and folders and `~/Library` stay excluded, as does the Broker's runtime directory.
+- Click, fill, append, press, check, wheel and visual-click on a tab in the background now fail immediately with `NOT_ACTIONABLE` and tell the model to call `native_browser_activate`, instead of being silently dropped and timing out. Nothing is activated automatically.
+
 ## 0.2.0 - 2026-11-04
 
 - Rewrite the package and marketplace descriptions to include 浏览器 / Browser / Codex so the plugin ranks higher for those searches; add `codex`, `browser` and `浏览器` keywords.

@@ -35,19 +35,33 @@ export async function verifyFeedbackExtension({ context, worker }) {
     });
     await message({action:'show',x:120,y:180,phase:'typing'});
     assert.equal((await point()).x, 120);
+    // Start sampling before the round trips: a slow CI runner may otherwise deliver
+    // both messages after the 420 ms animation already finished.
+    await page.evaluate(() => {
+      window.feedbackSamples = []; window.feedbackSampling = true;
+      const start = performance.now();
+      const sample = () => {
+        if (!window.feedbackSampling) return;
+        const host=document.querySelector('[data-dsh-pointer="v1"]');
+        if (host) {
+          const m=new DOMMatrixReadOnly(getComputedStyle(host).transform);
+          window.feedbackSamples.push({x:m.m41+2,y:m.m42+2,time:performance.now()-start});
+        }
+        if (performance.now()-start<1500) requestAnimationFrame(sample); else window.feedbackSampling=false;
+      };
+      requestAnimationFrame(sample);
+    });
     await message({action:'show',x:900,y:600,phase:'move'});
     await message({action:'show',x:900,y:600,phase:'click'});
-    const samples = await page.evaluate(async () => {
-      const points = [], start = performance.now();
-      do {
-        await new Promise(requestAnimationFrame);
-        const host=document.querySelector('[data-dsh-pointer="v1"]');
-        const m=new DOMMatrixReadOnly(getComputedStyle(host).transform);
-        points.push({x:m.m41+2,y:m.m42+2,time:performance.now()-start});
-        if(host.dataset.moving==='false') return points;
-      } while(performance.now()-start<1500);
-      throw Error('Pointer did not settle');
+    await page.waitForFunction(() => {
+      const host=document.querySelector('[data-dsh-pointer="v1"]');
+      if (!host || host.dataset.moving!=='false') return false;
+      const m=new DOMMatrixReadOnly(getComputedStyle(host).transform);
+      return Math.abs(m.m41+2-900)<.01 && Math.abs(m.m42+2-600)<.01;
     });
+    const finalPoint = await point();
+    const samples = await page.evaluate(() => { window.feedbackSampling=false; return window.feedbackSamples; });
+    samples.push(finalPoint);
     assert.ok(samples.some(p=>p.x>120&&p.x<899), 'Real rendered intermediate frames, not a teleport');
     assert.ok(Math.abs(samples.at(-1).x-900)<.01 && Math.abs(samples.at(-1).y-600)<.01);
     for(let i=1;i<samples.length;i++) assert.ok(samples[i].x >= samples[i-1].x-.01, 'Press/release must not restart the trajectory');

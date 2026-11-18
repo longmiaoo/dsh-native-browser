@@ -28,7 +28,7 @@ jobs:
       - run: pnpm test:package-install
 
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - run: pnpm test:package-install
 
   mv3-extension:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

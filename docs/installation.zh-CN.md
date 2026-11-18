@@ -1,8 +1,8 @@
 # 安装、升级与故障处理
 
-0.1.8 的正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
+当前正式支持范围为 macOS + Chrome，需要可正常对话的 DSH。CLI/Web 路径需要 Node.js ≥ 22.19 和 pnpm 11；Desktop 设置入口使用经过验证的内置运行时。Edge、Linux/Windows 完整安装和 Chrome 网上应用店分发尚未纳入正式支持。
 
-## 推荐：DSH 内配置（0.1.8）
+## 推荐：DSH 内配置
 
 从当前 DSH 的插件市场安装后，按宿主提示重载，打开左侧 **浏览器** 或 **插件 → dsh-native-browser** 详情中的配置向导（0.1.7 起提供，0.1.8 修复重载后入口丢失）。已发布 `0.1.6` 及更早版本请点 **左下角更多 → 设置 → 设置左侧浏览器配置**。然后点击 **完成浏览器配置**。无需输入 Profile；安装使用当前加载的插件包和它的运行目录。点击会注册本机组件、安装或更新登录后自动运行的服务并打开 Chrome，不会更改 DSH 审批设置或授权标签页。连接检查只读取状态。
 
@@ -14,7 +14,7 @@
 
 
 ```sh
-dsh plugin --profile web add dsh-native-browser@0.1.8 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
+dsh plugin --profile web add dsh-native-browser@0.2.4 && dsh plugin --profile web exec dsh-native-browser install --browser=chrome
 ```
 
 这条命令安装 DSH bundle，暂存固定扩展目录，注册当前用户的 Native Messaging Host，安装并检查 LaunchAgent Broker，再打开 Chrome 扩展页及 Finder。标准安装启用个人模式后台；已有显式插件审批配置与 DSH 全局权限继续生效。
@@ -25,11 +25,14 @@ Chrome 首次加载需要你确认：在 `chrome://extensions` 开启开发者�
 
 > 使用 native_browser 工具读取当前 Chrome 网页的标题和主要内容，然后交还浏览器控制。
 
-`0.1.8` 默认个人模式；已有显式审批配置仍优先。升级后重新运行浏览器配置以更新后台和固定目录中的扩展，再在 Chrome 重新加载扩展，并重载 DSH。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
+默认采用个人模式；已有显式审批配置仍优先。升级后重新运行浏览器配置以更新后台和固定目录中的扩展，再在 Chrome 重新加载扩展，并重载 DSH。个人模式无需逐页点击授权，但不会绕过 DSH 的全局权限。运行目录、DSH Profile、Chrome profile 是三个概念：插件装在 DSH Profile 中；Chrome profile 决定登录状态和扩展安装位置；Broker 使用一个私有运行目录。自定义 `--runtime-dir` 时，DSH 的 `runtimeDirectory` 必须一致。
 
 ## 升级
 
-重复安装命令，重载 Chrome 扩展，然后重启 DSH Profile。固定扩展目录不会跟随 npm 包目录变化。
+**0.2.4 的组件版本检查**：打开 DSH 侧栏「浏览器」，点「检查连接」并查看「组件版本」。这里分别显示 DSH 插件、正在运行的 Broker、Chrome 实际加载的扩展，以及磁盘上的扩展文件版本。已连接但显示「需更新」时，请按界面提示同步组件或重载扩展。老组件尚未报告版本时显示「未确认」。同步会更新本机服务和扩展文件，Chrome 仍需在扩展管理页手动确认加载或重载。
+
+
+Desktop 用户在应用内升级并按 DSH 提示重载，再按配置页的步骤完成同步。CLI/Web 用户可重复安装命令，然后重载 Chrome 扩展及对应的 DSH Profile。固定扩展目录不会跟随 npm 包目录变化。
 
 从 Alpha 迁移时，先停止旧终端中的手工 Broker；在 Chrome 移除原先从 npm/源码路径加载的扩展，再加载安装器输出的新目录。之后的升级使用该固定目录即可。旧的稳定 key 保持不变；移除并重载扩展后，需要重新授权标签页。首次升级时 Chrome 的调试提示是 `debugger` 权限的正常表现。
 
@@ -43,9 +46,9 @@ Chrome 首次加载需要你确认：在 `chrome://extensions` 开启开发者�
 | 插件市场显示已安装，聊天没有工具 | 检查安装的 DSH Profile 是否与当前运行的 Profile 相同，然后重启该 Profile；新工具名以 `native_browser_` 开头。 |
 | 提示手工 Broker 正在占用 | 在旧 Broker 终端按 Ctrl+C 后重新 install；不删除 socket、锁数据库或运行状态。 |
 | 提示服务属于其他 runtime | 使用原来的 `--runtime-dir` 卸载原服务，再切换目录。不要覆盖其他会话的后台服务。 |
-| doctor 的 browser-connection 为 NO_MATCHING_BROWSER | 检查扩展是否加载在目标 Chrome profile，并在普通网页打开弹窗授权连接。 |
+| doctor 的 browser-connection 为 NO_MATCHING_BROWSER | 检查扩展是否加载在目标 Chrome profile；之前已加载请点扩展卡片的“重新加载”。受限模式还需在弹窗中允许目标标签页。 |
 | doctor 的 broker/socket 检查失败 | 用 `service-status` 检查 LaunchAgent；查看 install 输出的运行目录下 broker.stderr.log。确认 Node 路径未移动后重跑 install。 |
-| doctor 为 ready，但读不到标签页 | ready 只代表组件健康；目标标签页还需扩展授权，DSH 还需接管该标签页。 |
+| doctor 为 ready，但读不到标签页 | ready 代表组件连接正常，DSH 仍需接管目标标签页。默认个人模式无需逐页授权；受限模式需在弹窗允许目标页。 |
 | 同时安装多个浏览器插件后，模型选错工具 | 提示“使用 native_browser 工具”；标准命名已隔离，但模型仍可能选择其他插件的同类工具。 |
 | 虚拟鼠标没出现 | 虚拟指针在真实点击/滚轮分发后显示；HTTP 页面需在弹窗中单独授予可选 HTTP 指针权限。Chrome 内部页面不支持注入。 |
 | 页面截图看不懂 | 使用支持图片输入的模型，或单独配置可选视觉插件；浏览器插件自身不运行图像识别模型。 |

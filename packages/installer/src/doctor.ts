@@ -7,7 +7,7 @@ import { BrowserError } from '../../contracts/src/index.js';
 import { RpcPeer } from '../../transport-native/src/rpc.js';
 import { HOST_NAME, manifestDirectory } from './install.js';
 import { launcherPaths } from './launcher.js';
-import { acceptWelcome, clientRequirements, personalBrokerCapability, wireVersion } from '../../contracts/src/wire.js';
+import { acceptWelcome, clientRequirements, personalBrokerCapability, wireVersion, readComponentVersion, isComponentVersion } from '../../contracts/src/wire.js';
 
 type Check = { id: string; status: 'ok' | 'warning' | 'error' | 'skipped'; code: string; message: string; hint?: string };
 export interface DoctorReport {
@@ -15,6 +15,7 @@ export interface DoctorReport {
   browser: 'chrome' | 'edge';
   status: 'ready' | 'attention' | 'failed';
   checks: Check[];
+  versions?: { broker?: string; extensions: (string | null)[] };
   connection: { connected: boolean; instanceCount: number; matchingBrowserCount: number; accessMode?: 'personal' | 'restricted' };
 }
 class Finding extends Error { constructor(readonly code: string) { super(code); } }
@@ -152,8 +153,11 @@ export async function diagnose(options: { directory: string; brand: 'chrome' | '
         const accessMode = welcome.capabilities.includes(personalBrokerCapability) ? 'personal' : 'restricted';
         const instances = await peer.call('browser.instances', {}, controller.signal);
         if (!Array.isArray(instances) || instances.length > 256 || instances.some(i => !i || typeof i !== 'object' || typeof i.brand !== 'string')) throw new Finding('INVALID_RESPONSE');
-        report.connection = { connected: true, accessMode, instanceCount: instances.length,
-          matchingBrowserCount: instances.filter(i => i.brand === options.brand).length };
+        const matching = instances.filter(i => i.brand === options.brand);
+        const broker = readComponentVersion('broker', welcome.capabilities);
+        report.versions = { ...(broker ? { broker } : {}), extensions: matching.map(i =>
+          isComponentVersion(i.extensionVersion) ? i.extensionVersion : null) };
+        report.connection = { connected: true, accessMode, instanceCount: instances.length, matchingBrowserCount: matching.length };
         add('broker', 'ok', 'OK', 'Broker 协议握手与实例查询成功。');
         if (!report.connection.matchingBrowserCount) add('browser-connection', 'warning', 'NO_MATCHING_BROWSER', '尚无所选浏览器连接。',
           accessMode === 'personal' ? '在 Chrome 加载或重载扩展，再检查连接；个人模式无需逐页点击授权。' : '在目标 Chrome 加载扩展并连接；受限模式还需要在弹窗中允许目标标签页。');

@@ -181,6 +181,11 @@ window.__ModuleLoader__.load({
         const accessMode = status?.policy?.browserAccessMode;
         const approvalMode = status?.policy?.approvalMode;
         const connected = status?.report?.status === 'ready';
+        const ready = connected && (!status.nextStep || status.nextStep === 'ready');
+        const reloadRequired = status?.nextStep === 'reload';
+        const syncRequired = status?.nextStep === 'sync';
+        const needsUpdate = reloadRequired || syncRequired && (connected || Boolean(status?.versions?.staged));
+        const syncLabel = needsUpdate ? t('同步浏览器组件', 'Sync browser components') : t('完成浏览器配置', 'Set up Chrome');
         const modeMismatch = accessMode === 'restricted' && approvalMode === 'personal';
         const connectedText = accessMode === 'personal'
           ? t('Chrome 已连接。个人模式无需逐页授权，可以回到聊天开始使用。', 'Chrome is connected. Personal mode needs no per-tab consent; start chatting.')
@@ -188,10 +193,24 @@ window.__ModuleLoader__.load({
             ? t('Chrome 已连接，当前为受限模式。请在扩展弹窗中允许目标标签页。', 'Chrome is connected in restricted mode. Allow the target tab in the extension popup.')
             : t('Chrome 已连接。尚未确认页面访问模式，请重新检查连接。', 'Chrome is connected. Check the connection again to confirm its access mode.');
         const button = (label, endpoint, disabled = false) => h('button', {
-          type: 'button', className: endpoint === 'setup.install' ? 'nb-primary' : 'nb-secondary',
+          type: 'button',
+          className: endpoint === 'setup.install' ||
+            endpoint === 'setup.open' && (reloadRequired || status?.nextStep === 'connect') ? 'nb-primary' : 'nb-secondary',
           disabled: Boolean(waiting || disabled), onClick: () => void perform(endpoint),
         }, label);
-        const stage = connected ? 3 : status?.extensionStaged ? 2 : 1;
+        const stage = ready ? 3 : status?.extensionStaged ? 2 : 1;
+        const nextStepText = reloadRequired
+          ? t('打开扩展管理页，在 DSH Native Browser 卡片上点“重新加载”，再返回检查连接。若有多个旧版 Chrome 配置，请逐个重载。',
+            'Open Extensions and click Reload on the DSH Native Browser card, then check the connection. Repeat in each affected Chrome profile.')
+          : syncRequired && needsUpdate
+            ? t('请同步本机 Broker 和扩展文件，再按提示在 Chrome 重新加载扩展。',
+              'Sync the local Broker and extension files, then follow the instructions to reload the extension in Chrome.')
+            : status?.nextStep === 'connect'
+              ? t('本机组件已就绪。请在 Chrome 加载扩展；如果已经加载过，点击扩展卡片的“重新加载”。',
+                'Local components are ready. Load the extension in Chrome, or click Reload on its card if it is already installed.')
+              : t('尚未就绪：请完成配置、加载扩展，再检查连接。', 'Not ready: complete setup, load the extension, then check the connection.');
+        const displayVersion = value => value ? 'v' + value : t('未确认', 'Unverified');
+        const runningVersions = status?.versions?.running ?? [];
         const steps = [t('安装插件', 'Install plugin'), t('配置 Chrome', 'Set up Chrome'), t('开始对话', 'Start chatting')];
         return h('section', { className: 'nb-setup', 'aria-label': 'DSH Native Browser' },
           h('style', null, `
@@ -209,30 +228,41 @@ window.__ModuleLoader__.load({
               h('p', { className: 'nb-subtitle' }, t('DSH 原生浏览器操作，让每一步更丝滑。', 'Native browser control for DSH. Keep your flow.')))),
           h('section', { className: 'nb-card', 'aria-label': t('Chrome 连接', 'Chrome connection') },
             h('div', { className: 'nb-card-head' }, h('div', null,
-              h('h3', null, connected ? t('Chrome 已就绪', 'Chrome is ready') : t('连接你正在使用的 Chrome', 'Connect the Chrome you use')),
-              h('p', { className: 'nb-note' }, connected
+              h('h3', null, ready ? t('Chrome 已就绪', 'Chrome is ready') : needsUpdate
+                ? t('完成 Chrome 组件更新', 'Finish updating Chrome components')
+                : t('连接你正在使用的 Chrome', 'Connect the Chrome you use')),
+              h('p', { className: 'nb-note' }, ready
                 ? t('保留登录状态，直接在 DSH 对话中提需求。', 'Keep your logins. Ask for browser tasks in DSH chat.')
                 : t('一次配置，沿用已有登录状态。无需终端命令或 Profile 名称。', 'One-time setup, existing logins. No terminal or Profile name.'))),
-              h('span', { className: 'nb-badge', 'data-ready': connected }, h('i'), connected ? t('已连接', 'Connected') : status ? t('等待连接', 'Not connected') : t('正在检查', 'Checking'))),
+              h('span', { className: 'nb-badge', 'data-ready': ready }, h('i'), needsUpdate
+                ? (connected ? t('已连接 · 需更新', 'Connected · Update needed') : t('需更新', 'Update needed'))
+                : ready ? t('已连接', 'Connected') : status ? t('等待连接', 'Not connected') : t('正在检查', 'Checking'))),
             h('ol', { className: 'nb-steps', 'aria-label': t('Chrome 配置进度', 'Chrome setup progress') },
-              steps.map((label, i) => h('li', { key: i, 'data-done': i < stage }, h('span', { className: 'nb-step-number' }, i < stage - 1 || connected ? '✓' : i + 1), label))),
-            status && h('p', { role: 'status', className: 'nb-note' }, connected ? connectedText
-              : t('尚未就绪：请完成配置、加载扩展，再检查连接。', 'Not ready: complete setup, load the extension, then check the connection.')),
+              steps.map((label, i) => h('li', { key: i, 'data-done': i < stage }, h('span', { className: 'nb-step-number' }, i < stage - 1 || ready ? '✓' : i + 1), label))),
+            status && h('p', { role: 'status', className: 'nb-note' }, ready ? connectedText : nextStepText),
+            status?.versions && h('details', { open: needsUpdate || undefined },
+              h('summary', null, t('组件版本', 'Component versions')),
+              h('ul', null,
+                h('li', null, t('DSH 插件 ', 'DSH plugin ') + displayVersion(status.version)),
+                h('li', null, t('运行中的 Broker ', 'Running Broker ') + displayVersion(status.versions.broker)),
+                h('li', null, t('运行中的 Chrome 扩展 ', 'Running Chrome extensions ') +
+                  (runningVersions.length ? [...new Set(runningVersions.map(displayVersion))].join(', ') : t('未连接', 'Not connected'))),
+                h('li', null, t('扩展文件 ', 'Staged extension files ') + displayVersion(status.versions.staged)))),
             h('div', { className: 'nb-actions' },
-              (!connected || modeMismatch) && button(t('完成浏览器配置', 'Set up Chrome'), 'setup.install', !status?.supported),
-              connected && typeof getLayout()?.selectPanel === 'function' && h('button', { className: 'nb-primary', type: 'button', onClick: () => getLayout()?.selectPanel(null) }, t('回到聊天，开始使用', 'Back to chat')),
+              ((!ready && !reloadRequired && (syncRequired || !status?.nextStep)) || modeMismatch) && button(syncLabel, 'setup.install', !status?.supported),
+              ready && typeof getLayout()?.selectPanel === 'function' && h('button', { className: 'nb-primary', type: 'button', onClick: () => getLayout()?.selectPanel(null) }, t('回到聊天，开始使用', 'Back to chat')),
               h('button', { className: 'nb-secondary', type: 'button', disabled: busy, onClick: () => void perform('setup.status') }, t('检查连接', 'Check connection')),
-              !connected && button(t('打开扩展管理页', 'Open extensions'), 'setup.open', !status?.supported || !status?.extensionStaged)),
+              !ready && button(t('打开扩展管理页', 'Open extensions'), 'setup.open', !status?.supported || !status?.extensionStaged)),
             waiting && h('p', { role: 'status', className: 'nb-note' }, t('正在处理，请稍候。关闭此页面不会撤销已经开始的配置。', 'Working. Closing this page does not undo setup already started.'))),
           modeMismatch && h('p', { role: 'alert', className: 'nb-message' }, t('插件为个人模式，但后台为受限模式。请点击“完成浏览器配置”启用匹配的个人后台，或显式选择受限审批配置。',
             'The plugin uses personal mode but the Broker is restricted. Run Set up Chrome for a matching personal Broker, or explicitly configure restricted approvals.')),
           status?.supported === false && h('p', { role: 'alert', className: 'nb-message' }, t('自动配置目前仅支持 macOS；其他系统请参考安装文档。', 'Automatic setup currently supports macOS only. See the installation guide for other systems.')),
           notice && h('p', { role: 'status', className: 'nb-message' }, notice),
           error && h('p', { role: 'alert', className: 'nb-message' }, error),
-          status?.extensionStaged && h(connected ? 'details' : 'section', { className: connected ? undefined : 'nb-card' },
-            connected ? h('summary', null, t('升级或重新加载 Chrome 扩展', 'Update or reload the Chrome extension'))
+          status?.extensionStaged && h(ready || needsUpdate ? 'details' : 'section', { className: ready || needsUpdate ? undefined : 'nb-card' },
+            ready || needsUpdate ? h('summary', null, t('升级或重新加载 Chrome 扩展', 'Update or reload the Chrome extension'))
               : h('h3', null, t('Chrome 最后一步', 'Final Chrome step')),
-            !connected && h('ol', null,
+            !ready && !reloadRequired && h('ol', null,
               h('li', null, t('打开 Chrome 扩展管理页，开启右上角“开发者模式”。', 'Open Chrome extensions and enable Developer mode.')),
               h('li', null, t('点击“加载已解压的扩展程序”。在选择目录窗口按 ⌘⇧G，粘贴下方目录并选择。', 'Click Load unpacked. Press ⌘⇧G in the folder picker, paste the path below and select it.')),
               h('li', null, accessMode === 'restricted'
@@ -244,10 +274,10 @@ window.__ModuleLoader__.load({
               catch { setError(t('请点击目录文本，按 ⌘C 复制。', 'Select the path and press ⌘C to copy.')); }
             } }, t('复制扩展目录', 'Copy extension path')),
             h('p', { className: 'nb-note' }, t('选择整个 chrome 文件夹。已加载过此目录？升级后点扩展卡片的“重新加载”即可。', 'Select the whole chrome folder. Already loaded? Click Reload on its extension card after updating.')),
-            connected && !modeMismatch && h('div', { className: 'nb-actions' }, button(t('完成浏览器配置', 'Set up Chrome'), 'setup.install', !status?.supported),
-              button(t('打开扩展管理页', 'Open extensions'), 'setup.open', !status?.supported))),
+            !reloadRequired && !modeMismatch && (ready || status?.nextStep === 'connect') && h('div', { className: 'nb-actions' }, button(t('完成浏览器配置', 'Set up Chrome'), 'setup.install', !status?.supported),
+              ready && button(t('打开扩展管理页', 'Open extensions'), 'setup.open', !status?.supported))),
           h('section', { className: 'nb-card', 'aria-label': t('第一次使用', 'First browser task') },
-            h('h3', null, connected ? t('试试你的第一个浏览器任务', 'Try your first browser task') : t('连接后，你可以这样说', 'Once connected, try this')),
+            h('h3', null, ready ? t('试试你的第一个浏览器任务', 'Try your first browser task') : t('连接后，你可以这样说', 'Once connected, try this')),
             h('p', { className: 'nb-note' }, t('先在 Chrome 打开一个普通网页，然后回到 DSH 对话。', 'Open an ordinary webpage in Chrome, then return to DSH chat.')),
             h('blockquote', { className: 'nb-prompt' }, testPrompt),
             h('button', { type: 'button', onClick: async () => {

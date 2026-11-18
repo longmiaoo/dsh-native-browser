@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { chmod, lstat, unlink } from 'node:fs/promises';
+import { chmod, lstat, readFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserError, originOf, type BrowserInstance } from '../../contracts/src/index.js';
 import { actionRequest, batchRequest, observeOptions, pageReadOptions, record, string } from '../../contracts/src/validation.js';
@@ -12,7 +12,7 @@ import { FileActionJournal, legacyJournalFile } from './action-journal.js';
 import { deriveSecret, journalFile } from './keys.js';
 import { acquireBrokerOwnership, type BrokerOwnership } from './ownership.js';
 import { authorizeUploadFiles, defaultForbiddenUploadDirs, defaultUploadRoots, resolveUploadRoots } from './upload-policy.js';
-import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
+import { negotiateHello, brokerCapabilities, personalBrokerCapability, leaseRenewalCapability, wireVersion, componentVersionCapability, readComponentVersion } from '../../contracts/src/wire.js';
 
 function authenticate(supplied: unknown, actual: string): void {
   if (typeof supplied !== 'string' || supplied.length !== actual.length ||
@@ -25,11 +25,12 @@ function inventoryUrl(url: string): string {
   try { const parsed = new URL(url); return parsed.search || parsed.hash ? parsed.origin + parsed.pathname : url; }
   catch { return url; }
 }
-function instanceOf(raw: unknown, renewal: boolean): BrowserInstance {
+function instanceOf(raw: unknown, capabilities: readonly string[] = []): BrowserInstance {
   const v = record(raw);
   if (v.family !== 'chromium') throw new BrowserError('UNSUPPORTED_CAPABILITY', 'This bridge supports Chromium only');
-  return { id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
-    profileLabel: string(v.profileLabel), capabilities: { leaseRenewal: renewal, ax: true, axSubtree: true, dom: true, screenshot: true,
+  const extensionVersion = readComponentVersion('extension', capabilities);
+  return { ...(extensionVersion ? { extensionVersion } : {}), id: string(v.id), family: 'chromium', brand: string(v.brand), version: string(v.version),
+    profileLabel: string(v.profileLabel), capabilities: { leaseRenewal: capabilities.includes(leaseRenewalCapability), ax: true, axSubtree: true, dom: true, screenshot: true,
       keyboard: true, keyboardShortcuts: false, domScroll: true, wheel: true, setChecked: true, contenteditableFill: true, appendText: true, stateExpectations: true, batch: true, pageWindows: true, tabScopedNavigation: true, frameDiscovery: true, sameOriginFrameRead: true, sameOriginFrameClick: true, sameOriginFrameQuery: true, sameOriginFrameSubtree: true, sameOriginFramePage: true, oopif: false } };
 }
 
@@ -56,6 +57,8 @@ export async function startBroker(options: BrokerOptions) {
 
 async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ownership: BrokerOwnership) {
   const personal = options.accessMode === 'personal';
+  const { version } = JSON.parse(await readFile(new URL('../../../../package.json', import.meta.url), 'utf8'));
+  const versionCapability = componentVersionCapability('broker', version);
   const state = await localState(options.directory, true);
   const uploadRoots = await resolveUploadRoots(options.uploadRoots ?? defaultUploadRoots());
   // The Broker's own token, journal and socket are never uploadable, even under an allowed root.
@@ -99,7 +102,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
           authenticate(p.token, state.token);
           const hello = negotiateHello(p);
           if (p.role === 'provider') {
-            const instance = instanceOf(p.instance, hello.capabilities?.includes(leaseRenewalCapability) === true);
+            const instance = instanceOf(p.instance, hello.capabilities);
             runtime.register(new ChromiumProvider(instance, peer));
             instanceId = instance.id; role = 'provider';
           } else if (p.role === 'client') {
@@ -120,7 +123,7 @@ async function startOwnedBroker(options: BrokerOptions, allowed: Set<string>, ow
           else throw new BrowserError('INVALID_REQUEST', 'Invalid peer role');
           clearTimeout(helloTimer);
           return { version: wireVersion, connectionEpoch: connection,
-            capabilities: [...brokerCapabilities, ...(personal ? [personalBrokerCapability] : [])] };
+            capabilities: [...brokerCapabilities, ...versionCapability, ...(personal ? [personalBrokerCapability] : [])] };
         } finally { negotiating = false; }
       }
       if (role !== 'client') throw new BrowserError('POLICY_DENIED', 'Provider cannot issue runtime commands');

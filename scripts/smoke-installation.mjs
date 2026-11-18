@@ -84,7 +84,10 @@ try {
     throw error;
   }
   const diagnostics = { directory, brand: 'chrome', extensionId, manifestDir: options.manifestDir };
-  assert.equal((await diagnose(diagnostics)).status, 'ready');
+  const diagnostic = await diagnose(diagnostics);
+  const { version: packageVersion } = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
+  assert.equal(diagnostic.status, 'ready');
+  assert.deepEqual(diagnostic.versions, { broker: packageVersion, extensions: [manifest.version] });
   passed.push('Chrome loads the staged extension, launches the installed Native Host and doctor reports ready');
 
   const hostRequire = createRequire(path.join(path.resolve(hostRoot), 'package.json'));
@@ -96,6 +99,9 @@ try {
   const { LocalAttachmentStore } = await load('@deepseek-ai/dsh-attachment-local');
   report.dshVersion = JSON.parse(await readFile(path.join(hostRoot, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8')).version;
   ctx = new Context(); await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime);
+  // Modern DSH registers the execution strategy separately and accepts batches.
+  const usesToolExecutor = typeof ctx.tools.setExecutor === 'function';
+  if (usesToolExecutor) await ctx.plugin(await load('@deepseek-ai/dsh-tool-executor-native'));
   await ctx.plugin(LocalAttachmentStore, { dshHome: path.join(temporary, 'attachments') });
   let foreground;
   ctx.provide('connection', { rpc: { handle: (_route, handler) => { foreground = handler; return () => {}; } } });
@@ -108,9 +114,16 @@ try {
   passed.push('All 14 native_browser tools register beside an existing browser_claim tool without aliases or collisions');
   const session = Session.create(SessionId('installation-acceptance')); session.append('turn/start', { turn: 1 });
   let number = 0;
+  const execute = async (name, args, timeout = 15000) => {
+    const callId = `install-${++number}`;
+    const common = { agent: { session }, signal: AbortSignal.timeout(timeout) };
+    if (!usesToolExecutor) return ctx.tools.execute({ name, callId, arguments: args, ...common });
+    const batch = await ctx.tools.execute({ calls: [{ id: callId, name, arguments: JSON.stringify(args) }], ...common });
+    assert.equal(batch.results.length, 1);
+    return batch.results[0].result;
+  };
   const call = async (short, args) => {
-    const result = await ctx.tools.execute({ name: `native_browser_${short}`, callId: `install-${++number}`,
-      arguments: args, agent: { session }, signal: AbortSignal.timeout(15000) });
+    const result = await execute(`native_browser_${short}`, args);
     assert.equal(result.isError, false, JSON.stringify(result.content)); return result.value;
   };
   const [instance] = await call('list', {});
@@ -204,16 +217,16 @@ try {
   const switched = await foreground('foreground', { clientId: '11111111-1111-4111-8111-111111111111',
     revision: 1, issuedAt: Date.now(), sessionId: 'another-conversation' }, AbortSignal.timeout(3000));
   assert.equal(switched.value.released, 1);
-  const revoked = await ctx.tools.execute({ name: 'native_browser_observe', callId: 'after-switch', arguments: { leaseId: lease.id }, agent: { session }, signal: AbortSignal.timeout(5000) });
+  const revoked = await execute('native_browser_observe', { leaseId: lease.id }, 5000);
   assert.equal(revoked.isError, true);
-  const backgroundClaim = await ctx.tools.execute({ name: 'native_browser_claim', callId: 'background-reclaim', arguments: { instanceId: instance.id, tab: lease.tab }, agent: { session }, signal: AbortSignal.timeout(5000) });
+  const backgroundClaim = await execute('native_browser_claim', { instanceId: instance.id, tab: lease.tab }, 5000);
   assert.equal(backgroundClaim.isError, true);
   passed.push('Foreground conversation RPC revokes the installed native stack lease before another conversation can use it (UI notification simulated)');
   await foreground('foreground', { clientId: '11111111-1111-4111-8111-111111111111', revision: 2,
     issuedAt: Date.now(), sessionId: session.id }, AbortSignal.timeout(3000));
   lease = await call('claim', { instanceId: instance.id, tab: finalTabs.find(t => t.url.startsWith(origin)).id });
   await popupCommand('stop');
-  const stopped = await ctx.tools.execute({ name: 'native_browser_observe', callId: 'after-stop', arguments: { leaseId: lease.id }, agent: { session }, signal: AbortSignal.timeout(5000) });
+  const stopped = await execute('native_browser_observe', { leaseId: lease.id }, 5000);
   assert.equal(stopped.isError, true);
   passed.push('Real extension Stop invalidates the held DSH lease');
   const temporaryPage = await call('open', { instanceId: instance.id, url: origin + '/temporary' });

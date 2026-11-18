@@ -9,6 +9,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright-core';
 import { createSetupController, verifySetupRuntime } from '../dist/packages/dsh-adapter/src/setup.js';
+import { startBroker } from '../dist/packages/broker/src/server.js';
 import { diagnose } from '../dist/packages/installer/src/doctor.js';
 import { quickInstall } from '../dist/packages/installer/src/quick-install.js';
 
@@ -18,11 +19,16 @@ const hostRequire = createRequire(path.join(path.resolve(hostRoot), 'package.jso
 const rendererRequire = process.argv[3] ? createRequire(path.join(path.resolve(process.argv[3]), 'package.json')) : hostRequire;
 const root = await mkdtemp('/tmp/dsh-setup-ui-'), directory = path.join(root, 'runtime'), manifestDir = path.join(root, 'manifests');
 const calls = [], errors = [];
-let installs = 0, opened = 0, browser, statusPreview, taskStatusPreview;
+let installs = 0, opened = 0, browser, broker, statusPreview, taskStatusPreview;
 const setup = createSetupController(directory, {
   platform: 'darwin', verifyRuntime: verifySetupRuntime,
   diagnose: options => diagnose({ ...options, manifestDir }),
-  quickInstall: async options => { installs++; return quickInstall({ ...options, manifestDir, service: false, open: false }); },
+  quickInstall: async options => {
+    installs++;
+    const result = await quickInstall({ ...options, manifestDir, service: false, open: false });
+    broker ??= await startBroker({ directory, accessMode: 'personal', allowedOrigins: [] });
+    return result;
+  },
   openSetup: async () => { opened++; return { openedBrowser: true, revealedExtension: true }; },
 });
 const entry = `
@@ -113,7 +119,7 @@ try {
   assert.equal(installs,0); assert.equal(opened,0); assert.deepEqual(await readdir(root),[]);
   assert.equal(calls.includes('setup.install'),false,'Showing activation guidance must not install anything');
   await page.getByRole('button',{name:'现在连接 Chrome',exact:true}).click();
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   await page.getByRole('button',{name:'配置浏览器',exact:true}).waitFor();
   const panels=await page.evaluate(()=>window.panelEntries);
   assert.deepEqual(panels,[{id:'dsh-native-browser.setup',label:'浏览器'}]);
@@ -123,13 +129,13 @@ try {
   await page.getByRole('button',{name:'返回对话',exact:true}).click();
   await page.getByText('Conversation preserved',{exact:true}).waitFor();
   await page.evaluate(()=>window.openRow());
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   await page.evaluate(()=>window.openSettings());
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   assert.equal(installs,0); assert.equal(opened,0);
   // Settings can open before Desktop has selected or hydrated a conversation.
   await page.evaluate(() => window.selectTestChat(null));
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   let invalidIndex = 0;
   for (const invalidStatus of [null, {}, {phase:'ready',pages:null}]) {
     taskStatusPreview = invalidStatus;
@@ -139,7 +145,7 @@ try {
       && response.request().postDataJSON()?.payload?.sessionId === id);
     await page.evaluate(id => window.selectTestChat(id), id);
     assert.deepEqual((await (await response).json()).value, invalidStatus);
-    await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+    await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   }
   taskStatusPreview = {phase:'attention', action:'act', pages:[], pending:0, attention:'verify-result',
     lastResult:{outcome:'unknown',dispatch:'dispatched',postcondition:'unverified'}};
@@ -174,14 +180,29 @@ try {
   // Presentation-only scenarios: never change the real service or Host policy.
   const actualStatus = (await setup('setup.status', {}, new AbortController().signal)).value;
   const preview = async (access, approval, message) => {
-    statusPreview = { ...actualStatus, policy: { browserAccessMode: access, approvalMode: approval },
+    statusPreview = { ...actualStatus, nextStep: undefined, policy: { browserAccessMode: access, approvalMode: approval },
       report: { ...actualStatus.report, status: 'ready' } };
     await page.getByRole('button', { name: '检查连接', exact: true }).click();
     await page.getByText(message, { exact: true }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'Chrome 最后一步' }).count(), 0);
   };
+  // A live connection can outlast an incomplete upgrade. Reload guidance
+  // must use the loaded extension version and never reinstall automatically.
+  statusPreview = { ...actualStatus, nextStep: 'reload',
+    versions: { broker: actualStatus.version, staged: actualStatus.expectedExtensionVersion, running: ['0.1.0'] },
+    report: { ...actualStatus.report, status: 'ready' } };
+  await page.getByRole('button', { name: '检查连接', exact: true }).click();
+  await page.getByText('已连接 · 需更新', { exact: true }).waitFor();
+  await page.getByText('运行中的 Chrome 扩展 v0.1.0', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '同步浏览器组件', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '回到聊天，开始使用', exact: true }).count(), 0);
+  await page.screenshot({ path: 'output/playwright/setup-reload-required.png', fullPage: true });
+  statusPreview = { ...statusPreview, nextStep: 'sync', versions: { ...statusPreview.versions, broker: '0.1.0' } };
+  await page.getByRole('button', { name: '检查连接', exact: true }).click();
+  await page.getByRole('button', { name: '同步浏览器组件', exact: true }).waitFor();
+  assert.equal(installs, 2);
   // Loading Chrome and returning to this window performs only a status check.
-  statusPreview = { ...actualStatus, policy: { browserAccessMode: 'personal', approvalMode: 'personal' },
+  statusPreview = { ...actualStatus, nextStep: undefined, policy: { browserAccessMode: 'personal', approvalMode: 'personal' },
     report: { ...actualStatus.report, status: 'ready' } };
   const statusReadsBefore=calls.filter(endpoint=>endpoint==='setup.status').length;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -213,7 +234,7 @@ try {
   await page.getByRole('button',{name:'完成并清理临时页'}).click();
   await page.getByText('收尾返回：关闭 2 页；失效或失败的页面不会强行关闭。',{exact:true}).waitFor();
   await page.evaluate(() => window.selectTestChat(undefined));
-  await page.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await page.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   await page.screenshot({path:'output/playwright/setup-without-conversation.png',fullPage:true});
   assert.equal(await page.getByRole('button', {name:'回到聊天，开始使用',exact:true}).count(),1);
   await page.getByRole('link',{name:'☆ Star',exact:true}).waitFor();
@@ -235,7 +256,7 @@ try {
   await page.evaluate(() => window.disposeSetup());
   const legacyPage=await context.newPage();legacyPage.on('pageerror',e=>errors.push(e.message));
   await legacyPage.goto('http://127.0.0.1:'+server.address().port+'/?legacy=1');
-  await legacyPage.getByRole('heading',{name:'DSH Native Browser',exact:true}).waitFor();
+  await legacyPage.getByRole('heading',{name: /^DSH Native Browser(?: v[\d.\w-]+)?$/}).waitFor();
   assert.equal(await legacyPage.getByRole('button',{name:'返回对话',exact:true}).count(),0);
   assert.equal(installs,2);assert.equal(opened,1);
   await legacyPage.evaluate(()=>window.disposeSetup());await legacyPage.close();
@@ -254,4 +275,4 @@ try {
   const report = { passed: true, scope: 'Real DSH SlotCore and React component; isolated installer without LaunchAgent; not full Desktop shell',
     installs, opened, rpcCalls: calls, browser: browser.version(), noConversation: true, malformedTaskStatuses: invalidIndex, pluginDetails: true, rowConfiguration: true, sidebarPanel: true, activationGuidance: true, legacyFallback: true };
   await writeFile('output/playwright/setup-ui.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
-} finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); }
+} finally { await browser?.close(); await broker?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); }

@@ -16,7 +16,7 @@ import { frameClickRequest, frameClick } from '../../provider-chromium/src/frame
 import { redactScreenshotJpeg } from './screenshot-redaction.js';
 import { checkCdpCommand, cdpMethods } from './cdp-guard.js';
 import { InboundRequests } from '../../contracts/src/request-tracker.js';
-import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion } from '../../contracts/src/wire.js';
+import { wireMessage, acceptWelcome, personalBrokerCapability, providerCapabilities, providerRequirements, leaseRenewalCapability, wireVersion, componentVersionCapability } from '../../contracts/src/wire.js';
 
 const HOST = 'com.longmiaoo.dsh_native_browser';
 type TabConsent = Readonly<{ origin: string; scope: 'tab' }>;
@@ -469,7 +469,8 @@ function connect(): void {
   });
   try {
     current.postMessage(wireMessage({ type: 'request', id: helloId, method: 'hello', params: {
-      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities, leaseRenewalCapability],
+      bootstrap: 1, versions: [wireVersion], role: 'provider', capabilities: [...providerCapabilities, leaseRenewalCapability,
+        ...componentVersionCapability('extension', chrome.runtime.getManifest().version)],
       requiredCapabilities: [...providerRequirements],
       instance: { id: instanceId, family: 'chromium', brand: __BROWSER_BRAND__,
         version: navigator.userAgent, profileLabel: 'User-authorized profile' },

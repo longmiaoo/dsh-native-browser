@@ -232,9 +232,11 @@ test('Broker rejects missing provider/client capabilities before registration an
     assert.deepEqual(await client.call('browser.instances', {}), []);
     await assert.rejects(peer.call('browser.claim', { sessionId: 's', instanceId: 'caps-fixture', tab: '7' }), { code: 'POLICY_DENIED' });
   }
-  const welcome = await peer.call('hello', { ...hello, capabilities: [...providerCapabilities, 'future.optional.v1'] });
+  const welcome = await peer.call('hello', { ...hello, capabilities: [...providerCapabilities, 'future.optional.v1', 'diagnostics.extension-version.0.2.4'] });
   assert.equal(welcome.version, 1); assert.equal(typeof welcome.connectionEpoch, 'string');
-  assert.equal((await client.call('browser.instances', {})).length, 1);
+  assert.match(welcome.capabilities.find(item => item.startsWith('diagnostics.broker-version.')), /^diagnostics\.broker-version\.\d+\.\d+\.\d+/);
+  const [instance] = await client.call('browser.instances', {});
+  assert.equal(instance.extensionVersion, '0.2.4');
   await assert.rejects(peer.call('browser.instances', {}), { code: 'POLICY_DENIED' });
 });
 

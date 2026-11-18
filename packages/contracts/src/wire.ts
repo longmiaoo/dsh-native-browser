@@ -1,6 +1,25 @@
 import { BrowserError, errorCodes, type ErrorCode } from './index.js';
 
 export const wireVersion = 1;
+
+// Older peers reject new handshake fields but ignore optional capability names.
+type VersionedComponent = 'broker' | 'extension';
+const componentVersionPattern = /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:[.-](?:alpha\.)?\d{1,5})?$/;
+export function isComponentVersion(version: unknown): version is string {
+  return typeof version === 'string' && componentVersionPattern.test(version);
+}
+export function componentVersionCapability(component: VersionedComponent, version: unknown): string[] {
+  return isComponentVersion(version)
+    ? [`diagnostics.${component}-version.${version}`] : [];
+}
+
+export function readComponentVersion(component: VersionedComponent, capabilities: readonly string[] = []): string | undefined {
+  const prefix = `diagnostics.${component}-version.`;
+  const reported = capabilities.filter(value => value.startsWith(prefix));
+  if (reported.length !== 1) return;
+  const version = reported[0]!.slice(prefix.length);
+  if (isComponentVersion(version)) return version;
+}
 /** Advertised by a Broker only when the operator explicitly started personal mode. */
 export const personalBrokerCapability = 'broker.personal-mode.v1';
 /** Optional: old peers remain usable with their original fixed lease deadline. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createSetupController, verifySetupRuntime } from '../dist/packages/dsh-adapter/src/setup.js';
 import { diagnose } from '../dist/packages/installer/src/doctor.js';
@@ -39,6 +39,47 @@ test('setup reports explicit adapter approval and live Broker access separately'
   const result = await controller('setup.status', {}, signal());
   assert.deepEqual(result.value.policy, { approvalMode: 'per-action', browserAccessMode: 'personal' });
   assert.equal(f.calls.length, 0);
+});
+
+test('setup distinguishes staged files from live Broker and Chrome versions', async t => {
+  const pluginVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url))).version;
+  const manifest = JSON.parse(await readFile(new URL('../dist/extension/chrome/manifest.json', import.meta.url)));
+  const oldVersion = '0.1.0';
+  const connection = { connected: true, instanceCount: 1, matchingBrowserCount: 1, accessMode: 'personal' };
+  const report = { status: 'ready', checks: [], connection };
+  const f = await fixture(t, { diagnose: async () => report });
+  const check = async (nextStep, versions) => {
+    const result = await f.handle('setup.status', {}, signal());
+    assert.equal(result.ok, true);
+    assert.equal(result.value.version, pluginVersion);
+    assert.equal(result.value.nextStep, nextStep);
+    assert.deepEqual(result.value.versions, versions);
+  };
+  const folder = path.join(f.root, 'runtime/extension/chrome');
+  await mkdir(folder, { recursive: true });
+  const stage = version => writeFile(path.join(folder, 'manifest.json'), JSON.stringify({ ...manifest, version }), { mode: 0o600 });
+  await stage(oldVersion);
+  await check('sync', { broker: undefined, staged: oldVersion, running: [] });
+  await stage(manifest.version);
+  report.versions = { broker: oldVersion, extensions: [oldVersion] };
+  await check('sync', { broker: oldVersion, staged: manifest.version, running: [oldVersion] });
+  report.versions.broker = pluginVersion;
+  const versions = running => ({ broker: pluginVersion, staged: manifest.version, running });
+  await check('reload', versions([oldVersion]));
+  report.versions.extensions = [null];
+  await check('reload', versions([null]));
+  Object.assign(connection, { instanceCount: 2, matchingBrowserCount: 2 });
+  report.versions.extensions = [manifest.version, oldVersion];
+  await check('reload', versions([manifest.version, oldVersion]));
+  Object.assign(connection, { instanceCount: 0, matchingBrowserCount: 0 });
+  report.versions.extensions = [];
+  report.status = 'attention';
+  await check('connect', versions([]));
+  Object.assign(connection, { instanceCount: 1, matchingBrowserCount: 1 });
+  report.versions.extensions = [manifest.version];
+  report.status = 'ready';
+  await check('ready', versions([manifest.version]));
+  assert.equal(f.calls.length, 0, 'Status checks never run the installer');
 });
 
 test('setup rejects missing consent, unknown methods and caller-controlled paths before writes', async t => {

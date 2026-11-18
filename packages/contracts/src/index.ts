@@ -19,6 +19,7 @@ export interface BrowserInstance {
   brand: string;
   version: string;
   profileLabel: string;
+  extensionVersion?: string;
   capabilities: Record<string, boolean>;
 }
 /** `active` is the tab's foreground state in its window; omitted when a provider cannot tell. */

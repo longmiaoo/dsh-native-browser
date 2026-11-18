@@ -33,6 +33,8 @@ IDs are nonempty strings of at most 128 Unicode code points. Method/event names 
 
 There are no `kind`, `protocol`, `session`, `epoch`, `result` or `error` envelope fields. `hello` is an ordinary request; its success response is the welcome. There is no wire `goodbye`.
 
+Optional version diagnostics use `diagnostics.broker-version.<version>` in the Broker welcome and `diagnostics.extension-version.<version>` in the provider hello. The Broker may include the validated `extensionVersion` in `browser.instances`. These advertisements are never required or used to grant browser authority. Missing metadata from older peers leaves the corresponding component version unverified.
+
 ## Authenticated hello
 
 The extension connects through Native Messaging. Its first message must be a provider hello. The Native Host checks the Chrome-supplied caller origin against the installed allowlist, validates hello shape/role, then injects the private IPC token before forwarding. The token is not embedded in the extension or returned in the welcome. The local DSH client reads that token from private runtime state and sends it directly over the Unix socket.

@@ -2,6 +2,11 @@
 
 All notable changes will be documented here. The project follows semantic versioning after the first stable release.
 
+## 0.2.4 - 2026-11-18
+
+- Show the running Broker, loaded Chrome extension and staged files separately from the DSH plugin version. Setup distinguishes component sync, extension loading/reloading and readiness even when an older extension is still connected.
+- Exchange optional component versions on the existing authenticated connection. Older peers remain compatible and appear as unverified until upgraded.
+
 ## 0.2.3 - 2026-11-04
 
 - Fix a scroll-triggered race in `check`: when an offscreen radio's scroll handler changed its form/name/value on the next frame, the provider could dispatch the click before observing that change. It now waits one rendered frame after scrolling before the final identity and binding checks. This was exposed by the 0.2.2 CI run before publishing; the same commit still includes the hidden cross-origin screenshot fix below.

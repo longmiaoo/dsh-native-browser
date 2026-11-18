@@ -45,7 +45,7 @@ async function fixture({ handshake = true, timers = { setTimeout, clearTimeout }
       remoteDisconnect() { this.disconnected = true; this.onDisconnect.emit(); } };
     ports.push(p); return p;
   };
-  const chrome = { runtime: { id: 'a'.repeat(32), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
+  const chrome = { runtime: { id: 'a'.repeat(32), getManifest: () => ({ version: '0.2.3' }), onMessage: event(), getURL: s => `chrome-extension://${'a'.repeat(32)}/${s}`, connectNative: makePort },
     tabs: { query: async () => [tab], get: async () => ({ ...tab }),
       create: async ({ url }) => ({ id: 9, url, title: 'New Tab' }), update: async (id, properties) => ({ id, ...properties }),
       group: async ({ tabIds }) => { grouped.push(...tabIds); return 42; },

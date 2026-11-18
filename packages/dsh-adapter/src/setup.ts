@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { isComponentVersion } from '../../contracts/src/wire.js';
 import { BrowserError, checkAbort } from '../../contracts/src/index.js';
 import { defaultDirectory } from '../../broker/src/local-state.js';
 import { diagnose } from '../../installer/src/doctor.js';
@@ -44,23 +45,37 @@ export function createSetupController(directory = defaultDirectory(), dependenci
   const extensionPath = path.join(directory, 'extension', 'chrome');
   const source = path.join(packageRoot, 'dist', 'extension', 'chrome');
   const metadata = async () => {
-    const manifest = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8'));
-    return { extensionId: extensionIdFromManifestKey(manifest.key), version: manifest.version };
+    const [manifestText, packageText] = await Promise.all([
+      readFile(path.join(source, 'manifest.json'), 'utf8'),
+      readFile(path.join(packageRoot, 'package.json'), 'utf8'),
+    ]);
+    const manifest = JSON.parse(manifestText);
+    const { version } = JSON.parse(packageText);
+    return { extensionId: extensionIdFromManifestKey(manifest.key), version, expectedExtensionVersion: manifest.version };
   };
-  const stagedId = async () => {
+  const stagedManifest = async () => {
     const file = await snapshot(path.join(extensionPath, 'manifest.json'), 16384);
-    if (!file) return undefined;
-    return extensionIdFromManifestKey(JSON.parse(file.bytes.toString('utf8')).key);
+    if (!file) return;
+    const { key, version } = JSON.parse(file.bytes.toString('utf8'));
+    if (isComponentVersion(version)) return { id: extensionIdFromManifestKey(key), version };
   };
   const status = async () => {
     const meta = await metadata();
-    let extensionStaged = false;
-    try {
-      extensionStaged = await stagedId() === meta.extensionId;
-    } catch { /* Not installed yet; status never repairs files. */ }
+    const staged = await stagedManifest().catch(() => undefined);
+    const stagedVersion = staged?.id === meta.extensionId ? staged.version : undefined;
     const report = await dependencies.diagnose({ directory, brand: 'chrome', extensionId: meta.extensionId, timeoutMs: 750 });
-    return { ...meta, extensionPath, extensionStaged, platform: dependencies.platform,
-      supported: dependencies.platform === 'darwin', installing: Boolean(installation),
+    const brokerVersion = report.versions?.broker;
+    const runningVersions = report.versions?.extensions ?? [];
+    const modeMismatch = approvalMode === 'personal' && report.connection.accessMode === 'restricted';
+    const nextStep = stagedVersion !== meta.expectedExtensionVersion || brokerVersion !== meta.version ||
+      report.status === 'failed' || modeMismatch ? 'sync'
+      : !report.connection.matchingBrowserCount ? 'connect'
+        : runningVersions.length !== report.connection.matchingBrowserCount ||
+          runningVersions.some(version => version !== meta.expectedExtensionVersion) ? 'reload'
+          : 'ready';
+    return { ...meta, extensionPath, extensionStaged: Boolean(stagedVersion), nextStep,
+      versions: { broker: brokerVersion, staged: stagedVersion, running: runningVersions },
+      platform: dependencies.platform, supported: dependencies.platform === 'darwin', installing: Boolean(installation),
       policy: { approvalMode, browserAccessMode: report.connection.accessMode ?? 'unknown' }, report };
   };
   return async (endpoint: string, raw: unknown, signal: AbortSignal) => {
@@ -79,7 +94,7 @@ export function createSetupController(directory = defaultDirectory(), dependenci
       if (endpoint === 'setup.open') {
         if (installation) throw new BrowserError('INSTALLATION_BUSY', '配置正在进行，请稍后重试。');
         const meta = await metadata();
-        if (await stagedId() !== meta.extensionId) throw new BrowserError('INSTALLATION_FAILED', '请先完成浏览器配置。');
+        if ((await stagedManifest())?.id !== meta.extensionId) throw new BrowserError('INSTALLATION_FAILED', '请先完成浏览器配置。');
         return { ok: true, value: await dependencies.openSetup({ brand: 'chrome', extensionPath }) };
       }
       if (installation && installation.directory !== directory) {
